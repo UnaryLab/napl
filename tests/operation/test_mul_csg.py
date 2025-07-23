@@ -56,7 +56,7 @@ def test_mul_csg():
     r_value = input0 * input1
 
     # report the error
-    mul_inst.accuracy.report_error(r_value)
+    mul_inst.accuracy.report_error(r_value, verbose=True)
 
     print("Add test passed.")
 

@@ -20,13 +20,9 @@ class accuracy(napl_base):
         super().__init__()
 
         # check config
-        check_config(config, ['mode', 'name'])
-
-        # data representation
-        self.mode = config['mode'].lower()
-        check_mode(self.mode)
-        
-        self.name = config['name'].lower()
+        check_config(config, ['mode'])
+        self.mode = check_mode(config)
+        self.name = check_name(config)
 
         self.timestep_cur = 0
         self.spike_count = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
@@ -71,7 +67,7 @@ class accuracy(napl_base):
         return self.spike_value
     
 
-    def report_error(self, reference: torch.Tensor):
+    def report_error(self, reference: torch.Tensor, verbose=False):
         assert self.error_flag == True, logger.error(f'Error flag is not set. Please call forward() before report_error().')
         self.spike_error.data = self.spike_value.sub(reference)
         self.spike_error_abs_max.data = torch.max(self.spike_error.abs())
@@ -79,11 +75,12 @@ class accuracy(napl_base):
         self.spike_error_mae.data = self.spike_error.abs().mean()
         self.spike_error_rmse.data = torch.sqrt(self.spike_error.abs().pow(2).mean())
 
-        logger.info(f'Accuracy report for accuracy instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-        logger.info(f'    Max absolute error:     <{self.spike_error_abs_max.item()}>')
-        logger.info(f'    Min absolute error:     <{self.spike_error_abs_min.item()}>')
-        logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
-        logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
-        logger.info(f'')
+        if verbose:
+            logger.info(f'Accuracy report for accuracy instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
+            logger.info(f'    Max absolute error:     <{self.spike_error_abs_max.item()}>')
+            logger.info(f'    Min absolute error:     <{self.spike_error_abs_min.item()}>')
+            logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
+            logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
+            logger.info(f'')
         return self.spike_error
     

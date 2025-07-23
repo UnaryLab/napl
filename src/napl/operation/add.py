@@ -20,12 +20,10 @@ class add_any(napl_base):
         ):
         super().__init__()
 
-        # check the config
+        # check config
         check_config(config, ['mode', 'scale', 'bitwidth'])
-
-        # data representation
-        self.mode = config['mode'].lower()
-        check_mode(self.mode)
+        self.mode = check_mode(config)
+        self.name = check_name(config)
 
         # bitwidth of the accumulator
         self.bitwidth = config['bitwidth']

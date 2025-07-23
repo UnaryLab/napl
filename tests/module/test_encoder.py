@@ -31,7 +31,7 @@ def test_encoder():
         spike_accuracy(spike)
 
 
-    spike_accuracy.report_error(input)
+    spike_accuracy.report_error(input, verbose=True)
 
 
 

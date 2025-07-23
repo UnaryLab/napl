@@ -15,11 +15,10 @@ class decoder(napl_base):
         ):
         super().__init__()
 
+        # check config
         check_config(config, ['mode', 'timestep'])
-
-        # data representation
-        self.mode = config['mode'].lower()
-        check_mode(self.mode)
+        self.mode = check_mode(config)
+        self.name = check_name(config)
 
         # initialize timestep and spike count
         self.timestep = config['timestep']

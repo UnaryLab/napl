@@ -31,7 +31,7 @@ def test_decoder():
         spike_accuracy(spike)
         spike_decoder(spike)
 
-    spike_accuracy.report_error(input)
+    spike_accuracy.report_error(input, verbose=True)
 
     spike_accuracy_value = spike_accuracy.spike_value
     spike_decoder_value = spike_decoder.spike_value

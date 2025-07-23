@@ -333,12 +333,16 @@ def check_config(config: dict, key_list: list):
         assert key in config, logger.error(f'Missing key <{key}> in the input configuration.')
 
 
-def check_mode(mode: str):
+def check_mode(config: dict):
     """
     Check if mode is legal.
     """
+    mode = config.get('mode', None)
+    assert isinstance(mode, str), logger.error(f'Invalid mode: <{mode}>; mode should be a string.')
+    mode = mode.lower()
     legal_modes = ['unipolar', 'bipolar']
-    assert mode.lower() in legal_modes, logger.error(f'Invalid mode: <{mode.lower()}>; legal values: <{str(legal_modes)}>.')
+    assert mode in legal_modes, logger.error(f'Invalid mode: <{mode}>; legal values: <{str(legal_modes)}>.')
+    return mode
 
 
 def gen_rand_tensor(mode: str = 'unipolar', shape: tuple = (1,), bitwidth: int = 8):
@@ -347,4 +351,15 @@ def gen_rand_tensor(mode: str = 'unipolar', shape: tuple = (1,), bitwidth: int =
     """
     data = (torch.rand(shape) * (2 ** bitwidth)).floor() / (2 ** bitwidth)
     return data if mode == 'unipolar' else (data * 2 - 1)
+
+
+def check_name(config: dict):
+    """
+    Check if name is available.
+    """
+    name = config.get('name', None)
+    if name is not None:
+        assert isinstance(name, str), logger.error(f'Invalid name: <{name}>; name should be a string.')
+        name = name.lower()
+    return name
 

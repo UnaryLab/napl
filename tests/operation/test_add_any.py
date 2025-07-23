@@ -62,7 +62,7 @@ def test_add_any():
     r_value = torch.sum(input, dim=-1) / add_config['scale']
     
     # report the error
-    add_inst.accuracy.report_error(r_value)
+    add_inst.accuracy.report_error(r_value, verbose=True)
 
     print("Add test passed.")
 

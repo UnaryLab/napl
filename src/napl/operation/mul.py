@@ -23,11 +23,10 @@ class mul_csg(napl_base):
         ):
         super().__init__()
 
+        # check config
         check_config(config, ['mode', 'timestep', 'generator'])
-
-        # data representation
-        self.mode = config['mode'].lower()
-        check_mode(self.mode)
+        self.mode = check_mode(config)
+        self.name = check_name(config)
         
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
