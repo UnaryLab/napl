@@ -1,0 +1,18 @@
+# environment.yaml
+name: napl
+channels:
+  - conda-forge
+  - defaults
+  - nikeshbajaj
+dependencies:
+  - python>=3.9
+  - pyyaml
+  - yamlordereddictloader
+  - loguru
+  - numpy
+  - scipy
+  - pyfiglet
+  - pip
+  - pytorch
+  - matplotlib
+  - pylfsr
