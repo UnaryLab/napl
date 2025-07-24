@@ -62,7 +62,7 @@ class napl_base(torch.nn.Module):
         self.ntype = global_config.ntype
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the module to its initial state.
         This method should be overridden by subclasses to reset their specific parameters.
@@ -73,7 +73,8 @@ class napl_base(torch.nn.Module):
                 # skip self to prevent infinite recursion
                 continue
             if hasattr(module, 'reset'):
-                logger.info(f'    Reset module <{name}>.')
+                if verbose is True:
+                    logger.info(f'    Reset module <{name}>.')
                 module.reset()
 
 
@@ -87,7 +88,9 @@ def napl_sim_timesteps_class(timestep_func):
             logger.error(f'Timesteps not specified in the arguments. Please provide "timesteps" as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
-        logger.info(f'Simulating <{timesteps}> timesteps in NAPL class <{self.__class__.__name__}>...')
+        verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
+        if verbose:
+            logger.info(f'Simulating <{timesteps}> timesteps in NAPL class <{self.__class__.__name__}>...')
 
         for _ in range(timesteps):
             output = timestep_func(self, *args, **kwargs)
@@ -106,7 +109,9 @@ def napl_sim_timesteps_func(timestep_func):
             logger.error(f'Timesteps not specified in the arguments. Please provide "timesteps" as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
-        logger.info(f'Simulating <{timesteps}> timesteps in NAPL function...')
+        verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
+        if verbose:
+            logger.info(f'Simulating <{timesteps}> timesteps in NAPL function...')
 
         for _ in range(timesteps):
             out = timestep_func(*args, **kwargs)
