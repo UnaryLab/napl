@@ -67,13 +67,14 @@ class napl_base(torch.nn.Module):
         Reset the module to its initial state.
         This method should be overridden by subclasses to reset their specific parameters.
         """
-        logger.info(f'Reset module <{self.__class__.__name__}>.')
+        if verbose:
+            logger.info(f'Reset module <{self.__class__.__name__}>.')
         for name, module in self.named_modules():
             if module is self:
                 # skip self to prevent infinite recursion
                 continue
             if hasattr(module, 'reset'):
-                if verbose is True:
+                if verbose:
                     logger.info(f'    Reset module <{name}>.')
                 module.reset()
 
