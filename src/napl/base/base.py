@@ -62,6 +62,21 @@ class napl_base(torch.nn.Module):
         self.ntype = global_config.ntype
 
 
+    def reset(self):
+        """
+        Reset the module to its initial state.
+        This method should be overridden by subclasses to reset their specific parameters.
+        """
+        logger.info(f'Reset module <{self.__class__.__name__}>.')
+        for name, module in self.named_modules():
+            if module is self:
+                # skip self to prevent infinite recursion
+                continue
+            if hasattr(module, 'reset'):
+                logger.info(f'    Reset module <{name}>.')
+                module.reset()
+
+
 def napl_sim_timesteps_class(timestep_func):
     """
     This function is a decorator to simulate multiple timesteps in the NAPL framework.
@@ -72,11 +87,12 @@ def napl_sim_timesteps_class(timestep_func):
             logger.error(f'Timesteps not specified in the arguments. Please provide "timesteps" as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
-        logger.info(f'Simulating <{timesteps}> timesteps in NAPL class...')
+        logger.info(f'Simulating <{timesteps}> timesteps in NAPL class <{self.__class__.__name__}>...')
 
         for _ in range(timesteps):
-            timestep_func(self, *args, **kwargs)
-
+            output = timestep_func(self, *args, **kwargs)
+        return output
+    
     return timesteps_wrapper
 
 
@@ -93,7 +109,8 @@ def napl_sim_timesteps_func(timestep_func):
         logger.info(f'Simulating <{timesteps}> timesteps in NAPL function...')
 
         for _ in range(timesteps):
-            timestep_func(*args, **kwargs)
-
+            out = timestep_func(*args, **kwargs)
+        return out
+    
     return timesteps_wrapper
 

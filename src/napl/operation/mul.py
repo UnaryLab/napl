@@ -55,14 +55,16 @@ class mul_csg(napl_base):
         """
         Reset the seq_idx and seq_idx_inv.
         """
-        self.seq_idx.data = torch.zeros(1, dtype=torch.long)
+        self.seq_idx.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx.device)
         if self.mode == "bipolar":
-            self.seq_idx_inv.data = torch.zeros(1, dtype=torch.long)
+            self.seq_idx_inv.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx_inv.device)
         self.in_1_prob = None
         self.is_first_call = True
 
     
     def forward(self, in_0, in_1: torch.tensor=None):
+        # in_0 is a spike tensor
+        # in_1 is a binary tensor
         if self.is_first_call is True:
             assert in_1 is not None, logger.error('in_1 is None, please provide a valid in_1 tensor.')
             self.in_1_prob = (in_1 + 1) / 2 if self.mode == 'bipolar' else in_1

@@ -46,13 +46,13 @@ class accuracy(napl_base):
         Reset the timestep and one count.
         """
         self.timestep_cur = 0
-        self.spike_count.data = torch.zeros(1)
-        self.spike_value.data = torch.zeros(1)
-        self.spike_error.data = torch.zeros(1)
-        self.spike_error_abs_max.data = torch.zeros(1)
-        self.spike_error_abs_min.data = torch.zeros(1)
-        self.spike_error_mae.data = torch.zeros(1)
-        self.spike_error_rmse.data = torch.zeros(1)
+        self.spike_count.data = torch.zeros(1, device=self.spike_count.device)
+        self.spike_value.data = torch.zeros(1, device=self.spike_value.device)
+        self.spike_error.data = torch.zeros(1, device=self.spike_error.device)
+        self.spike_error_abs_max.data = torch.zeros(1, device=self.spike_error_abs_max.device)
+        self.spike_error_abs_min.data = torch.zeros(1, device=self.spike_error_abs_min.device)
+        self.spike_error_mae.data = torch.zeros(1, device=self.spike_error_mae.device)
+        self.spike_error_rmse.data = torch.zeros(1, device=self.spike_error_rmse.device)
         self.error_flag = False
     
 
@@ -84,3 +84,19 @@ class accuracy(napl_base):
             logger.info(f'')
         return self.spike_error
     
+
+def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
+    spike_error = spike_value.sub(reference)
+    spike_error_abs_max = torch.max(spike_error.abs())
+    spike_error_abs_min = torch.min(spike_error.abs())
+    spike_error_mae = spike_error.abs().mean()
+    spike_error_rmse = torch.sqrt(spike_error.abs().pow(2).mean())
+
+    logger.info(f'Accuracy report: ')
+    logger.info(f'    Max absolute error:     <{spike_error_abs_max.item()}>')
+    logger.info(f'    Min absolute error:     <{spike_error_abs_min.item()}>')
+    logger.info(f'    Mean absolute error:    <{spike_error_mae.item()}>')
+    logger.info(f'    Root mean square error: <{spike_error_rmse.item()}>')
+    logger.info(f'')
+    return spike_error
+

@@ -46,7 +46,7 @@ class add_any(napl_base):
         """
         Reset the accumulator only.
         """
-        self.accumulator.data = torch.zeros(1, dtype=self.ntype)
+        self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
         self.is_first_call = True
 
 

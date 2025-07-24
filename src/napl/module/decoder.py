@@ -31,8 +31,8 @@ class decoder(napl_base):
 
     def reset(self):
         self.timestep_cur = 0
-        self.spike_count.data = torch.zeros(1, dtype=self.ntype)
-        self.spike_value.data = torch.zeros(1, dtype=self.ntype)
+        self.spike_count.data = torch.zeros(1, dtype=self.ntype, device=self.spike_count.device)
+        self.spike_value.data = torch.zeros(1, dtype=self.ntype, device=self.spike_value.device)
     
     
     def forward(self, spike: torch.Tensor):
