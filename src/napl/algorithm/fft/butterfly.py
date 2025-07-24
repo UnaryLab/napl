@@ -1,6 +1,6 @@
 import torch, math
 
-from napl.base import napl_base, napl_sim_timesteps_class
+from napl.base import napl_base, napl_sim_timesteps
 from napl.utils import *
 from napl.module import encoder, decoder
 from napl.operation import mul_csg, add_any
@@ -59,7 +59,7 @@ class butterfly_spike(napl_base):
         # self.acc_y1i = accuracy(acc_config)
 
 
-    @napl_sim_timesteps_class
+    @napl_sim_timesteps
     def forward(self, x0r, x0i, x1r, x1i, wr, wi):
         # all inputs and outputs are binary tensors
         

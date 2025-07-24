@@ -1,6 +1,6 @@
 import torch, math
 
-from napl.base import global_config, napl_base, napl_sim_timesteps_class
+from napl.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import *
 from napl.module import encoder, decoder
 from napl.operation import mul_csg
@@ -17,7 +17,7 @@ class napl_mul_csg(napl_base):
         self.accuracy = accuracy(acc_config)
 
 
-    @napl_sim_timesteps_class
+    @napl_sim_timesteps
     def forward(self, input0, input1, timesteps=256):
         # forward is a description of the circuit
         i_spike = self.encoder(input0)

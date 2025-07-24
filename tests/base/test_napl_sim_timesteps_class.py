@@ -1,6 +1,6 @@
 import torch
 
-from napl.base import global_config, napl_base, napl_sim_timesteps_class
+from napl.base import global_config, napl_base, napl_sim_timesteps
 from napl.module import encoder, decoder
 from napl.utils import check_config
 
@@ -13,7 +13,7 @@ class codec(napl_base):
         self.timestep_cur = 0
 
 
-    @napl_sim_timesteps_class
+    @napl_sim_timesteps
     def forward(self, input, timesteps=256):
         spike = self.encoder(input)
         self.decoder(spike)

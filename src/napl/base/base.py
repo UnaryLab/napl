@@ -79,7 +79,7 @@ class napl_base(torch.nn.Module):
                 module.reset()
 
 
-def napl_sim_timesteps_class(timestep_func):
+def napl_sim_timesteps(timestep_func):
     """
     This function is a decorator to simulate multiple timesteps in the NAPL framework.
     """
