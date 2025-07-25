@@ -68,8 +68,8 @@ def gen_num_seq(config={
     if (generator == 'sobol') or (generator == 'rc'):
         # get the requested dimension of sobol random number sequence
         # rate coding defaults to sobol sequence
-        dimr = 1
-        num_seq = torch.quasirandom.SobolEngine(dimr).draw(seq_len)[:, dimr-1].view(seq_len)
+        dim = config.get('dim', 1)
+        num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
     elif (generator == 'tc') or (generator == 'tc_asc') or (generator == 'tc01'):
         # temporal coding defaults to ascending counter sequence
         # the output sequence is in an ascending order
@@ -129,8 +129,9 @@ class encoder(napl_base):
 
         # generate the number sequence
         # the sequence is used to compare with the input data
-        self.num_seq = gen_num_seq(config={'bitwidth': self.bitwidth, 
-                                        'generator': self.generator})
+        config_updated = {'bitwidth': self.bitwidth}
+        config_updated.update(config)
+        self.num_seq = gen_num_seq(config=config_updated)
         
         self.timestep_cur = 0
 
