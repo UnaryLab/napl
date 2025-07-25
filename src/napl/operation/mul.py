@@ -6,6 +6,41 @@ from napl.module.encoder import gen_num_seq
 from loguru import logger
 
 
+
+class mul_and(napl_base):
+    """
+    This module is for unary multiplication with conditinal spike generation, supporting unipolar/bipolar.
+    References:
+    1) uGEMM: Unary Computing Architecture for GEMM Applications
+    2) uGEMM: Unary Computing for GEMM Applications
+    """
+    def __init__(
+            self,
+            config={
+                'mode': 'bipolar',
+            }
+        ):
+        super().__init__()
+
+        # check config
+        check_config(config, ['mode'])
+        self.mode = check_mode(config)
+        self.name = check_name(config)
+        
+    
+    def reset(self):
+        pass
+
+    
+    def forward(self, in_0: torch.tensor, in_1: torch.tensor):
+        # in_0 is a spike tensor
+        # in_1 is a spike tensor
+        if self.mode == "unipolar":
+            return (in_0.type(torch.int8) & in_1.type(torch.int8)).type(self.stype)
+        else:
+            return (1 - in_0.type(torch.int8) ^ in_1.type(torch.int8)).type(self.stype)
+
+
 class mul_csg(napl_base):
     """
     This module is for unary multiplication with conditinal spike generation, supporting unipolar/bipolar.
@@ -62,7 +97,7 @@ class mul_csg(napl_base):
         self.is_first_call = True
 
     
-    def forward(self, in_0, in_1: torch.tensor=None):
+    def forward(self, in_0: torch.tensor, in_1: torch.tensor):
         # in_0 is a spike tensor
         # in_1 is a binary tensor
         if self.is_first_call is True:
