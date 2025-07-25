@@ -18,10 +18,10 @@ class napl_mul_csg(napl_base):
 
 
     @napl_sim_timesteps
-    def forward(self, in_0, in_1, timesteps=256):
+    def forward(self, input_0, input_1, timesteps=256):
         # forward is a description of the circuit
-        i_spike = self.encoder(in_0)
-        o_spike = self.mul(i_spike, in_1)
+        i_spike = self.encoder(input_0)
+        o_spike = self.mul(i_spike, input_1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
@@ -45,15 +45,15 @@ def test_mul_csg():
     }
 
     # Generate random inputs based on mode
-    in_0 = gen_rand_tensor(codec_config['mode'], shape=(1000,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
-    in_1 = gen_rand_tensor(codec_config['mode'], shape=(1000,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_0 = gen_rand_tensor(codec_config['mode'], shape=(1000,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_1 = gen_rand_tensor(codec_config['mode'], shape=(1000,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_mul_csg instance
     mul_inst = napl_mul_csg(codec_config, mul_config, acc_config).to(device)
-    mul_inst(in_0, in_1, timesteps=codec_config['timestep'])
+    mul_inst(input_0, input_1, timesteps=codec_config['timestep'])
 
     # calculate the reference output
-    r_value = in_0 * in_1
+    r_value = input_0 * input_1
 
     # report the error
     mul_inst.accuracy.report_error(r_value, verbose=True)

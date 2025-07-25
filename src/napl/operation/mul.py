@@ -32,13 +32,13 @@ class mul_and(napl_base):
         pass
 
     
-    def forward(self, in_0: torch.tensor, in_1: torch.tensor):
-        # in_0 is a spike tensor
-        # in_1 is a spike tensor
+    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+        # input_0 is a spike tensor
+        # input_1 is a spike tensor
         if self.mode == "unipolar":
-            return (in_0.type(torch.int8) & in_1.type(torch.int8)).type(self.stype)
+            return (input_0.type(torch.int8) & input_1.type(torch.int8)).type(self.stype)
         else:
-            return (1 - in_0.type(torch.int8) ^ in_1.type(torch.int8)).type(self.stype)
+            return (1 - input_0.type(torch.int8) ^ input_1.type(torch.int8)).type(self.stype)
 
 
 class mul_csg(napl_base):
@@ -81,7 +81,7 @@ class mul_csg(napl_base):
         if self.mode == "bipolar":
             self.seq_idx_inv = torch.nn.Parameter(torch.zeros(1, dtype=torch.long), requires_grad=False)
         
-        # only compute the prob of in_1 once in the first call
+        # only compute the prob of input_1 once in the first call
         self.in_1_prob = None
         self.is_first_call = True
 
@@ -97,27 +97,27 @@ class mul_csg(napl_base):
         self.is_first_call = True
 
     
-    def forward(self, in_0: torch.tensor, in_1: torch.tensor):
-        # in_0 is a spike tensor
-        # in_1 is a binary tensor
+    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+        # input_0 is a spike tensor
+        # input_1 is a binary tensor
         if self.is_first_call is True:
-            assert in_1 is not None, logger.error('in_1 is None, please provide a valid in_1 tensor.')
-            self.in_1_prob = (in_1 + 1) / 2 if self.mode == 'bipolar' else in_1
+            assert input_1 is not None, logger.error('input_1 is None, please provide a valid input_1 tensor.')
+            self.in_1_prob = (input_1 + 1) / 2 if self.mode == 'bipolar' else input_1
             self.is_first_call = False
 
         # generate the conditional spike
         spike_csg = torch.gt(self.in_1_prob.type(self.ntype), self.num_seq[self.seq_idx]).type(torch.int8)
-        path = in_0.type(torch.int8) & spike_csg
-        # conditional update for seq index when in_0 is 1, which simulates the enable signal.
-        self.seq_idx.data = self.seq_idx.add(in_0.type(torch.long))
+        path = input_0.type(torch.int8) & spike_csg
+        # conditional update for seq index when input_0 is 1, which simulates the enable signal.
+        self.seq_idx.data = self.seq_idx.add(input_0.type(torch.long))
         
         if self.mode == "unipolar":
             return path.type(self.stype)
         else:
             # generate the conditional spike
             spike_csg = torch.gt(self.in_1_prob.type(self.ntype), self.num_seq[self.seq_idx_inv]).type(torch.int8)
-            path_inv = (1 - in_0.type(torch.int8)) & (1 - spike_csg)
+            path_inv = (1 - input_0.type(torch.int8)) & (1 - spike_csg)
             # conditional update for seq_idx_inv
-            self.seq_idx_inv.data = self.seq_idx_inv.add(1 - in_0.type(torch.long))
+            self.seq_idx_inv.data = self.seq_idx_inv.add(1 - input_0.type(torch.long))
             return (path | path_inv).type(self.stype)
             
