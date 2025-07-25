@@ -9,7 +9,7 @@ from loguru import logger
 
 class mul_and(napl_base):
     """
-    This module is for unary multiplication with conditinal spike generation, supporting unipolar/bipolar.
+    This module is for unary multiplication with and gate, supporting unipolar/bipolar.
     References:
     1) uGEMM: Unary Computing Architecture for GEMM Applications
     2) uGEMM: Unary Computing for GEMM Applications
