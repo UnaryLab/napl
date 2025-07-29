@@ -2,6 +2,7 @@ from .add import *
 from .delay import *
 from .div import *
 from .inhibit import *
+from .jkff import *
 from .max import *
 from .min import *
 from .mul import *
