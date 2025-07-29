@@ -1,9 +1,7 @@
-import torch, math
+import torch
 
 from napl.utils import *
 from napl.base import napl_base
-from loguru import logger
-
 
 
 class delay(napl_base):
