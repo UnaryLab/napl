@@ -11,7 +11,7 @@ def test_butterfly_spike():
     Test the bfu_1_add forward method with random inputs.
     """
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config = {
         'mode': 'bipolar',
@@ -69,9 +69,9 @@ def test_butterfly_spike():
     report_error(y1r_value, y1r_ref / add_config['scale'])
     report_error(y1i_value, y1i_ref / add_config['scale'])
 
-    print("butterfly test passed.")
+    print('Test passed.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     test_butterfly_spike()
 

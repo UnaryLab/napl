@@ -1,8 +1,8 @@
 import torch
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
+from napl.base import napl_base, napl_sim_timesteps
 from napl.module import encoder, decoder
-from napl.utils import check_config
+from napl.metric import report_error
 
 
 class codec(napl_base):
@@ -33,15 +33,16 @@ def test_napl_sim_timesteps_class():
         'generator': 'sobol',
     }
 
-    codec_inst = codec(config)
-
     input = torch.tensor([0.1, 0.5, 0.9])
-    
+
+    codec_inst = codec(config)
     codec_inst(input, timesteps=config['timestep'])
 
-    print("Napl sim with multiple timesteps test passed.")
+    report_error(codec_inst.decoder.spike_value, input)
+
+    print('Test passed.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     test_napl_sim_timesteps_class()
 

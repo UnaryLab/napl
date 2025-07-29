@@ -12,7 +12,7 @@ def test_decoder():
     """
     config={
         'mode': 'bipolar',
-        'timestep': 256,
+        'timestep': 1024,
         'generator': 'sobol',
         'name': 'spike_accuracy',
     }
@@ -37,9 +37,9 @@ def test_decoder():
     spike_decoder_value = spike_decoder.spike_value
     assert (spike_accuracy_value == spike_decoder_value).all, f'Spike accuracy value should match spike decoder value.'
 
-    print("Spike decoder test passed.")
+    print('Test passed.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     test_decoder()
 

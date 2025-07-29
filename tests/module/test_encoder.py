@@ -12,9 +12,10 @@ def test_encoder():
     """
     config={
         'mode': 'bipolar',
-        'timestep': 256,
+        'timestep': 1024,
         'generator': 'sobol',
         'name': 'spike_accuracy',
+        'dim': 1
     }
 
     spike_encoder = encoder(config)
@@ -37,9 +38,9 @@ def test_encoder():
 
 
 
-    print("Spike encoder test passed.")
+    print('Test passed.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     test_encoder()
 

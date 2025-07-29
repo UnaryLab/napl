@@ -2,10 +2,8 @@
 global_config:
 
     # spike data type for simulation
-    # spike_type: 'torch.bfloat16'
     spike_type: 'torch.int8'
-    # spike_type: 'torch.float32'
     
     # non-spike data type for simulation
-    non_spike_type: 'torch.bfloat16'
-    # non_spike_type: 'torch.float32'
+    # for both number sequence and accumulation buffer
+    non_spike_type: 'torch.float32'
