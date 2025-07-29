@@ -35,7 +35,7 @@ class add_any(napl_base):
         # the carry scale at the output
         self.scale = torch.nn.Parameter(torch.tensor(config['scale'], dtype=self.ntype), requires_grad=False)
         # accumulation offset
-        self.offset = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.offset = 0
         # accumulator for (PC - offset)
         self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         self.is_first_call = True
@@ -55,7 +55,7 @@ class add_any(napl_base):
                 entry = input.size()[dim]
 
             if self.mode == 'bipolar':
-                self.offset.data = (entry - self.scale)/2
+                self.offset = (entry - self.scale)/2
 
             self.is_first_call = False
 

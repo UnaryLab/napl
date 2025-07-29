@@ -5,5 +5,6 @@ from .inhibit import *
 from .max import *
 from .min import *
 from .mul import *
+from .sign_abs import *
 from .sqrt import *
 from .square import *

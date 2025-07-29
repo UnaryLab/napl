@@ -86,7 +86,7 @@ def napl_sim_timesteps(timestep_func):
     @wraps(timestep_func)
     def timesteps_wrapper(self, *args, **kwargs):
         assert 'timesteps' in kwargs, \
-            logger.error(f'Timesteps not specified in the arguments. Please provide "timesteps" as a keyword argument.')
+            logger.error(f'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
         verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
@@ -107,7 +107,7 @@ def napl_sim_timesteps_func(timestep_func):
     @wraps(timestep_func)
     def timesteps_wrapper(*args, **kwargs):
         assert 'timesteps' in kwargs, \
-            logger.error(f'Timesteps not specified in the arguments. Please provide "timesteps" as a keyword argument.')
+            logger.error(f'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
         verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs

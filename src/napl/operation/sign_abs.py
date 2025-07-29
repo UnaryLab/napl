@@ -1,0 +1,50 @@
+import torch
+
+from napl.utils import *
+from napl.base import napl_base
+from loguru import logger
+
+
+class sign_abs(napl_base):
+    """
+    This module 
+    1) calculates the sign and magnitude of bipolar spikes.
+    2) works for rate coding only.
+    An output sign bit of 0 means positive at the current timestep.
+    An output sign bit of 1 means negative at the current timestep.
+    """
+    def __init__(
+            self, 
+            config={
+                'mode' : 'bipolar',
+                'bitwidth' : 3,
+            }
+    ):
+        super().__init__()
+
+        # check config
+        check_config(config, ['mode', 'bitwidth'])
+        self.mode = check_mode(config)
+        self.name = check_name(config)
+
+        assert self.mode == 'bipolar', logger.error(f'Invalid mode: <{self.mode}>; legal values: <bipolar>.')
+        
+        self.bitwidth = config['bitwidth']
+
+        self.acc_max = 2**self.bitwidth - 1
+        self.acc_med = 2**(self.bitwidth - 1)
+        self.acc = torch.nn.Parameter(torch.zeros(1).fill_(self.acc_med).type(self.ntype), requires_grad=False)
+
+
+    def reset(self):
+        self.acc.data = torch.zeros(1).fill_(self.acc_med).type(self.ntype)
+    
+
+    def forward(self, input):
+        # update the accumulator based on input: +1 for input 1; -1 for input 0
+        # the accumulator saturates at min and max
+        self.acc.data = self.acc.add(input.mul(2).sub(1).type(self.ntype)).clamp(0, self.acc_max)
+        sign = torch.lt(self.acc, self.acc_med).type(torch.int8)
+        abs = sign ^ input.type(torch.int8)
+        return sign.type(self.stype), abs.type(self.stype)
+    
