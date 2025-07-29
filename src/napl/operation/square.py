@@ -7,9 +7,9 @@ from loguru import logger
 
 
 
-class square(napl_base):
+class square_delay(napl_base):
     """
-    This module is for unary square with and gate, supporting unipolar/bipolar.
+    This module is for unary square with AND gate and delay, supporting unipolar/bipolar.
     References:
     1) uGEMM: Unary Computing Architecture for GEMM Applications
     2) uGEMM: Unary Computing for GEMM Applications
