@@ -18,7 +18,7 @@ class sign_abs(napl_base):
                 'width' : 3,
             }
     ):
-        super().__init__(config, ['mode', 'width'])
+        super().__init__(config, ['width'], mode_required=False)
 
         self.width = config['width']
 

@@ -39,7 +39,6 @@ def test_sign_abs():
         'generator': 'sobol',
     }
     sign_abs_config={
-        'mode': 'bipolar',
         'width': 3
     }
     
