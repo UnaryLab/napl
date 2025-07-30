@@ -16,18 +16,15 @@ class sign_abs(napl_base):
     def __init__(
             self, 
             config={
-                'mode' : 'bipolar',
-                'bitwidth' : 3,
+                'width' : 3,
             }
     ):
-        super().__init__(config, ['mode', 'bitwidth'])
+        super().__init__(config, ['mode', 'width'])
 
-        assert self.mode == 'bipolar', logger.error(f'Invalid mode: <{self.mode}>; legal values: <bipolar>.')
-        
-        self.bitwidth = config['bitwidth']
+        self.width = config['width']
 
-        self.acc_max = 2**self.bitwidth - 1
-        self.acc_med = 2**(self.bitwidth - 1)
+        self.acc_max = 2**self.width - 1
+        self.acc_med = 2**(self.width - 1)
         self.acc = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype).fill_(self.acc_med), requires_grad=False)
 
 

@@ -41,7 +41,7 @@ def test_delay():
     }
     
     # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], shape=(10,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input = gen_rand_tensor(codec_config['mode'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_delay instance
     delay_inst = napl_delay(codec_config, delay_config).to(device)

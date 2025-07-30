@@ -18,7 +18,7 @@ def test_butterfly_spike():
         'timestep': 256,
         'generator': 'sobol',
     }
-    bitwidth = math.log2(codec_config['timestep'])
+    width = math.log2(codec_config['timestep'])
     mul_config = {
         'mode': 'bipolar',
         'timestep': 256,
@@ -27,19 +27,19 @@ def test_butterfly_spike():
     add_config = {
         'mode': 'bipolar',
         'scale': 3,
-        'bitwidth' : bitwidth+1,
+        'width' : width+1,
     }
     acc_config = codec_config
 
     batch_size = 1024
 
     # Generate random input tensors
-    x0r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
-    x0i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
-    x1r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
-    x1i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
-    wr  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
-    wi  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), bitwidth=bitwidth).type(global_config.ntype).to(device)
+    x0r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x0i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x1r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x1i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    wr  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    wi  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
 
     # Instantiate reference butterfly unit
     butterfly_binary_unit = butterfly_binary()

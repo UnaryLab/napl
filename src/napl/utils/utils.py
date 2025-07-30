@@ -346,11 +346,11 @@ def check_mode(config: dict):
     return mode
 
 
-def gen_rand_tensor(mode: str = 'unipolar', shape: tuple = (1,), bitwidth: int = 8):
+def gen_rand_tensor(mode: str = 'unipolar', shape: tuple = (1,), width: int = 8):
     """
     Generate a random fraction in the range [0, 1).
     """
-    data = (torch.rand(shape) * (2 ** bitwidth)).floor() / (2 ** bitwidth)
+    data = (torch.rand(shape) * (2 ** width)).floor() / (2 ** width)
     return data if mode == 'unipolar' else (data * 2 - 1)
 
 

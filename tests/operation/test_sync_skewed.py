@@ -13,7 +13,7 @@ def test_sync_skewed():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     sync_skewed_config={
-        'bitwidth': 3
+        'width': 3
     }
     
     sync_skewed_inst = sync_skewed(sync_skewed_config).to(device)

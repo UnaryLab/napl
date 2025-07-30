@@ -29,11 +29,11 @@ class delay(napl_base):
         if self.is_first_call:
             input_shape = list(input.shape)
             input_shape.insert(0, self.delay)
-            self.input_d.data = (torch.zeros(input_shape, dtype=self.stype, device=self.input_d.device))
+            self.input_d.data = torch.zeros(input_shape, dtype=self.stype, device=self.input_d.device)
             self.is_first_call = False
 
         output = self.input_d.data[-1]
         self.input_d.data = torch.roll(self.input_d, 1, dims=0)
-        self.input_d.data[0] = input
+        self.input_d.data[0] = input.clone().detach()
         return output
 

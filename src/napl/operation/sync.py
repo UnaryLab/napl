@@ -13,13 +13,13 @@ class sync_skewed(napl_base):
     def __init__(
             self, 
             config={
-                'bitwidth' : 2,
+                'width' : 2,
             }
     ):
-        super().__init__(config, ['bitwidth'], mode_required=False)
+        super().__init__(config, ['width'], mode_required=False)
 
-        self.bitwidth=config['bitwidth']
-        self.cnt_max = 2**self.bitwidth - 1
+        self.width=config['width']
+        self.cnt_max = 2**self.width - 1
         self.cnt = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         self.is_first_call = True
 

@@ -44,11 +44,11 @@ def test_uni2bi():
         'dim': 1,
     }
     uni2bi_config={
-        'bitwidth': 5,
+        'width': 5,
     }
     
     # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config1['mode'], shape=(1000,), bitwidth=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input = gen_rand_tensor(codec_config1['mode'], shape=(1000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_uni2bi instance
     uni2bi_inst = napl_uni2bi(codec_config1, codec_config2, uni2bi_config).to(device)

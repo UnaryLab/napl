@@ -13,9 +13,9 @@ def sweep_test():
             if filename.startswith('test_') and filename.endswith('.py'):
                 full_path = os.path.abspath(os.path.join(dirpath, filename))
                 print(f'Running: {full_path}')
-                with open(log_file, 'a') as f:
+                with open(log_file, 'w') as f:
                     subprocess.run(['python', full_path], stderr=f)
-
+    
 
 if __name__ == '__main__':
     sweep_test()

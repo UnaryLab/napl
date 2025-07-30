@@ -12,17 +12,17 @@ class bi2uni(napl_base):
     def __init__(
             self, 
             config={
-                'bitwidth' : 3,
+                'width' : 3,
             }
     ):
-        super().__init__(config, ['bitwidth'], mode_required=False)
+        super().__init__(config, ['width'], mode_required=False)
 
-        # bitwidth of the accumulator
-        self.bitwidth = config['bitwidth']
+        # width of the accumulator
+        self.width = config['width']
         # max value in the accumulator
-        self.acc_max = 2**(self.bitwidth-1) - 1
+        self.acc_max = 2**(self.width-1) - 1
         # min value in the accumulator
-        self.acc_min = -2**(self.bitwidth-1)
+        self.acc_min = -2**(self.width-1)
         self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
 
 

@@ -17,7 +17,7 @@ class decoder(napl_base):
 
         # initialize timestep and spike count
         self.timestep = config['timestep']
-        self.bitwidth = math.ceil(math.log2(self.timestep))
+        self.width = math.ceil(math.log2(self.timestep))
         
         self.timestep_cur = 0
         self.spike_count = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)

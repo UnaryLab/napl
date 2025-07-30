@@ -14,17 +14,17 @@ class add_any(napl_base):
             config={
                 'mode' : 'bipolar', 
                 'scale' : 2,
-                'bitwidth' : 10,
+                'width' : 10,
             }
         ):
-        super().__init__(config, ['mode', 'scale', 'bitwidth'], mode_required=True)
+        super().__init__(config, ['mode', 'scale', 'width'], mode_required=True)
 
-        # bitwidth of the accumulator
-        self.bitwidth = config['bitwidth']
+        # width of the accumulator
+        self.width = config['width']
         # max value in the accumulator
-        self.acc_max = 2**(self.bitwidth-1) - 1
+        self.acc_max = 2**(self.width-1) - 1
         # min value in the accumulator
-        self.acc_min = -2**(self.bitwidth-1)
+        self.acc_min = -2**(self.width-1)
         
         # the carry scale at the output
         self.scale = torch.nn.Parameter(torch.tensor(config['scale'], dtype=self.ntype), requires_grad=False)

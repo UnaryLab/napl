@@ -44,12 +44,12 @@ def test_bi2uni():
         'dim': 1,
     }
     bi2uni_config={
-        'bitwidth': 3,
+        'width': 3,
     }
     
     # Generate random inputs based on mode
     # all inputs shall be positive
-    input = gen_rand_tensor(codec_config2['mode'], shape=(1000,), bitwidth=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input = gen_rand_tensor(codec_config2['mode'], shape=(1000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_bi2uni instance
     bi2uni_inst = napl_bi2uni(codec_config1, codec_config2, bi2uni_config).to(device)

@@ -25,7 +25,7 @@ def test_encoder():
     assert spike_encoder.timestep == config['timestep'], f'Timestep should match.'
     assert spike_encoder.generator == config['generator'], f'Generator should match.'
 
-    input = gen_rand_tensor(config['mode'], shape=(1000,), bitwidth=math.log2(config['timestep'])).type(global_config.ntype)
+    input = gen_rand_tensor(config['mode'], shape=(1000,), width=math.log2(config['timestep'])).type(global_config.ntype)
 
     for _ in range(config['timestep']):
         spike = spike_encoder(input)

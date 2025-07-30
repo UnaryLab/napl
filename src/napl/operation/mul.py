@@ -60,14 +60,14 @@ class mul_csg(napl_base):
         
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
-        self.bitwidth = math.ceil(math.log2(self.timestep))
+        self.width = math.ceil(math.log2(self.timestep))
         self.generator = config['generator'].lower()
-        self.len = 2**self.bitwidth
+        self.len = 2**self.width
 
         # generate the number sequence
         # the sequence is used to compare with the input data
         # this is ntype tensor
-        self.num_seq = gen_num_seq(config={'bitwidth': self.bitwidth, 
+        self.num_seq = gen_num_seq(config={'width': self.width, 
                                         'generator': self.generator})
         
         # seq_idx is used later as an enable signal, get update every cycled

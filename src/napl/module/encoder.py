@@ -8,22 +8,22 @@ from pylfsr import LFSR
 
 
 
-def get_lfsr_seq(bitwidth=8, seed:int=None, taps:list=None) -> torch.tensor:
+def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
     """
-    return a lfsr sequence of length 2**bitwidth within [0, 1]
+    return a lfsr sequence of length 2**width within [0, 1]
     """
     if seed is None:
         # always start from a fixed seed if no seed is provided
         # this is to ensure the same sequence is generated every time
-        seed = [0 for _ in range(bitwidth-1)] + [1]
+        seed = [0 for _ in range(width-1)] + [1]
     else:
         # input seed is a integer, convert it to a list of binary bits
-        # modulo the seed to the bitwidth
-        seed = int(seed) % (2**bitwidth)
-        seed = [int(x) for x in np.binary_repr(seed, bitwidth=bitwidth)]
+        # modulo the seed to the width
+        seed = int(seed) % (2**width)
+        seed = [int(x) for x in np.binary_repr(seed, width=width)]
 
     if taps is None:
-        polylist = LFSR().get_fpolyList(m=bitwidth)
+        polylist = LFSR().get_fpolyList(m=width)
         poly = polylist[0]
     else:
         assert isinstance(taps, list) and len(taps) > 0, \
@@ -33,32 +33,32 @@ def get_lfsr_seq(bitwidth=8, seed:int=None, taps:list=None) -> torch.tensor:
     L = LFSR(fpoly=poly,initstate =seed)
 
     lfsr_seq = []
-    for i in range(2**bitwidth):
-        lfsr_seq.append(int(''.join(map(str, L.state)), 2)/2**bitwidth)
+    for i in range(2**width):
+        lfsr_seq.append(int(''.join(map(str, L.state)), 2)/2**width)
         L.next()
 
     return torch.tensor(lfsr_seq, dtype=global_config.ntype)
 
 
-def get_sysrand_seq(bitwidth=8):
+def get_sysrand_seq(width=8):
     """
-    return a system random sequence of length 2**bitwidth within [0, 1]
+    return a system random sequence of length 2**width within [0, 1]
     """
-    # return torch.randperm(2**bitwidth)/2**bitwidth
-    return torch.rand(2**bitwidth)
+    # return torch.randperm(2**width)/2**width
+    return torch.rand(2**width)
     
     
 def gen_num_seq(config={
-            'bitwidth' : 8, 
+            'width' : 8, 
             'generator' : 'Sobol'
         }):
     """
-    Return a number sequence of size 2**bitwidth, with each number being a number with [0, 1].
+    Return a number sequence of size 2**width, with each number being a number with [0, 1].
     """
 
-    bitwidth = config['bitwidth']
+    width = config['width']
     generator = config['generator'].lower()
-    seq_len = 2**bitwidth
+    seq_len = 2**width
 
     legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'tc_asc', 'tc_dec', 'tc01', 'tc10']
 
@@ -78,9 +78,9 @@ def gen_num_seq(config={
         # the output sequence is in a descending order
         num_seq = torch.tensor([x/seq_len for x in range(seq_len-1, -1, -1)])
     elif generator == 'lfsr':
-        num_seq = get_lfsr_seq(bitwidth=bitwidth, seed=config.get('seed', None), taps=config.get('taps', None))
+        num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
     elif generator == 'sys':
-        num_seq = get_sysrand_seq(bitwidth=bitwidth)
+        num_seq = get_sysrand_seq(width=width)
         
     return torch.nn.Parameter(num_seq.type(global_config.ntype), requires_grad=False)
     
@@ -118,13 +118,13 @@ class encoder(napl_base):
 
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
-        self.bitwidth = math.ceil(math.log2(self.timestep))
+        self.width = math.ceil(math.log2(self.timestep))
         self.generator = config['generator'].lower()
-        self.len = 2**self.bitwidth
+        self.len = 2**self.width
 
         # generate the number sequence
         # the sequence is used to compare with the input data
-        config_updated = {'bitwidth': self.bitwidth}
+        config_updated = {'width': self.width}
         config_updated.update(config)
         self.num_seq = gen_num_seq(config=config_updated)
         
