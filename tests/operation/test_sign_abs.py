@@ -44,7 +44,7 @@ def test_sign_abs():
     }
     
     # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], shape=(1000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input = gen_rand_tensor(codec_config['mode'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_sign_abs instance
     sign_abs_inst = napl_sign_abs(codec_config, sign_abs_config).to(device)
