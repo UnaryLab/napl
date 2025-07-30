@@ -35,7 +35,7 @@ class uni2bi(napl_base):
 
     def forward(self, input):
         # calculate (input+1)/2
-        # input bitstreams are [input, 1]
+        # input spike trains are [input, 1]
         self.accumulator.data = self.accumulator.add(input.add(1).type(self.ntype)).clamp(self.acc_min, self.acc_max)
         output = torch.ge(self.accumulator, 2).type(self.ntype)
         self.accumulator.sub_(output.mul(2)).clamp_(self.acc_min, self.acc_max)

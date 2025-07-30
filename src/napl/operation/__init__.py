@@ -7,8 +7,11 @@ from .jkff import *
 from .max import *
 from .min import *
 from .mul import *
+from .relu import *
+from .sigmoid import *
 from .sign_abs import *
-from .sync import *
 from .sqrt import *
 from .square import *
+from .sync import *
+from .tanh import *
 from .uni2bi import *
