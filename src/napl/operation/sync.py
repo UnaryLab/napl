@@ -1,7 +1,7 @@
 import torch
 
-from napl.base import napl_base
 from napl.utils import *
+from napl.base import napl_base
 
 
 class sync_skewed(napl_base):

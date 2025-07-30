@@ -1,6 +1,8 @@
 from .add import *
 from .bi2uni import *
 from .delay import *
+from .sync import *
+# div import syn
 from .div import *
 from .inhibit import *
 from .jkff import *
@@ -12,6 +14,5 @@ from .sigmoid import *
 from .sign_abs import *
 from .sqrt import *
 from .square import *
-from .sync import *
 from .tanh import *
 from .uni2bi import *

@@ -2,7 +2,6 @@ import torch
 
 from napl.utils import *
 from napl.base import napl_base
-from loguru import logger
 
 
 class sign_abs(napl_base):

@@ -12,7 +12,7 @@ class bi2uni(napl_base):
     def __init__(
             self, 
             config={
-                'width' : 3,
+                'width' : 2,
             }
     ):
         super().__init__(config, ['width'], mode_required=False)
