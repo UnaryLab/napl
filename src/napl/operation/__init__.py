@@ -1,6 +1,6 @@
 from .add import *
 from .bi2uni import *
-from .delay import *
+from .dff import *
 from .sync import *
 from .sign_abs import *
 from .inhibit import *

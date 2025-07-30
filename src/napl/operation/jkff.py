@@ -17,7 +17,7 @@ class jkff(napl_base):
         self.q = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
     
 
-    def reset(self):
+    def reset(self, verbose=False):
         self.q.data = torch.zeros(1, dtype=torch.int8, device=self.q.device)
 
     

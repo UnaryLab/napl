@@ -37,7 +37,7 @@ class accuracy(napl_base):
         self.error_flag = False
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the timestep and one count.
         """

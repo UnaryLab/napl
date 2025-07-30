@@ -26,7 +26,7 @@ class bi2uni(napl_base):
         self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the accumulator only.
         """

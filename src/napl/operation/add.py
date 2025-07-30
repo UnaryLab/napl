@@ -35,7 +35,7 @@ class add_any(napl_base):
         self.is_first_call = True
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the accumulator only.
         """

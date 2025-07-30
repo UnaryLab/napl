@@ -24,7 +24,7 @@ class sync_skewed(napl_base):
         self.is_first_call = True
 
         
-    def reset(self):
+    def reset(self, verbose=False):
         self.cnt.data = torch.zeros(1, dtype=self.ntype, device=self.cnt.device)
         self.is_first_call = True
 

@@ -24,7 +24,7 @@ class decoder(napl_base):
         self.spike_value = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         self.timestep_cur = 0
         self.spike_count.data = torch.zeros(1, dtype=self.ntype, device=self.spike_count.device)
         self.spike_value.data = torch.zeros(1, dtype=self.ntype, device=self.spike_value.device)

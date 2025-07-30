@@ -131,7 +131,7 @@ class encoder(napl_base):
         self.timestep_cur = 0
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the timestep and spike count.
         """

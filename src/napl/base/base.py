@@ -83,7 +83,7 @@ class napl_base(torch.nn.Module):
             if hasattr(module, 'reset'):
                 if verbose:
                     logger.info(f'    Reset module <{name}>.')
-                module.reset()
+                module.reset(verbose)
 
 
 def napl_sim_timesteps(timestep_func):

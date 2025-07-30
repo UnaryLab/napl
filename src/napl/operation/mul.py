@@ -81,7 +81,7 @@ class mul_csg(napl_base):
         self.is_first_call = True
 
     
-    def reset(self):
+    def reset(self, verbose=False):
         """
         Reset the seq_idx and seq_idx_inv.
         """

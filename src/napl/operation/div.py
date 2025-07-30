@@ -42,7 +42,7 @@ class div_cordiv(napl_base):
         self.is_first_call = True
         
 
-    def reset(self):
+    def reset(self, verbose=False):
         self.idx = 0
         self.buffer_q.data = torch.zeros(self.depth, dtype=self.stype, device=self.buffer_q.device)
         self.is_first_call = True

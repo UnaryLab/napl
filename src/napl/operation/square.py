@@ -2,12 +2,12 @@ import torch
 
 from napl.utils import *
 from napl.base import napl_base
-from napl.operation import delay
+from napl.operation import dff
 
 
-class square_delay(napl_base):
+class square_dff(napl_base):
     """
-    This module is for unary square with AND gate and delay, supporting unipolar/bipolar.
+    This module is for unary square with AND gate and dff, supporting unipolar/bipolar.
     References:
     1) uGEMM: Unary Computing Architecture for GEMM Applications
     2) uGEMM: Unary Computing for GEMM Applications
@@ -16,18 +16,18 @@ class square_delay(napl_base):
             self,
             config={
                 'mode': 'bipolar',
-                'delay': 1,
+                'depth': 1,
             }
         ):
         super().__init__(config, ['mode'], mode_required=True)
 
-        # the delay of input
-        self.delay = delay(config={'delay': config['delay']})
+        # the depth of input
+        self.dff = dff(config={'depth': config['depth']})
         
     
     def forward(self, input: torch.tensor):
         # input is a spike tensor
-        input_d = self.delay(input)
+        input_d = self.dff(input)
         # print(input, input_d)
         if self.mode == 'unipolar':
             return (input.type(torch.int8) & input_d.type(torch.int8)).type(self.stype)

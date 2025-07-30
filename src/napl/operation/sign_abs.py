@@ -27,7 +27,7 @@ class sign_abs(napl_base):
         self.acc = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype).fill_(self.acc_med), requires_grad=False)
 
 
-    def reset(self):
+    def reset(self, verbose=False):
         self.acc.data = torch.zeros(1, dtype=self.ntype, device=self.acc.device).fill_(self.acc_med)
     
 
