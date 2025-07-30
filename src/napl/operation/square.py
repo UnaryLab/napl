@@ -25,10 +25,6 @@ class square_delay(napl_base):
         self.delay = delay(config={'delay': config['delay']})
         
     
-    def reset(self):
-        self.delay.reset()
-
-    
     def forward(self, input: torch.tensor):
         # input is a spike tensor
         input_d = self.delay(input)

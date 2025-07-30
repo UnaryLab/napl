@@ -10,8 +10,8 @@ from .min import *
 from .mul import *
 from .relu import *
 from .sigmoid import *
-from .sqrt import *
 from .square import *
 from .tanh import *
 from .uni2bi import *
 from .div import *
+from .sqrt import *

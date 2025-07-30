@@ -97,8 +97,7 @@ class div_iscb(napl_base):
 
         # for cordiv kernel, the config is fixed to optimal directly
         # this actually leads to 01 sequence
-        config_kn = {'depth': 2, 'generator': 'sobol'}
-        self.cordiv_kernel = div_cordiv(config_kn)
+        self.cordiv_kernel = div_cordiv({'depth': 2, 'generator': 'sobol'})
 
         if self.mode == 'bipolar':
             # fix width to optimal 3
@@ -110,7 +109,7 @@ class div_iscb(napl_base):
             # fix width to optimal 3
             self.uni2bi_quotient = uni2bi({'width': 3})
         
-        
+
     def bipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
         # dividend and divisor are both spike tensors
         sign_dividend, abs_dividend = self.sign_abs_dividend(dividend)

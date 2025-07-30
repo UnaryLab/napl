@@ -27,6 +27,8 @@ class accuracy(napl_base):
         self.spike_error_abs_max = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         # absolute min error
         self.spike_error_abs_min = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+        # mean error
+        self.spike_error_avg = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         # mean absolute error
         self.spike_error_mae = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         # root mean square error
@@ -45,6 +47,7 @@ class accuracy(napl_base):
         self.spike_error.data = torch.zeros(1, device=self.spike_error.device)
         self.spike_error_abs_max.data = torch.zeros(1, device=self.spike_error_abs_max.device)
         self.spike_error_abs_min.data = torch.zeros(1, device=self.spike_error_abs_min.device)
+        self.spike_error_avg.data = torch.zeros(1, device=self.spike_error_avg.device)
         self.spike_error_mae.data = torch.zeros(1, device=self.spike_error_mae.device)
         self.spike_error_rmse.data = torch.zeros(1, device=self.spike_error_rmse.device)
         self.error_flag = False
@@ -66,6 +69,7 @@ class accuracy(napl_base):
         self.spike_error.data = self.spike_value.sub(reference)
         self.spike_error_abs_max.data = torch.max(self.spike_error.abs())
         self.spike_error_abs_min.data = torch.min(self.spike_error.abs())
+        self.spike_error_avg.data = self.spike_error.mean()
         self.spike_error_mae.data = self.spike_error.abs().mean()
         self.spike_error_rmse.data = torch.sqrt(self.spike_error.abs().pow(2).mean())
 
@@ -73,6 +77,7 @@ class accuracy(napl_base):
             logger.info(f'Accuracy report for accuracy instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
             logger.info(f'    Max absolute error:     <{self.spike_error_abs_max.item()}>')
             logger.info(f'    Min absolute error:     <{self.spike_error_abs_min.item()}>')
+            logger.info(f'    Mean error:             <{self.spike_error_mae.item()}>')
             logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
             logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
             logger.info(f'')
@@ -83,12 +88,14 @@ def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
     spike_error = spike_value.sub(reference)
     spike_error_abs_max = torch.max(spike_error.abs())
     spike_error_abs_min = torch.min(spike_error.abs())
+    spike_error_avg = spike_error.mean()
     spike_error_mae = spike_error.abs().mean()
     spike_error_rmse = torch.sqrt(spike_error.abs().pow(2).mean())
 
     logger.info(f'Accuracy report: ')
     logger.info(f'    Max absolute error:     <{spike_error_abs_max.item()}>')
     logger.info(f'    Min absolute error:     <{spike_error_abs_min.item()}>')
+    logger.info(f'    Mean error:             <{spike_error_avg.item()}>')
     logger.info(f'    Mean absolute error:    <{spike_error_mae.item()}>')
     logger.info(f'    Root mean square error: <{spike_error_rmse.item()}>')
     logger.info(f'')
