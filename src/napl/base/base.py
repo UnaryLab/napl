@@ -4,7 +4,7 @@ import torch
 
 from loguru import logger
 from dataclasses import dataclass
-from napl.utils import read_yaml
+from napl.utils import *
 from functools import wraps
 
 
@@ -55,11 +55,18 @@ class napl_base(torch.nn.Module):
     Base class for all NAPL modules.
     This class initializes the global configuration and provides a common interface for all modules.
     """
-    def __init__(self):
+    def __init__(self, config: dict={}, key_list: list=[], mode_required: bool=False):
         super().__init__()
         # Load global configuration
         self.stype = global_config.stype
         self.ntype = global_config.ntype
+
+        # check config
+        if mode_required is True:
+            assert 'mode' in config, logger.error(f'Missing key <mode> in the input configuration.')
+        check_config(config, key_list)
+        self.mode = check_mode(config)
+        self.name = check_name(config)
 
 
     def reset(self, verbose=False):

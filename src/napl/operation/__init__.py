@@ -1,4 +1,5 @@
 from .add import *
+from .bi2uni import *
 from .delay import *
 from .div import *
 from .inhibit import *
@@ -7,5 +8,7 @@ from .max import *
 from .min import *
 from .mul import *
 from .sign_abs import *
+from .sync import *
 from .sqrt import *
 from .square import *
+from .uni2bi import *

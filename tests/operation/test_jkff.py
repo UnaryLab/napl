@@ -1,4 +1,4 @@
-import torch, math
+import torch
 
 from napl.base import global_config
 from napl.utils import *
@@ -14,15 +14,17 @@ def test_jkff():
 
     jkff_inst = jkff().to(device)
 
-    j = torch.tensor([[0., 0., 1., 1.]]).type(global_config.ntype).to(device)
-    k = torch.tensor([[0., 1., 0., 1.]]).type(global_config.ntype).to(device)
+    j = torch.tensor([[0., 0., 1., 1.]]).type(global_config.stype).to(device)
+    k = torch.tensor([[0., 1., 0., 1.]]).type(global_config.stype).to(device)
 
     print(jkff_inst(j,k))
 
-    j = torch.tensor([[1., 1., 0., 0.]]).type(global_config.ntype).to(device)
-    k = torch.tensor([[1., 0., 1., 0.]]).type(global_config.ntype).to(device)
+    j = torch.tensor([[1., 1., 0., 0.]]).type(global_config.stype).to(device)
+    k = torch.tensor([[1., 0., 1., 0.]]).type(global_config.stype).to(device)
 
     print(jkff_inst(j,k))
+
+    jkff_inst.reset()
 
     print('Test passed.')
 

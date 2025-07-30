@@ -61,6 +61,8 @@ def test_mul_and():
     # report the error
     report_error(mul_inst.decoder.spike_value, r_value)
 
+    mul_inst.reset()
+    
     print('Test passed.')
 
 

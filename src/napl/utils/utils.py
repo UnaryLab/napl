@@ -338,10 +338,11 @@ def check_mode(config: dict):
     Check if mode is legal.
     """
     mode = config.get('mode', None)
-    assert isinstance(mode, str), logger.error(f'Invalid mode: <{mode}>; mode should be a string.')
-    mode = mode.lower()
-    legal_modes = ['unipolar', 'bipolar']
-    assert mode in legal_modes, logger.error(f'Invalid mode: <{mode}>; legal values: <{str(legal_modes)}>.')
+    if mode is not None:
+        assert isinstance(mode, str), logger.error(f'Invalid mode: <{mode}>; mode should be a string.')
+        mode = mode.lower()
+        legal_modes = ['unipolar', 'bipolar']
+        assert mode in legal_modes, logger.error(f'Invalid mode: <{mode}>; legal values: <{str(legal_modes)}>.')
     return mode
 
 

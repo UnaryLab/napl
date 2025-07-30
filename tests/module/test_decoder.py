@@ -36,7 +36,11 @@ def test_decoder():
     spike_accuracy_value = spike_accuracy.spike_value
     spike_decoder_value = spike_decoder.spike_value
     assert (spike_accuracy_value == spike_decoder_value).all, f'Spike accuracy value should match spike decoder value.'
-
+    
+    spike_encoder.reset()
+    spike_decoder.reset()
+    spike_accuracy.reset()
+    
     print('Test passed.')
 
 

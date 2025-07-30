@@ -19,12 +19,7 @@ class square_delay(napl_base):
                 'delay': 1,
             }
         ):
-        super().__init__()
-
-        # check config
-        check_config(config, ['mode'])
-        self.mode = check_mode(config)
-        self.name = check_name(config)
+        super().__init__(config, ['mode'], mode_required=True)
 
         # the delay of input
         self.delay = delay(config={'delay': config['delay']})

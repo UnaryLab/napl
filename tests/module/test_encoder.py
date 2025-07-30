@@ -34,10 +34,9 @@ def test_encoder():
 
     spike_accuracy.report_error(input, verbose=True)
 
-
-
-
-
+    spike_encoder.reset()
+    spike_accuracy.reset()
+    
     print('Test passed.')
 
 

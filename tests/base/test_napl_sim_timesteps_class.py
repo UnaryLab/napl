@@ -40,6 +40,8 @@ def test_napl_sim_timesteps_class():
 
     report_error(codec_inst.decoder.spike_value, input)
 
+    codec_inst.reset()
+    
     print('Test passed.')
 
 

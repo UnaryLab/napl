@@ -14,15 +14,9 @@ class accuracy(napl_base):
             self, 
             config={
                 'mode' : 'bipolar',
-                'name' : 'accuracy_inst',
             }
         ):
-        super().__init__()
-
-        # check config
-        check_config(config, ['mode'])
-        self.mode = check_mode(config)
-        self.name = check_name(config)
+        super().__init__(config, ['mode'])
 
         self.timestep_cur = 0
         self.spike_count = torch.nn.Parameter(torch.zeros(1), requires_grad=False)

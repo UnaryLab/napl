@@ -59,6 +59,8 @@ def test_accuracy():
     mul_inst.accuracy.report_error(r_value, verbose=True)
     report_error(mul_inst.decoder.spike_value, r_value)
 
+    mul_inst.reset()
+    
     print('Test passed.')
 
 

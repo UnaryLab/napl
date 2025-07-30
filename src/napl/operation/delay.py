@@ -12,11 +12,7 @@ class delay(napl_base):
             self,
             config={'delay': 1}
         ):
-        super().__init__()
-
-        # check config
-        check_config(config, ['delay'])
-        self.name = check_name(config)
+        super().__init__(config, ['delay'], mode_required=False)
 
         self.delay = config['delay']
         self.input_d = torch.nn.Parameter(torch.zeros(self.delay, dtype=self.stype), requires_grad=False)

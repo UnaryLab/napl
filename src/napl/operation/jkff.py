@@ -10,12 +10,9 @@ class jkff(napl_base):
     """
     def __init__(
             self,
-            config={'name': 'jkff'}
+            config={}
         ):
-        super().__init__()
-
-        # check config
-        self.name = check_name(config)
+        super().__init__(config, [], mode_required=False)
 
         self.jkff = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
     

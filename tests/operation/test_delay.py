@@ -53,6 +53,8 @@ def test_delay():
     # report the error
     report_error(delay_inst.decoder.spike_value, r_value)
 
+    delay_inst.reset()
+    
     print('Test passed.')
 
 

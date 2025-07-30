@@ -46,14 +46,16 @@ def test_square_delay():
     input = gen_rand_tensor(codec_config['mode'], shape=(1000,), bitwidth=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_square_delay instance
-    square_inst = napl_square_delay(codec_config, square_config).to(device)
-    square_inst(input, timesteps=codec_config['timestep'])
+    square_delay_inst = napl_square_delay(codec_config, square_config).to(device)
+    square_delay_inst(input, timesteps=codec_config['timestep'])
 
     # calculate the reference output
     r_value = input * input
 
     # report the error
-    report_error(square_inst.decoder.spike_value, r_value)
+    report_error(square_delay_inst.decoder.spike_value, r_value)
+
+    square_delay_inst.reset()
 
     print('Test passed.')
 

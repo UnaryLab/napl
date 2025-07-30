@@ -20,14 +20,9 @@ class mul_and(napl_base):
                 'mode': 'bipolar',
             }
         ):
-        super().__init__()
+        super().__init__(config, ['mode'], mode_required=True)
 
-        # check config
-        check_config(config, ['mode'])
-        self.mode = check_mode(config)
-        self.name = check_name(config)
-        
-    
+
     def reset(self):
         pass
 

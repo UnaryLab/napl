@@ -87,7 +87,7 @@ def gen_num_seq(config={
 
 def input_scale(input, quantile=1):
     """
-    Scale input data to [-1, 1] in a symmetric manner, which meets bipolar/unipolar bitstream requirements.
+    Scale input data to [-1, 1] in a symmetric manner, which meets bipolar/unipolar requirements.
     The remaining data count for 'quantile' quantile of the total data.
     The input quantile needs to be within (0, 1].
     """
@@ -114,12 +114,7 @@ class encoder(napl_base):
                 'generator': 'sobol',
                 }
         ):
-        super().__init__()
-
-        # check config
-        check_config(config, ['mode', 'timestep', 'generator'])
-        self.mode = check_mode(config)
-        self.name = check_name(config)
+        super().__init__(config, ['mode', 'timestep', 'generator'], mode_required=True)
 
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
