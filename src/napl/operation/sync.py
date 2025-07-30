@@ -13,7 +13,7 @@ class sync_skewed(napl_base):
     def __init__(
             self, 
             config={
-                'width' : 2,
+                'width' : 3,
             }
     ):
         super().__init__(config, ['width'], mode_required=False)
