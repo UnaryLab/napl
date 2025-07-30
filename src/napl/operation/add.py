@@ -21,11 +21,10 @@ class add_any(napl_base):
 
         # bitwidth of the accumulator
         self.bitwidth = config['bitwidth']
-
         # max value in the accumulator
-        self.acc_max = 2**(self.bitwidth-1)
+        self.acc_max = 2**(self.bitwidth-1) - 1
         # min value in the accumulator
-        self.acc_min = -2**(self.bitwidth-1) + 1
+        self.acc_min = -2**(self.bitwidth-1)
         
         # the carry scale at the output
         self.scale = torch.nn.Parameter(torch.tensor(config['scale'], dtype=self.ntype), requires_grad=False)
