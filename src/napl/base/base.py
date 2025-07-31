@@ -55,17 +55,17 @@ class napl_base(torch.nn.Module):
     Base class for all NAPL modules.
     This class initializes the global configuration and provides a common interface for all modules.
     """
-    def __init__(self, config: dict={}, key_list: list=[], mode_required: bool=False):
+    def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
         super().__init__()
         # Load global configuration
         self.stype = global_config.stype
         self.ntype = global_config.ntype
 
         # check config
-        if mode_required is True:
+        if polarity_required is True:
             assert 'polarity' in config, logger.error(f'Missing key <polarity> in the input configuration.')
         check_config(config, key_list)
-        self.polarity = check_mode(config)
+        self.polarity = check_polarity(config)
         self.name = check_name(config)
         
         self.timestep_cur = 0

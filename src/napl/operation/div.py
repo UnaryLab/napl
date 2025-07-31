@@ -24,7 +24,7 @@ class div_cordiv(napl_base):
             'generator' : 'Sobol',
         }
     ):
-        super().__init__(config, ['depth', 'generator'], mode_required=False)
+        super().__init__(config, ['depth', 'generator'], polarity_required=False)
 
         self.depth = config['depth']
         assert math.log2(self.depth) == math.ceil(math.log2(self.depth)), logger.error(f'Input depth <{self.depth}> is not power of 2.')
@@ -92,7 +92,7 @@ class div_iscb(napl_base):
             'polarity' : 'bipolar',
         }
     ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         # fix width to optimal 3
         self.sync = sync_skewed({'width': 3})

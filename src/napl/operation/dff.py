@@ -12,7 +12,7 @@ class dff(napl_base):
             self,
             config={'depth': 1}
         ):
-        super().__init__(config, ['depth'], mode_required=False)
+        super().__init__(config, ['depth'], polarity_required=False)
 
         self.depth = config['depth']
         self.reg = torch.nn.Parameter(torch.zeros(self.depth, dtype=self.stype), requires_grad=False)

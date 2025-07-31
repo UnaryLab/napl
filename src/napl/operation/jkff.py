@@ -12,7 +12,7 @@ class jkff(napl_base):
             self,
             config={}
         ):
-        super().__init__(config, [], mode_required=False)
+        super().__init__(config, [], polarity_required=False)
 
         self.q = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
     

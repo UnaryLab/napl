@@ -114,7 +114,7 @@ class encoder(napl_base):
                 'generator': 'sobol',
                 }
         ):
-        super().__init__(config, ['polarity', 'timestep', 'generator'], mode_required=True)
+        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')

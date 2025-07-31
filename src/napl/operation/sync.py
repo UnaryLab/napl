@@ -16,7 +16,7 @@ class sync_skewed(napl_base):
                 'width' : 3,
             }
     ):
-        super().__init__(config, ['width'], mode_required=False)
+        super().__init__(config, ['width'], polarity_required=False)
 
         self.width=config['width']
         self.cnt_max = 2**self.width - 1

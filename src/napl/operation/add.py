@@ -17,7 +17,7 @@ class add_any(napl_base):
                 'width' : 10,
             }
         ):
-        super().__init__(config, ['polarity', 'scale', 'width'], mode_required=True)
+        super().__init__(config, ['polarity', 'scale', 'width'], polarity_required=True)
 
         # width of the accumulator
         self.width = config['width']

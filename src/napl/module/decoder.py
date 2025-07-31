@@ -13,7 +13,7 @@ class decoder(napl_base):
                 'timestep': 256,
                 }
         ):
-        super().__init__(config, ['polarity', 'timestep'], mode_required=True)
+        super().__init__(config, ['polarity', 'timestep'], polarity_required=True)
 
         # initialize timestep and spike count
         self.timestep = config['timestep']

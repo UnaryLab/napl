@@ -19,7 +19,7 @@ class sqrt_tracejkff(napl_base):
             'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         self.jkff = jkff()
         if self.polarity == 'bipolar':
@@ -63,7 +63,7 @@ class sqrt_traceiscb(napl_base):
             'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         # for cordiv kernel, the config is fixed to optimal directly
         # this actually leads to 01 sequence
@@ -125,7 +125,7 @@ class sqrt_emit(napl_base):
             'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         self.emit_out = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
 

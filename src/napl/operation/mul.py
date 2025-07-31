@@ -20,7 +20,7 @@ class mul_and(napl_base):
                 'polarity': 'bipolar',
             }
         ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
 
     def reset(self, verbose=False):
@@ -52,13 +52,8 @@ class mul_csg(napl_base):
                 'generator': 'sobol',
             }
         ):
-        super().__init__()
+        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
-        # check config
-        check_config(config, ['polarity', 'timestep', 'generator'])
-        self.polarity = check_mode(config)
-        self.name = check_name(config)
-        
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
         self.width = math.ceil(math.log2(self.timestep))

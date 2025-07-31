@@ -19,7 +19,7 @@ class square_dff(napl_base):
                 'depth': 1,
             }
         ):
-        super().__init__(config, ['polarity'], mode_required=True)
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         # the depth of input
         self.dff = dff(config={'depth': config['depth']})

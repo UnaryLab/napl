@@ -333,7 +333,7 @@ def check_config(config: dict, key_list: list):
         assert key in config, logger.error(f'Missing key <{key}> in the input configuration.')
 
 
-def check_mode(config: dict):
+def check_polarity(config: dict):
     """
     Check if polarity is legal.
     """
@@ -341,8 +341,8 @@ def check_mode(config: dict):
     if polarity is not None:
         assert isinstance(polarity, str), logger.error(f'Invalid polarity: <{polarity}>; polarity should be a string.')
         polarity = polarity.lower()
-        legal_modes = ['unipolar', 'bipolar']
-        assert polarity in legal_modes, logger.error(f'Invalid polarity: <{polarity}>; legal values: <{str(legal_modes)}>.')
+        legal_polarity = ['unipolar', 'bipolar']
+        assert polarity in legal_polarity, logger.error(f'Invalid polarity: <{polarity}>; legal values: <{str(legal_polarity)}>.')
     return polarity
 
 
