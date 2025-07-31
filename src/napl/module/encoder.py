@@ -62,7 +62,7 @@ def gen_num_seq(config={
 
     legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'tc_asc', 'tc_dec', 'tc01', 'tc10']
 
-    assert generator in ['sobol', 'race', 'lfsr', 'sys', 'rc', 'tc', 'race10', 'tc10'], \
+    assert generator in legal_rngs, \
         logger.error(f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.')
     
     if (generator == 'sobol') or (generator == 'rc'):

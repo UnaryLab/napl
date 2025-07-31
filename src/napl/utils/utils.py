@@ -350,8 +350,26 @@ def gen_rand_tensor(mode: str = 'unipolar', shape: tuple = (1,), width: int = 8)
     """
     Generate a random fraction in the range [0, 1).
     """
-    data = (torch.rand(shape) * (2 ** width)).floor() / (2 ** width)
-    return data if mode == 'unipolar' else (data * 2 - 1)
+    prob = torch.rand(shape)
+    if mode == 'unipolar':
+        data = prob
+        return (data * (2 ** width)).floor() / (2 ** width)
+    else:
+        data = (prob * 2 - 1)
+        return (data * (2 ** (width - 1))).floor() / (2 ** (width - 1))
+
+
+def gen_arange_tensor(mode: str = 'unipolar', width: int = 8):
+    """
+    Generate all fraction in the range [0, 1).
+    """
+    prob = torch.arange(2 ** width) / (2 ** width)
+    if mode == 'unipolar':
+        data = prob
+        return (data * (2 ** width)).floor() / (2 ** width)
+    else:
+        data = (prob * 2 - 1)
+        return (data * (2 ** (width - 1))).floor() / (2 ** (width - 1))
 
 
 def check_name(config: dict):
