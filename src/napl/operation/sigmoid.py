@@ -7,7 +7,7 @@ from napl.operation import add_any
 
 class sigmoid_hard(napl_base):
     """
-    This is a fsu scaled addition (input+1)/2.
+    This is a scaled addition (input+1)/2.
     It works for both unipolar and bipolar spike trains.
     """
     def __init__(
