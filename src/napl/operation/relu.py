@@ -67,8 +67,9 @@ class relu_sat(napl_base):
 
     def forward(self, input):
         self.tick()
-        # check whether acc is larger than or equal to half.
+        # sub_1 moves input from [-1, 1] to [-1, 0]
         sub_1_out = self.sub_1(torch.stack([input, torch.zeros_like(input)], dim=0), dim=0)
+        # ad_1 moves input from [-1, 0] to [0, 1]
         output = self.add_1(torch.stack([sub_1_out, torch.ones_like(input)], dim=0), dim=0)
         return output
     
