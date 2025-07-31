@@ -35,7 +35,7 @@ def test_sqrt_tracejkff():
         'mode': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
-        'dim': 1,
+        'dim': 1, # dim = 4 is good for unipolar
     }
     sqrt_tracejkff_config={
         'mode': 'bipolar',
