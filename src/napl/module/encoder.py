@@ -128,8 +128,6 @@ class encoder(napl_base):
         config_updated.update(config)
         self.num_seq = gen_num_seq(config=config_updated)
         
-        self.timestep_cur = 0
-
 
     def reset(self, verbose=False):
         """
@@ -139,15 +137,14 @@ class encoder(napl_base):
         
 
     def forward(self, input: torch.Tensor):
+        self.tick()
         # use gt to generate the spike
         # if input is 0, then a all 0 spike train is generated
         # if input is 1, then one spike in the spike train will be 0
-        self.timestep_cur = self.timestep_cur % self.len
         if self.mode == 'bipolar':
             prob = (input + 1)/2
         elif self.mode == 'unipolar':
             prob = input
-        spike = torch.gt(prob, self.num_seq[self.timestep_cur]).type(self.stype)
-        self.timestep_cur += 1
+        spike = torch.gt(prob, self.num_seq[(self.timestep_cur-1) % self.len]).type(self.stype)
         return spike
         

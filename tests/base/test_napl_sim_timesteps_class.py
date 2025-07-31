@@ -10,14 +10,13 @@ class codec(napl_base):
         super().__init__()
         self.encoder = encoder(config)
         self.decoder = decoder(config)
-        self.timestep_cur = 0
 
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
+        self.tick()
         spike = self.encoder(input)
         self.decoder(spike)
-        self.timestep_cur += 1
         # print(f'Timestep {self.timestep_cur} processed.')
         assert self.timestep_cur == self.encoder.timestep_cur == self.decoder.timestep_cur, \
             f'Timestep mismatch: {self.timestep_cur}, {self.encoder.timestep_cur}, {self.decoder.timestep_cur}.'

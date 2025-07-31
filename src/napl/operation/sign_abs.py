@@ -28,10 +28,12 @@ class sign_abs(napl_base):
 
 
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.acc.data = torch.zeros(1, dtype=self.ntype, device=self.acc.device).fill_(self.acc_med)
     
 
     def forward(self, input):
+        self.tick()
         # update the accumulator based on input: +1 for input 1; -1 for input 0
         # the accumulator saturates at min and max
         self.acc.data = self.acc.add(input.mul(2).sub(1).type(self.ntype)).clamp(0, self.acc_max)

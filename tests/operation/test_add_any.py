@@ -58,6 +58,7 @@ def test_add_any():
     # report the error
     report_error(add_any_inst.decoder.spike_value, r_value)
 
+    assert add_any_inst.add_any.timestep_cur == codec_config['timestep']
     add_any_inst.reset()
     
     print('Test passed.')

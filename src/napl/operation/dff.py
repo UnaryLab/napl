@@ -20,11 +20,13 @@ class dff(napl_base):
 
     
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.reg.data = torch.zeros(self.depth, dtype=self.stype, device=self.reg.device)
         self.is_first_call = True
 
     
     def forward(self, input: torch.tensor):
+        self.tick()
         # input is a spike tensor
         if self.is_first_call:
             input_shape = list(input.shape)

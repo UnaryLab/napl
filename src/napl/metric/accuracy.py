@@ -18,7 +18,6 @@ class accuracy(napl_base):
         ):
         super().__init__(config, ['mode'])
 
-        self.timestep_cur = 0
         self.spike_count = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         self.spike_value = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         self.spike_error = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
@@ -54,8 +53,8 @@ class accuracy(napl_base):
     
 
     def forward(self, spike: torch.Tensor):
+        self.tick()
         self.error_flag = True
-        self.timestep_cur += 1
         # accuracy uses torch.float format to avoid overflow
         self.spike_count.data = self.spike_count.add(spike.type(torch.float))
         self.spike_value.data = self.spike_count.div(self.timestep_cur)

@@ -55,6 +55,7 @@ def test_shiftreg():
     # report the error
     report_error(shiftreg_inst.decoder.spike_value, r_value)
 
+    assert shiftreg_inst.shiftreg.timestep_cur == codec_config['timestep']
     shiftreg_inst.reset()
     
     print('Test passed.')

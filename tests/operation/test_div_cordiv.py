@@ -72,6 +72,7 @@ def test_div_cordiv():
     # report the error
     report_error(div_cordiv_inst.decoder.spike_value, r_value)
 
+    assert div_cordiv_inst.div_cordiv.timestep_cur == codec_config1['timestep']
     div_cordiv_inst.reset()
     
     print('Test passed.')

@@ -71,6 +71,7 @@ def test_div_iscb():
     # report the error
     report_error(div_iscb_inst.decoder.spike_value, r_value)
 
+    assert div_iscb_inst.div_iscb.timestep_cur == codec_config1['timestep']
     div_iscb_inst.reset()
     
     print('Test passed.')

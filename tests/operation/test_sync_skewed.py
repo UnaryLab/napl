@@ -73,6 +73,7 @@ def test_sync_skewed():
     report_error(sync_skewed_inst.decoder0.spike_value, r_value0)
     report_error(sync_skewed_inst.decoder1.spike_value, r_value1)
 
+    assert sync_skewed_inst.sync_skewed.timestep_cur == codec_config1['timestep']
     sync_skewed_inst.reset()
     
     print('Test passed.')

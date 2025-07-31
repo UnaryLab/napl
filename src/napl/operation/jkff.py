@@ -18,10 +18,12 @@ class jkff(napl_base):
     
 
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.q.data = torch.zeros(1, dtype=torch.int8, device=self.q.device)
 
     
     def forward(self, input_j: torch.tensor, input_k: torch.tensor):
+        self.tick()
         j0 = torch.eq(input_j, 0).type(torch.int8)
         j1 = 1 - j0
         k0 = torch.eq(input_k, 0).type(torch.int8)

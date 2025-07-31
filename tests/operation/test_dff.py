@@ -53,6 +53,7 @@ def test_dff():
     # report the error
     report_error(dff_inst.decoder.spike_value, r_value)
 
+    assert dff_inst.dff.timestep_cur == codec_config['timestep']
     dff_inst.reset()
     
     print('Test passed.')

@@ -22,6 +22,7 @@ class shiftreg(napl_base):
 
     
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.reg.data = torch.zeros(self.depth, dtype=self.stype, device=self.reg.device)
         for i in range(self.depth):
             self.reg[i].fill_(i%2)
@@ -29,6 +30,7 @@ class shiftreg(napl_base):
 
     
     def forward(self, input: torch.tensor):
+        self.tick()
         # input is a spike tensor
         if self.is_first_call:
             input_shape = list(input.shape)

@@ -52,6 +52,7 @@ def test_mul_csg():
     # report the error
     report_error(mul_csg_inst.decoder.spike_value, r_value)
 
+    assert mul_csg_inst.mul_csg.timestep_cur == codec_config['timestep']
     mul_csg_inst.reset()
 
     print('Test passed.')

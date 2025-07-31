@@ -30,10 +30,12 @@ class bi2uni(napl_base):
         """
         Reset the accumulator only.
         """
+        self.timestep_cur = 0
         self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
 
 
     def forward(self, input):
+        self.tick()
         # calculate (2*input-1)/1
         # input spike trains are [input, input, 0]
         # self.accumulator.data = self.accumulator.add(input.mul(2).sub(1).type(self.ntype)).clamp(self.acc_min, self.acc_max)

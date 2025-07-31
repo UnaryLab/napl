@@ -61,6 +61,7 @@ def test_bi2uni():
     # report the error
     report_error(bi2uni_inst.decoder.spike_value, r_value)
 
+    assert bi2uni_inst.bi2uni.timestep_cur == codec_config1['timestep']
     bi2uni_inst.reset()
 
     print('Test passed.')

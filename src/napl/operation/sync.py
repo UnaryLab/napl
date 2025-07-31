@@ -25,11 +25,13 @@ class sync_skewed(napl_base):
 
         
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.cnt.data = torch.zeros(1, dtype=self.ntype, device=self.cnt.device)
         self.is_first_call = True
 
 
     def forward(self, input_1, input_2):
+        self.tick()
         # input_1 and input_2 are spike tensors
         # this class assume input 1 is smaller than input 2, and input 2 is kept unchanged at output
 

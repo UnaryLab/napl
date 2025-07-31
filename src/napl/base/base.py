@@ -67,6 +67,12 @@ class napl_base(torch.nn.Module):
         check_config(config, key_list)
         self.mode = check_mode(config)
         self.name = check_name(config)
+        
+        self.timestep_cur = 0
+
+
+    def tick(self):
+        self.timestep_cur += 1
 
 
     def reset(self, verbose=False):

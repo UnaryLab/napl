@@ -19,7 +19,6 @@ class decoder(napl_base):
         self.timestep = config['timestep']
         self.width = math.ceil(math.log2(self.timestep))
         
-        self.timestep_cur = 0
         self.spike_count = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         self.spike_value = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
 
@@ -31,8 +30,8 @@ class decoder(napl_base):
     
     
     def forward(self, spike: torch.Tensor):
+        self.tick()
         # get the spike value at the current timestep
-        self.timestep_cur += 1
         assert self.timestep_cur <= self.timestep, \
             logger.error(f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.')
         self.spike_count.data = self.spike_count.add(spike.type(self.ntype))

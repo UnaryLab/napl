@@ -39,11 +39,13 @@ class add_any(napl_base):
         """
         Reset the accumulator only.
         """
+        self.timestep_cur = 0
         self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
         self.is_first_call = True
 
 
     def forward(self, input, entry=None, dim=-1):
+        self.tick()
         if self.is_first_call:
             if entry is None:
                 entry = input.size()[dim]

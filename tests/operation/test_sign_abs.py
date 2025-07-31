@@ -60,6 +60,7 @@ def test_sign_abs():
     report_error(sign_abs_inst.decoder_sign.spike_value, r_value_sign)
     report_error(sign_abs_inst.decoder_abs.spike_value, r_value_abs)
 
+    assert sign_abs_inst.sign_abs.timestep_cur == codec_config['timestep']
     sign_abs_inst.reset()
 
     print('Test passed.')

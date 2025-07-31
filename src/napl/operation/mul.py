@@ -23,11 +23,12 @@ class mul_and(napl_base):
         super().__init__(config, ['mode'], mode_required=True)
 
 
-    def reset(self):
-        pass
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
 
     
     def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+        self.tick()
         # input_0 is a spike tensor
         # input_1 is a spike tensor
         if self.mode == 'unipolar':
@@ -85,6 +86,7 @@ class mul_csg(napl_base):
         """
         Reset the seq_idx and seq_idx_inv.
         """
+        self.timestep_cur = 0
         self.seq_idx.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx.device)
         if self.mode == 'bipolar':
             self.seq_idx_inv.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx_inv.device)
@@ -93,6 +95,7 @@ class mul_csg(napl_base):
 
     
     def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+        self.tick()
         # input_0 is a spike tensor
         # input_1 is a binary tensor
         if self.is_first_call is True:

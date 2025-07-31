@@ -61,6 +61,7 @@ def test_mul_and():
     # report the error
     report_error(mul_and_inst.decoder.spike_value, r_value)
 
+    assert mul_and_inst.mul_and.timestep_cur == codec_config1['timestep']
     mul_and_inst.reset()
     
     print('Test passed.')

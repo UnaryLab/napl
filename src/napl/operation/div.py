@@ -43,12 +43,14 @@ class div_cordiv(napl_base):
         
 
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.idx = 0
         self.buffer_q.data = torch.zeros(self.depth, dtype=self.stype, device=self.buffer_q.device)
         self.is_first_call = True
 
 
     def forward(self, dividend, divisor):
+        self.tick()
         if self.is_first_call:
             dividend_shape = list(dividend.shape)
             divisor_shape = list(divisor.shape)
@@ -108,7 +110,12 @@ class div_iscb(napl_base):
             self.bi2uni_divisor  = bi2uni({'width': 2})
             # fix width to optimal 3
             self.uni2bi_quotient = uni2bi({'width': 3})
-        
+    
+
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+        super().reset(verbose)
+
 
     def bipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
         # dividend and divisor are both spike tensors
@@ -121,13 +128,16 @@ class div_iscb(napl_base):
         bi_quotient = sign_dividend.type(torch.int8) ^ sign_divisor.type(torch.int8) ^ bi_abs_quotient.type(torch.int8)
         return bi_quotient
     
+    
     def unipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
         # dividend and divisor are both spike tensors
         dividend_sync, divisor_sync = self.sync(dividend, divisor)
         quotient = self.cordiv_kernel(dividend_sync, divisor_sync)
         return quotient
 
+
     def forward(self, dividend, divisor):
+        self.tick()
         if self.mode == 'bipolar':
             output = self.bipolar_forward(dividend, divisor)
         else:

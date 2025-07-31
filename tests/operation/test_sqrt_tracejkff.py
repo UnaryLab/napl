@@ -54,6 +54,7 @@ def test_sqrt_tracejkff():
     # report the error
     report_error(sqrt_tracejkff_inst.decoder.spike_value, r_value)
 
+    assert sqrt_tracejkff_inst.sqrt_tracejkff.timestep_cur == codec_config['timestep']
     sqrt_tracejkff_inst.reset()
 
     print('Test passed.')

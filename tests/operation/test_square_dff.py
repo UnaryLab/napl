@@ -55,6 +55,7 @@ def test_square_dff():
     # report the error
     report_error(square_dff_inst.decoder.spike_value, r_value)
 
+    assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
     square_dff_inst.reset()
 
     print('Test passed.')

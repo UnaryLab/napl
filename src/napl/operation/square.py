@@ -23,9 +23,15 @@ class square_dff(napl_base):
 
         # the depth of input
         self.dff = dff(config={'depth': config['depth']})
-        
     
+
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+        super().reset(verbose)
+    
+
     def forward(self, input: torch.tensor):
+        self.tick()
         # input is a spike tensor
         input_d = self.dff(input)
         if self.mode == 'unipolar':
