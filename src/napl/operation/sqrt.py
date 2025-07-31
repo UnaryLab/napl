@@ -2,7 +2,7 @@ import torch
 
 from napl.utils import *
 from napl.base import napl_base
-from napl.operation import bi2uni, jkff, div_cordiv, add_any
+from napl.operation import bi2uni, jkff, div_cordiv, add_any, shiftreg
 
 
 class sqrt_tracejkff(napl_base):
@@ -27,11 +27,16 @@ class sqrt_tracejkff(napl_base):
             self.bi2uni = bi2uni({'width': 2})
     
 
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+
+
     def unipolar_trace(self, output):
         self.jkff(output, torch.ones_like(output))
 
 
     def forward(self, input):
+        self.tick()
         trace = self.jkff.q
         output = (((1 - trace) & input.type(torch.int8)) + trace).type(self.stype)
         if self.mode == 'unipolar':
@@ -72,6 +77,7 @@ class sqrt_traceiscb(napl_base):
     
 
     def reset(self, verbose=False):
+        self.timestep_cur = 0
         self.cordiv_kernel.reset(verbose)
         self.dff.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
         self.trace.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
@@ -91,6 +97,7 @@ class sqrt_traceiscb(napl_base):
 
 
     def forward(self, input):
+        self.tick()
         trace = self.trace
         output = (((1 - trace) & input.type(torch.int8)) + trace).type(self.stype)
         if self.mode == 'unipolar':
@@ -104,73 +111,74 @@ class sqrt_traceiscb(napl_base):
     
 
 
-# class sqrt_emit(napl_base):
-#     """
-#     This module is for square root via opportunistic bit inserting, supporting unipolar/bipolar.
-#     References:
-#     1) 'In-Stream Stochastic Division and Square Root via Correlation'
-#     2) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
-#     """
-#     def __init__(
-#         self, 
-#         config={
-#             'mode' : 'bipolar',
-#         },
-#     ):
-#         super().__init__(config, ['mode'], mode_required=True)
+class sqrt_emit(napl_base):
+    """
+    This module is for square root via opportunistic bit inserting, supporting unipolar/bipolar.
+    References:
+    1) 'In-Stream Stochastic Division and Square Root via Correlation'
+    2) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
+    This module has best accuracy among all.
+    """
+    def __init__(
+        self, 
+        config={
+            'mode' : 'bipolar',
+        },
+    ):
+        super().__init__(config, ['mode'], mode_required=True)
 
-#         self.emit_out = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
+        self.emit_out = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
 
-#         self.nsadd = add_any({'mode': 'unipolar', 'scale': 1, 'width': 3})
-#         self.sr = ShiftReg(hwcfg_sr, swcfg_sr)
-#         self.rng = RNG(hwcfg_rng, swcfg_rng)()
-#         self.idx = torch.nn.Parameter(torch.zeros(1).type(torch.long), requires_grad=False)
+        # a non-scaled add
+        self.nsadd = add_any({'mode': 'unipolar', 'scale': 1, 'width': 3})
+        self.depth = 2
+        self.shiftreg = shiftreg({'depth': self.depth})
         
-#         if self.mode == 'bipolar':
-#             # fix width to optimal 2
-#             self.bi2uni = bi2uni({'width': 2})
+        if self.mode == 'bipolar':
+            # fix width to optimal 2
+            self.bi2uni = bi2uni({'width': 2})
+        
+        self.is_first_call = True
+
+
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+        self.emit_out.data = torch.zeros(1, dtype=torch.int8, device=self.emit_out.device)
+        self.nsadd.reset(verbose)
+        self.shiftreg.reset(verbose)
+        if self.mode == 'bipolar':
+            self.bi2uni.reset(verbose)
+        self.is_first_call = True
+
+
+    def unipolar_emit(self, output):
+        output_inv = 1 - output
+        output_inv_scrambled = self.shiftreg(output_inv)
+        emit_out = output_inv_scrambled.type(torch.int8) & output.type(torch.int8)
+        return emit_out
     
 
-#     def reset(self, verbose=False):
-#         self.cordiv_kernel.reset(verbose)
-#         self.dff.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
-#         self.trace.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
+    def bipolar_emit(self, output):
+        output_inv = 1 - output
+        output_inv_scrambled = self.shiftreg(output_inv)
+        output_uni = self.bi2uni(output)
+        emit_out = output_inv_scrambled.type(torch.int8) & output_uni.type(torch.int8)
+        return emit_out
 
 
-#     def unipolar_emit(self, output):
-#         output_inv = 1 - output
-#         output_inv_scrambled, dontcare = self.sr(output_inv, index=self.idx.item()%self.entry_sr)
-#         emit_out = output_inv_scrambled & output
-#         return emit_out
-    
+    def forward(self, input):
+        self.tick()
+        if self.is_first_call:
+            self.emit_out.data = torch.zeros_like(input).type(self.stype)
+            self.is_first_call = False
 
-#     def bipolar_emit(self, output):
-#         output_inv = 1 - output
-#         output_inv_scrambled, dontcare = self.sr(output_inv, index=self.idx.item()%self.entry_sr)
-#         output_uni = self.bi2uni_emit(output)
-#         emit_out = output_inv_scrambled & output_uni
-#         return emit_out
-
-
-#     def forward(self, input):
-#         if list(self.emit_out.size()) != list(input.size()):
-#                 self.emit_out.data = torch.zeros_like(input).type(torch.int8)
-#             in_stack = torch.stack([input.type(torch.int8), self.emit_out], dim=0)
-#             output = self.nsadd(in_stack)
-#             if self.mode == "bipolar":
-#                 self.emit_out.data = self.bipolar_emit(output)
-#             else:
-#                 self.emit_out.data = self.unipolar_emit(output)
-
-#         trace = self.trace
-#         output = (((1 - trace) & input.type(torch.int8)) + trace).type(self.stype)
-#         if self.mode == 'unipolar':
-#             # P_trace = P_out/(P_out+1)
-#             self.unipolar_trace(output)
-#         else:
-#             # P_trace = (P_out*2-1)/((P_out*2-1)+1)
-#             out = self.bi2uni(output)
-#             self.unipolar_trace(out)
+        in_stack = torch.stack([input.type(torch.int8), self.emit_out], dim=0)
+        output = self.nsadd(in_stack.type(self.stype), dim=0)
+        if self.mode == 'bipolar':
+            self.emit_out.data = self.bipolar_emit(output)
+        else:
+            self.emit_out.data = self.unipolar_emit(output)
         
-#         return output
+        return output
+
     
