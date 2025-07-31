@@ -89,10 +89,10 @@ class div_iscb(napl_base):
     def __init__(
         self, 
         config={
-            'mode' : 'bipolar',
+            'polarity' : 'bipolar',
         }
     ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
         # fix width to optimal 3
         self.sync = sync_skewed({'width': 3})
@@ -101,7 +101,7 @@ class div_iscb(napl_base):
         # this actually leads to 01 sequence
         self.cordiv_kernel = div_cordiv({'depth': 2, 'generator': 'sobol'})
 
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             # fix width to optimal 3
             self.sign_abs_dividend = sign_abs({'width': 3})
             self.sign_abs_divisor  = sign_abs({'width': 3})
@@ -138,7 +138,7 @@ class div_iscb(napl_base):
 
     def forward(self, dividend, divisor):
         self.tick()
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             output = self.bipolar_forward(dividend, divisor)
         else:
             output = self.unipolar_forward(dividend, divisor)

@@ -34,7 +34,7 @@ def test_sign_abs():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }
@@ -42,8 +42,8 @@ def test_sign_abs():
         'width': 3
     }
     
-    # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_sign_abs instance
     sign_abs_inst = napl_sign_abs(codec_config, sign_abs_config).to(device)

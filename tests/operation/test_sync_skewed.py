@@ -36,13 +36,13 @@ def test_sync_skewed():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
-        'mode': 'unipolar',
+        'polarity': 'unipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
     }
     codec_config2={
-        'mode': 'unipolar',
+        'polarity': 'unipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 3,
@@ -51,9 +51,9 @@ def test_sync_skewed():
         'width' : 3,
     }
 
-    # Generate random inputs based on mode
-    input_0 = gen_rand_tensor(codec_config1['mode'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['mode'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
     input_mask = input_0 < input_1
     input_0_new = torch.where(input_mask, input_0, input_1)
     input_1_new = torch.where(~input_mask, input_0, input_1)

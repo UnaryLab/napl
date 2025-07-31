@@ -15,11 +15,11 @@ class square_dff(napl_base):
     def __init__(
             self,
             config={
-                'mode': 'bipolar',
+                'polarity': 'bipolar',
                 'depth': 1,
             }
         ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
         # the depth of input
         self.dff = dff(config={'depth': config['depth']})
@@ -34,7 +34,7 @@ class square_dff(napl_base):
         self.tick()
         # input is a spike tensor
         input_d = self.dff(input)
-        if self.mode == 'unipolar':
+        if self.polarity == 'unipolar':
             return (input.type(torch.int8) & input_d.type(torch.int8)).type(self.stype)
         else:
             return (1 - input.type(torch.int8) ^ input_d.type(torch.int8)).type(self.stype)

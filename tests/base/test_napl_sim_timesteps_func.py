@@ -10,7 +10,7 @@ def test_napl_sim_timesteps_func():
     Test the napl_sime_timesteps decorator with a simple configuration.
     """
     config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }

@@ -33,16 +33,16 @@ def test_sqrt_emit():
     device = 'cpu'
 
     codec_config={
-        'mode': 'unipolar',
+        'polarity': 'unipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 4,
     }
     sqrt_emit_config={
-        'mode': 'unipolar',
+        'polarity': 'unipolar',
     }
     
-    # Generate random inputs based on mode, ensure positive numbers
+    # Generate random inputs based on polarity, ensure positive numbers
     input = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
     # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 

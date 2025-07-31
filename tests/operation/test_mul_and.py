@@ -34,22 +34,22 @@ def test_mul_and():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
     }
     codec_config2={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 2,
     }
     mul_and_config=codec_config1
 
-    # Generate random inputs based on mode
-    input_0 = gen_rand_tensor(codec_config1['mode'], shape=(1000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['mode'], shape=(1000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_mul_and instance
     mul_and_inst = napl_mul_and(codec_config1, codec_config2, mul_and_config).to(device)

@@ -33,26 +33,26 @@ def test_div_iscb():
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    mode = 'bipolar'
+    polarity = 'bipolar'
     codec_config1={
-        'mode': mode,
+        'polarity': polarity,
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
     }
     codec_config2={
-        'mode': mode,
+        'polarity': polarity,
         'timestep': 256,
         'generator': 'sobol',
         'dim': 2,
     }
     div_iscb_config={
-        'mode': mode,
+        'polarity': polarity,
     }
 
-    # Generate random inputs based on mode
-    input_0 = gen_rand_tensor(codec_config1['mode'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['mode'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
     input_mask = torch.abs(input_0) < torch.abs(input_1)
     input_0_new = torch.where(input_mask, input_0, input_1)
     input_1_new = torch.where(~input_mask, input_0, input_1)

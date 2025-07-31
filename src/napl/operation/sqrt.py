@@ -16,13 +16,13 @@ class sqrt_tracejkff(napl_base):
     def __init__(
         self, 
         config={
-            'mode' : 'bipolar',
+            'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
         self.jkff = jkff()
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             # fix width to optimal 2
             self.bi2uni = bi2uni({'width': 2})
     
@@ -39,7 +39,7 @@ class sqrt_tracejkff(napl_base):
         self.tick()
         trace = self.jkff.q
         output = (((1 - trace) & input.type(torch.int8)) + trace).type(self.stype)
-        if self.mode == 'unipolar':
+        if self.polarity == 'unipolar':
             # P_trace = P_out/(P_out+1)
             self.unipolar_trace(output)
         else:
@@ -60,10 +60,10 @@ class sqrt_traceiscb(napl_base):
     def __init__(
         self, 
         config={
-            'mode' : 'bipolar',
+            'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
         # for cordiv kernel, the config is fixed to optimal directly
         # this actually leads to 01 sequence
@@ -71,7 +71,7 @@ class sqrt_traceiscb(napl_base):
         self.dff = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
         self.trace = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
         
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             # fix width to optimal 2
             self.bi2uni = bi2uni({'width': 2})
     
@@ -81,7 +81,7 @@ class sqrt_traceiscb(napl_base):
         self.cordiv_kernel.reset(verbose)
         self.dff.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
         self.trace.data = torch.zeros(1, dtype=torch.int8, device=self.dff.device)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.bi2uni.reset(verbose)
 
 
@@ -100,7 +100,7 @@ class sqrt_traceiscb(napl_base):
         self.tick()
         trace = self.trace
         output = (((1 - trace) & input.type(torch.int8)) + trace).type(self.stype)
-        if self.mode == 'unipolar':
+        if self.polarity == 'unipolar':
             # P_trace = P_out/(P_out+1)
             self.unipolar_trace(output)
         else:
@@ -122,19 +122,19 @@ class sqrt_emit(napl_base):
     def __init__(
         self, 
         config={
-            'mode' : 'bipolar',
+            'polarity' : 'bipolar',
         },
     ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
         self.emit_out = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
 
         # a non-scaled add
-        self.nsadd = add_any({'mode': 'unipolar', 'scale': 1, 'width': 3})
+        self.nsadd = add_any({'polarity': 'unipolar', 'scale': 1, 'width': 3})
         self.depth = 2
         self.shiftreg = shiftreg({'depth': self.depth})
         
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             # fix width to optimal 2
             self.bi2uni = bi2uni({'width': 2})
         
@@ -146,7 +146,7 @@ class sqrt_emit(napl_base):
         self.emit_out.data = torch.zeros(1, dtype=torch.int8, device=self.emit_out.device)
         self.nsadd.reset(verbose)
         self.shiftreg.reset(verbose)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.bi2uni.reset(verbose)
         self.is_first_call = True
 
@@ -174,7 +174,7 @@ class sqrt_emit(napl_base):
 
         in_stack = torch.stack([input.type(torch.int8), self.emit_out], dim=0)
         output = self.nsadd(in_stack.type(self.stype), dim=0)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.emit_out.data = self.bipolar_emit(output)
         else:
             self.emit_out.data = self.unipolar_emit(output)

@@ -32,15 +32,15 @@ def test_mul_csg():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 1024,
         'generator': 'sobol',
     }
     mul_csg_config=codec_config
 
-    # Generate random inputs based on mode
-    input_0 = gen_rand_tensor(codec_config['mode'], shape=(1000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config['mode'], shape=(1000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input_0 = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_1 = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_mul_csg instance
     mul_csg_inst = napl_mul_csg(codec_config, mul_csg_config).to(device)

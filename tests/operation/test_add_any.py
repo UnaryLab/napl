@@ -32,19 +32,19 @@ def test_add_any():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }
     add_any_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'scale': 128,
         'width': 20,
     }
 
-    # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], 
-                          shape=(1000, add_any_config['scale']), 
+    # Generate random inputs based on polarity
+    input = gen_rand_tensor(codec_config['polarity'], 
+                          shape=(10000, add_any_config['scale']), 
                           width=math.log2(codec_config['timestep'])
                           ).type(global_config.ntype).to(device)
 

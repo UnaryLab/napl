@@ -13,10 +13,10 @@ class accuracy(napl_base):
     def __init__(
             self, 
             config={
-                'mode' : 'bipolar',
+                'polarity' : 'bipolar',
             }
         ):
-        super().__init__(config, ['mode'])
+        super().__init__(config, ['polarity'])
 
         self.spike_count = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         self.spike_value = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
@@ -58,7 +58,7 @@ class accuracy(napl_base):
         # accuracy uses torch.float format to avoid overflow
         self.spike_count.data = self.spike_count.add(spike.type(torch.float))
         self.spike_value.data = self.spike_count.div(self.timestep_cur)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.spike_value.data = self.spike_value.mul(2).sub(1)
         return self.spike_value
     

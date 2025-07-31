@@ -32,7 +32,7 @@ def test_dff():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }
@@ -40,8 +40,8 @@ def test_dff():
         'depth': 1
     }
     
-    # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input = gen_rand_tensor(codec_config['polarity'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_dff instance
     dff_inst = napl_dff(codec_config, dff_config).to(device)

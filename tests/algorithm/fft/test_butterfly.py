@@ -14,18 +14,18 @@ def test_butterfly_spike():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config = {
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }
     width = math.log2(codec_config['timestep'])
     mul_config = {
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
     }
     add_config = {
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'scale': 3,
         'width' : width+1,
     }
@@ -34,12 +34,12 @@ def test_butterfly_spike():
     batch_size = 1024
 
     # Generate random input tensors
-    x0r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x0i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x1r = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x1i = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    wr  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    wi  = gen_rand_tensor(codec_config['mode'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x0r = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x0i = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x1r = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    x1i = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    wr  = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+    wi  = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
 
     # Instantiate reference butterfly unit
     butterfly_binary_unit = butterfly_binary()

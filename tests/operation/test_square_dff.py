@@ -32,18 +32,18 @@ def test_square_dff():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
     }
     square_dff_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'depth': 1
     }
     
-    # Generate random inputs based on mode
-    input = gen_rand_tensor(codec_config['mode'], shape=(1000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    # Generate random inputs based on polarity
+    input = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_square_dff instance
     square_dff_inst = napl_square_dff(codec_config, square_dff_config).to(device)

@@ -32,16 +32,16 @@ def test_sqrt_tracejkff():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1, # dim = 4 is good for unipolar
     }
     sqrt_tracejkff_config={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
     }
     
-    # Generate random inputs based on mode, ensure positive numbers
+    # Generate random inputs based on polarity, ensure positive numbers
     input = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_sqrt_tracejkff instance

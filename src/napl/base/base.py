@@ -63,9 +63,9 @@ class napl_base(torch.nn.Module):
 
         # check config
         if mode_required is True:
-            assert 'mode' in config, logger.error(f'Missing key <mode> in the input configuration.')
+            assert 'polarity' in config, logger.error(f'Missing key <polarity> in the input configuration.')
         check_config(config, key_list)
-        self.mode = check_mode(config)
+        self.polarity = check_mode(config)
         self.name = check_name(config)
         
         self.timestep_cur = 0

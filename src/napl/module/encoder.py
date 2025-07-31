@@ -109,12 +109,12 @@ class encoder(napl_base):
     def __init__(
             self, 
             config:dict={
-                'mode': 'bipolar',
+                'polarity': 'bipolar',
                 'timestep': 256,
                 'generator': 'sobol',
                 }
         ):
-        super().__init__(config, ['mode', 'timestep', 'generator'], mode_required=True)
+        super().__init__(config, ['polarity', 'timestep', 'generator'], mode_required=True)
 
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
@@ -141,9 +141,9 @@ class encoder(napl_base):
         # use gt to generate the spike
         # if input is 0, then a all 0 spike train is generated
         # if input is 1, then one spike in the spike train will be 0
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             prob = (input + 1)/2
-        elif self.mode == 'unipolar':
+        elif self.polarity == 'unipolar':
             prob = input
         spike = torch.gt(prob, self.num_seq[(self.timestep_cur-1) % self.len]).type(self.stype)
         return spike

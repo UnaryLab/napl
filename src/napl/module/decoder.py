@@ -9,11 +9,11 @@ class decoder(napl_base):
     def __init__(
             self,
             config:dict={
-                'mode': 'bipolar',
+                'polarity': 'bipolar',
                 'timestep': 256,
                 }
         ):
-        super().__init__(config, ['mode', 'timestep'], mode_required=True)
+        super().__init__(config, ['polarity', 'timestep'], mode_required=True)
 
         # initialize timestep and spike count
         self.timestep = config['timestep']
@@ -36,7 +36,7 @@ class decoder(napl_base):
             logger.error(f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.')
         self.spike_count.data = self.spike_count.add(spike.type(self.ntype))
         self.spike_value.data = self.spike_count.div(self.timestep_cur)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.spike_value.data = self.spike_value.mul(2).sub(1)
         return self.spike_value
     

@@ -7,17 +7,17 @@ from napl.base import napl_base
 class add_any(napl_base):
     """
     This module is any-scale addition.
-    Supported mode: unipolar/bipolar.
+    Supported polarity: unipolar/bipolar.
     """
     def __init__(
             self, 
             config={
-                'mode' : 'bipolar', 
+                'polarity' : 'bipolar', 
                 'scale' : 2,
                 'width' : 10,
             }
         ):
-        super().__init__(config, ['mode', 'scale', 'width'], mode_required=True)
+        super().__init__(config, ['polarity', 'scale', 'width'], mode_required=True)
 
         # width of the accumulator
         self.width = config['width']
@@ -50,7 +50,7 @@ class add_any(napl_base):
             if entry is None:
                 entry = input.size()[dim]
 
-            if self.mode == 'bipolar':
+            if self.polarity == 'bipolar':
                 self.offset = (entry - self.scale)/2
 
             self.is_first_call = False

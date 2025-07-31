@@ -32,13 +32,13 @@ def test_bi2uni():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
-        'mode': 'bipolar',
+        'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
     }
     codec_config2={
-        'mode': 'unipolar',
+        'polarity': 'unipolar',
         'timestep': 256,
         'generator': 'sobol',
         'dim': 1,
@@ -47,9 +47,9 @@ def test_bi2uni():
         'width': 2,
     }
     
-    # Generate random inputs based on mode
+    # Generate random inputs based on polarity
     # all inputs shall be positive
-    input = gen_rand_tensor(codec_config2['mode'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_bi2uni instance
     bi2uni_inst = napl_bi2uni(codec_config1, codec_config2, bi2uni_config).to(device)

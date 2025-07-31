@@ -17,10 +17,10 @@ class mul_and(napl_base):
     def __init__(
             self,
             config={
-                'mode': 'bipolar',
+                'polarity': 'bipolar',
             }
         ):
-        super().__init__(config, ['mode'], mode_required=True)
+        super().__init__(config, ['polarity'], mode_required=True)
 
 
     def reset(self, verbose=False):
@@ -31,7 +31,7 @@ class mul_and(napl_base):
         self.tick()
         # input_0 is a spike tensor
         # input_1 is a spike tensor
-        if self.mode == 'unipolar':
+        if self.polarity == 'unipolar':
             return (input_0.type(torch.int8) & input_1.type(torch.int8)).type(self.stype)
         else:
             return (1 - input_0.type(torch.int8) ^ input_1.type(torch.int8)).type(self.stype)
@@ -47,7 +47,7 @@ class mul_csg(napl_base):
     def __init__(
             self,
             config={
-                'mode': 'bipolar',
+                'polarity': 'bipolar',
                 'timestep': 256,
                 'generator': 'sobol',
             }
@@ -55,8 +55,8 @@ class mul_csg(napl_base):
         super().__init__()
 
         # check config
-        check_config(config, ['mode', 'timestep', 'generator'])
-        self.mode = check_mode(config)
+        check_config(config, ['polarity', 'timestep', 'generator'])
+        self.polarity = check_mode(config)
         self.name = check_name(config)
         
         self.timestep = config['timestep']
@@ -73,8 +73,8 @@ class mul_csg(napl_base):
         
         # seq_idx is used later as an enable signal, get update every cycled
         self.seq_idx = torch.nn.Parameter(torch.zeros(1, dtype=torch.long), requires_grad=False)
-        # Generate two seperate spike generators and two enable signals for bipolar mode
-        if self.mode == 'bipolar':
+        # Generate two seperate spike generators and two enable signals for bipolar polarity
+        if self.polarity == 'bipolar':
             self.seq_idx_inv = torch.nn.Parameter(torch.zeros(1, dtype=torch.long), requires_grad=False)
         
         # only compute the prob of input_1 once in the first call
@@ -88,7 +88,7 @@ class mul_csg(napl_base):
         """
         self.timestep_cur = 0
         self.seq_idx.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx.device)
-        if self.mode == 'bipolar':
+        if self.polarity == 'bipolar':
             self.seq_idx_inv.data = torch.zeros(1, dtype=torch.long, device=self.seq_idx_inv.device)
         self.in_1_prob = None
         self.is_first_call = True
@@ -100,7 +100,7 @@ class mul_csg(napl_base):
         # input_1 is a binary tensor
         if self.is_first_call is True:
             assert input_1 is not None, logger.error('input_1 is None, please provide a valid input_1 tensor.')
-            self.in_1_prob = (input_1 + 1) / 2 if self.mode == 'bipolar' else input_1
+            self.in_1_prob = (input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1
             self.is_first_call = False
 
         # generate the conditional spike
@@ -109,7 +109,7 @@ class mul_csg(napl_base):
         # conditional update for seq index when input_0 is 1, which simulates the enable signal.
         self.seq_idx.data = self.seq_idx.add(input_0.type(torch.long))
         
-        if self.mode == 'unipolar':
+        if self.polarity == 'unipolar':
             return path.type(self.stype)
         else:
             # generate the conditional spike
