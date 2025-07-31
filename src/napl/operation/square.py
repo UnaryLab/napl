@@ -28,7 +28,6 @@ class square_dff(napl_base):
     def forward(self, input: torch.tensor):
         # input is a spike tensor
         input_d = self.dff(input)
-        # print(input, input_d)
         if self.mode == 'unipolar':
             return (input.type(torch.int8) & input_d.type(torch.int8)).type(self.stype)
         else:

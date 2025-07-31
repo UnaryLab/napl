@@ -13,5 +13,6 @@ from .sigmoid import *
 from .square import *
 from .tanh import *
 from .uni2bi import *
+from .shiftreg import *
 from .div import *
 from .sqrt import *
