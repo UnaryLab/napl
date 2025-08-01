@@ -38,9 +38,7 @@ def test_relu_sat():
         'generator': 'sobol',
         'dim': 1,
     }
-    relu_sat_config={
-        'width': 3,
-    }
+    relu_sat_config={}
     
     # Generate random inputs based on polarity, ensure positive numbers
     input = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)

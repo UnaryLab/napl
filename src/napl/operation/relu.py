@@ -48,16 +48,13 @@ class relu_sat(napl_base):
     """
     def __init__(
             self, 
-            config={
-                'width' : 3,
-            }
+            config={}
     ):
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, [], polarity_required=False)
 
-        self.width = config['width']
-
-        self.sub_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': self.width})
-        self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': self.width})
+        # default to optimal width
+        self.sub_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
+        self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
     
 
     def reset(self, verbose=False):
