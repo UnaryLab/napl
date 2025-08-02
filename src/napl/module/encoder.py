@@ -60,23 +60,21 @@ def gen_num_seq(config={
     generator = config['generator'].lower()
     seq_len = 2**width
 
-    legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'tc_asc', 'tc_dec', 'tc01', 'tc10']
+    legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'rate', 'temporal']
 
     assert generator in legal_rngs, \
         logger.error(f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.')
     
-    if (generator == 'sobol') or (generator == 'rc'):
+    if (generator == 'sobol') or (generator == 'rc') or (generator == 'rate'):
         # get the requested dimension of sobol random number sequence
         # rate coding defaults to sobol sequence
         dim = config.get('dim', 1)
         num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
-    elif (generator == 'tc') or (generator == 'tc_asc') or (generator == 'tc01'):
+    elif (generator == 'tc') or (generator == 'temporal'):
         # temporal coding defaults to ascending counter sequence
         # the output sequence is in an ascending order
+        # the temporal coding starts with 0s, followed by 1s
         num_seq = torch.tensor([x/seq_len for x in range(0, seq_len)])
-    elif (generator == 'tc_dec') or (generator == 'tc10'):
-        # the output sequence is in a descending order
-        num_seq = torch.tensor([x/seq_len for x in range(seq_len-1, -1, -1)])
     elif generator == 'lfsr':
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
     elif generator == 'sys':
