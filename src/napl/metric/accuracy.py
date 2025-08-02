@@ -64,6 +64,7 @@ class accuracy(napl_base):
     
 
     def report_error(self, reference: torch.Tensor, verbose=False):
+        # return the error and index of max abs error
         assert self.error_flag == True, logger.error(f'Error flag is not set. Please call forward() before report_error().')
         self.spike_error.data = self.spike_value.sub(reference)
         self.spike_error_abs_max.data = torch.max(self.spike_error.abs())
@@ -80,10 +81,11 @@ class accuracy(napl_base):
             logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
             logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
             logger.info(f'')
-        return self.spike_error
+        return self.spike_error, torch.argmax(self.spike_error.abs())
     
 
 def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
+    # return the error and index of max abs error
     spike_error = spike_value.sub(reference)
     spike_error_abs_max = torch.max(spike_error.abs())
     spike_error_abs_min = torch.min(spike_error.abs())
@@ -98,5 +100,5 @@ def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
     logger.info(f'    Mean absolute error:    <{spike_error_mae.item()}>')
     logger.info(f'    Root mean square error: <{spike_error_rmse.item()}>')
     logger.info(f'')
-    return spike_error
+    return spike_error, torch.argmax(spike_error.abs())
 

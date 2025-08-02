@@ -16,3 +16,4 @@ from .uni2bi import *
 from .shiftreg import *
 from .div import *
 from .sqrt import *
+from .compare import *
