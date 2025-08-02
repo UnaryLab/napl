@@ -5,8 +5,6 @@ from .sync import *
 from .sign_abs import *
 from .inhibit import *
 from .jkff import *
-from .max import *
-from .min import *
 from .mul import *
 from .relu import *
 from .sigmoid import *
