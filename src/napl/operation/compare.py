@@ -3,6 +3,7 @@ import torch
 from napl.utils import *
 from napl.base import napl_base
 from napl.operation import sync_skewed
+from loguru import logger
 
 
 class min_rc(napl_base):
@@ -176,3 +177,47 @@ class gt_rc(napl_base):
         
         return output.type(self.stype)
     
+
+class min_tc(napl_base):
+    """
+    This class returns the min using AND gate.
+    Temporal-coded signals always start with 1s, followed by 0s.
+    """
+    def __init__(
+            self, 
+            config = {}
+    ):
+        super().__init__(config, [], polarity_required=False)
+
+    
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+    
+
+    def forward(self, input_0, input_1):
+        self.tick()
+        output = input_0.type(torch.int8) & input_1.type(torch.int8)
+        return output.type(self.stype)
+
+
+class max_tc(napl_base):
+    """
+    This class returns the max using OR gate.
+    Temporal-coded signals always start with 1s, followed by 0s.
+    """
+    def __init__(
+            self, 
+            config = {}
+    ):
+        super().__init__(config, [], polarity_required=False)
+
+    
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+    
+
+    def forward(self, input_0, input_1):
+        self.tick()
+        output = input_0.type(torch.int8) | input_1.type(torch.int8)
+        return output.type(self.stype)
+

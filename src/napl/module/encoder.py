@@ -71,10 +71,11 @@ def gen_num_seq(config={
         dim = config.get('dim', 1)
         num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
     elif (generator == 'tc') or (generator == 'temporal'):
-        # temporal coding defaults to ascending counter sequence
-        # the output sequence is in an ascending order
-        # the temporal coding starts with 0s, followed by 1s
-        num_seq = torch.tensor([x/seq_len for x in range(0, seq_len)])
+        # temporal coding defaults to descending counter sequence
+        # this choice counts 1s toward values, match that in rate.
+        # the output sequence is in an descending order
+        # the temporal coding starts with 1s, followed by 0s
+        num_seq = torch.tensor([x/seq_len for x in range(seq_len-1, -1, -1)])
     elif generator == 'lfsr':
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
     elif generator == 'sys':
