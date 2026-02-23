@@ -142,12 +142,11 @@ class NAPLFFT(nn.Module):
         
         Args:
             data (torch.Tensor): Input data of shape (B, N) where N must be power of 2
-            verbose (bool): print reports
             
         Returns:
             tuple: (binary_output, unary_output) - FFT results
         """
-        self.verbose = verbose  # Store verbose flag for use in other methods
+        self.verbose = verbose  
         B, N = data.shape
         
         # Validate FFT size
