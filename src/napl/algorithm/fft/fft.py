@@ -1,26 +1,26 @@
 
-
 import math
 import torch
 import torch.nn as nn
 from napl.utils import *
 from napl.algorithm.fft.butterfly import butterfly_binary, butterfly_spike
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
-class NAPLFFT(nn.Module):
+class napl_fft(nn.Module):
     """
-    NAPL-based Cooley-Tukey DIT FFT implementation as a PyTorch module.
+    napl-based Cooley-Tukey DIT FFT implementation as a PyTorch module.
     This module implements both binary and unary (spike-based) FFT computations
     using NAPL butterfly units.
     """
     verbose = False
-    def __init__(self, combo = None, codec_config=None, mul_config=None, add_config=None, acc_config=None):
+    def __init__(self, combo = None, device = None, codec_config=None, mul_config=None, add_config=None, acc_config=None):
         """
         Initialize the NAPL FFT module.
 
         """
+
         super().__init__()
+        self.device = device if device is not None else torch.device('cpu')
         self.combo = combo
         self.codec_config = codec_config or {
             'polarity': 'bipolar',
@@ -50,32 +50,30 @@ class NAPLFFT(nn.Module):
         self.butterfly_binary = butterfly_binary()
         self.butterfly_spike = butterfly_spike(
             self.codec_config, self.mul_config, self.add_config, self.acc_config
-        ).to(device)
+        ).to(self.device)
         
         # Cache for bit-reversal indices and twiddle factors
         self._bit_reversal_cache = {}
         self._twiddle_cache = {}
     
-    def _get_bit_reversal_indices(self, N, device):
-        cache_key = (N, device)
+    def _get_bit_reversal_indices(self, N):
+        cache_key = (N, str(self.device))
         if cache_key not in self._bit_reversal_cache:
             num_bits = int(math.log2(N))
-            indices = torch.arange(N, device=device)
+            indices = torch.arange(N, device=self.device)
             bit_reversed_indices = torch.zeros_like(indices)
             for i in range(num_bits):
                 bit_reversed_indices |= ((indices >> i) & 1) << (num_bits - 1 - i)
             self._bit_reversal_cache[cache_key] = bit_reversed_indices
         return self._bit_reversal_cache[cache_key]
     
-    def _get_twiddle_factors(self, L, stride, device):
-        cache_key = (L, stride, device)
+    def _get_twiddle_factors(self, L, stride):
+        cache_key = (L, stride, str(self.device))
         if cache_key not in self._twiddle_cache:
-            k_values = torch.arange(stride, device=device)
+            k_values = torch.arange(stride, device=self.device)
             angles = -2.0 * math.pi * k_values / L
             twiddles = torch.exp(1j * angles).to(torch.complex64)
-            wr_stage = twiddles.real
-            wi_stage = twiddles.imag
-            self._twiddle_cache[cache_key] = (wr_stage, wi_stage, k_values)
+            self._twiddle_cache[cache_key] = (twiddles.real, twiddles.imag, k_values)
         return self._twiddle_cache[cache_key]
     
     def _compute_loss(self, b, u, threshold=0.05, gate=1.0):
@@ -157,20 +155,19 @@ class NAPLFFT(nn.Module):
             #self.clear_cache() future work, in case we process different sizes
             raise ValueError(f"Input size {N} doesn't match expected FFT size {self.fft_size}")
         
-        device = next(self.parameters()).device
-        if data.device != device:
-            data = data.to(device)
+        if data.device != self.device:
+            data = data.to(self.device)
         if not torch.is_complex(data):
             data = data.to(torch.complex64)
         
         # bit-reversal
-        bit_reversed_indices = self._get_bit_reversal_indices(N, device)
+        bit_reversed_indices = self._get_bit_reversal_indices(N)
         binary_data = data[:, bit_reversed_indices].clone()
 
         # Perform FFT stages
         num_stages = int(math.log2(N))
-        cum_binary_scale = torch.ones((), device=device, dtype=data.real.dtype)
-        cum_unary_scale = torch.ones((), device=device, dtype=data.real.dtype)
+        cum_binary_scale = torch.ones((), device=self.device, dtype=data.real.dtype)
+        cum_unary_scale = torch.ones((), device=self.device, dtype=data.real.dtype)
         binary_data, stage_scale = self.binary_scale(binary_data, quantile=0.95)
         cum_binary_scale = cum_binary_scale * stage_scale
         unary_data = binary_data.clone()
@@ -184,14 +181,14 @@ class NAPLFFT(nn.Module):
             self.mul_config['timestep'] = target_timestep
             self.butterfly_spike = butterfly_spike(
                 self.codec_config, self.mul_config, self.add_config, self.acc_config
-            ).to(device)
+            ).to(self.device)
             width = int(math.log2(self.codec_config['timestep']))
             self.add_config['width'] = width + 1
             self._current_timestep = target_timestep
             
             L = 2 ** stage # butterfly size
             stride = L // 2 # the distance between pairs of butterflies
-            wr_stage, wi_stage, k_values = self._get_twiddle_factors(L, stride, device)
+            wr_stage, wi_stage, k_values = self._get_twiddle_factors(L, stride)
 
             if rp == 0: #? RUN ONCE per batch
                 unary_data, input_scale = self.binary_scale(unary_data, quantile=0.95) #! beacuse the input to each (stage =! 1) is unary not binary!!
