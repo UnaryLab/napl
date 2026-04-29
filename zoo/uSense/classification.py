@@ -24,7 +24,7 @@ def load_data(path):
         return None, None, None
 
 if __name__ == "__main__":
-    user = os.getlogin()
+    
     save_path = "/content/output/fft_features"
     if not os.path.exists(save_path):
         print(f"{Fore.RED}Directory not found: {save_path}")
