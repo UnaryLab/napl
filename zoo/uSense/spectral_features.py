@@ -90,7 +90,7 @@ def create_grouped_features(feature_dir, output_path):
     print(f"{Fore.GREEN}Successfully saved grouped features  of shape {class_data.shape} to:\n{output_path}")
 
 if __name__ == "__main__":
-    main_path = r"C:\unary"
+    main_path = "/content/output/fft_features"
     # num_variable_layers = 4  # Layers 1 through 4
     # bitwidth_options = [2, 3, 4, 5, 6]
     # last_layer_bitwidth = 3
