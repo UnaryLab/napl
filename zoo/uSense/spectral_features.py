@@ -130,7 +130,7 @@ if __name__ == "__main__":
         print(f"configuration {idx + 1}/{len(all_combinations)}: {combo}")
         path =  os.path.join(main_path, f"{combo}")
         if not os.path.exists(path):
-            print(f"{Fore.RED}Directory not found: {path}, skipping...")
+            #print(f"{Fore.RED}Directory not found: {path}, skipping...")
             continue
         SAVE_PATH = os.path.join(path, "features.npz")
         if os.path.exists(SAVE_PATH): 
