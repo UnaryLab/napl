@@ -49,7 +49,9 @@ else:
     log(f"{Fore.YELLOW}Using CPU")
 
 # --- Dataset and DataLoader ---
-path = r"C:\data\segmented_data.npz"
+
+path = "/content/output/segmented_data/segmented_data.npz"
+SAVE_DIR = "/content/output/fft_features"
 
 class NumpyMemmapDataset(Dataset):
     def __init__(self, npz_path):
@@ -72,8 +74,6 @@ print(f"Loading dataset from {path} ...")
 dataset = NumpyMemmapDataset(path)
 loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-SAVE_DIR = r"C:\unary"
-print(f"SAVE_DIR is set to: {SAVE_DIR}")
 _initialized_labels = {}
 def append_feature_jsonl(complex_fft_result, label, config_name):
     
