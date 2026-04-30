@@ -23,8 +23,7 @@ def load_data(path):
         #print(f"{Fore.MAGENTA}Error loading data from {path}: {e}")
         return None, None, None
 
-if __name__ == "__main__":
-    
+if __name__ == "__main__":    
     save_path = "/content/output/fft_features"
     if not os.path.exists(save_path):
         print(f"{Fore.RED}Directory not found: {save_path}")
@@ -46,36 +45,7 @@ if __name__ == "__main__":
     else:
         print(f"{Fore.YELLOW}Creating new file: {save_file}")
 
-    # num_variable_layers = 4 
-    # bitwidth_options = [2, 3, 4, 5, 6]
-    # last_layer_bitwidth = 3
-    # variable_layer_combos = itertools.product(bitwidth_options, repeat=num_variable_layers)
-    # all_combinations = [combo + (last_layer_bitwidth,) for combo in variable_layer_combos]
-
-    # l1_vals = [2, 3, 4, 5, 6]
-    # l5_vals = [2, 3, 4, 5, 6]
-    # all_combinations = [(l1, 3, 3, 3, l5) for l1 in l1_vals for l5 in l5_vals]
-    
-    # values = [2, 3, 4, 5]
-    # all_combinations = [
-    #     (*combo, 3)           # layer 5 fixed to 3
-    #     for combo in itertools.product(values, repeat=4)
-    # ]
-
-    # all_combinations = [] #initial attempt
-    # for b in [2,3,4,5,6,7,8]:
-    #     all_combinations.append((b,b,b,b,b))
-    # print(f"Total configurations to test: {len(all_combinations)}")
-
-    all_combinations = [] #TUNING
-    values = [2, 3, 4, 5]  # allowed bitwidths
-    num_layers = 5
-    for layer_index in range(num_layers):
-        for v in values:
-            config = [6] * num_layers  # default fixed value (example)
-            config[layer_index] = v    # tune one layer only
-            all_combinations.append(tuple(config))
-
+    all_combinations = [(2, 3, 3, 3, 3)] 
     for idx, combo in enumerate(all_combinations):
         if combo in existing_configs:
             print(f"{Fore.CYAN}Skipping configuration {combo} as it already exists in the results file.")
