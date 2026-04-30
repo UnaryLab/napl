@@ -9,8 +9,9 @@ from colorama import Fore, init
 init(autoreset=True)
 from napl.algorithm.fft import napl_fft
 import itertools
+import ast
 
-
+combinations_to_run = ast.literal_eval(sys.argv[1])
 
 def log(msg):
     print(time.strftime("[%Y-%m-%d %H:%M:%S] ") + str(msg), flush=True)
@@ -72,7 +73,6 @@ def append_feature_jsonl(complex_fft_result, label, config_name):
 total_batches = len(loader)
 print(f"\n Starting FFT processing for {total_batches} batches...")
 
-combinations_to_run = [(2, 3, 3, 3, 3)]
 
 for idx, combo in enumerate(combinations_to_run):
    
