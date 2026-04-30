@@ -5,6 +5,7 @@ from colorama import Fore, init as colorama_init
 import json 
 from sklearn.model_selection import GroupKFold, cross_val_score
 import itertools
+import ast
 from colorama import Fore, init as colorama_init
 colorama_init(autoreset=True)
 
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     else:
         print(f"{Fore.YELLOW}Creating new file: {save_file}")
 
-    all_combinations = [(2, 3, 3, 3, 3)] 
+    all_combinations = ast.literal_eval(sys.argv[1])
     for idx, combo in enumerate(all_combinations):
         if combo in existing_configs:
             print(f"{Fore.CYAN}Skipping configuration {combo} as it already exists in the results file.")
