@@ -1,12 +1,13 @@
 # loads the FFT features from the JSONL files, groups them by texture/speed/force, and saves as .npz for later use in training/testing
 
 import itertools
-import os
+import os,sys
 import re
 import json
 import numpy as np
 from colorama import Fore, init as colorama_init
 import itertools
+import ast
 colorama_init(autoreset=True)
 
 # --- Configuration ---
@@ -91,7 +92,8 @@ def create_grouped_features(feature_dir, output_path):
 
 if __name__ == "__main__":
     main_path = "/content/output/fft_features"
-    all_combinations =  [(2, 3, 3, 3, 3)] 
+    all_combinations = ast.literal_eval(sys.argv[1])
+
     print(f"Total configurations to test: {len(all_combinations)}")
     for idx, combo in enumerate(all_combinations):   
         print(f"configuration {idx + 1}/{len(all_combinations)}: {combo}")
