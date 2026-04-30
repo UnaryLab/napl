@@ -10,30 +10,6 @@ init(autoreset=True)
 from napl.algorithm.fft import napl_fft
 import itertools
 
-# values = [2, 3, 4, 5]
-
-# combinations_to_run = [
-#     (*combo, 3)           # layer 5 fixed to 3
-#     for combo in itertools.product(values, repeat=4)
-# ]
-
-# l1_vals = [2, 3, 4, 5, 6]
-# l5_vals = [2, 3, 4, 5, 6] 
-# combinations_to_run = [(l1, 3, 3, 3, l5) for l1 in l1_vals for l5 in l5_vals]
-
-values = [2, 3, 4, 5, 6]  # allowed bitwidths
-num_layers = 5
-
-combinations_to_run = []
-for layer_index in range(num_layers):
-    for v in values:
-        config = [6] * num_layers  # default fixed value (example)
-        config[layer_index] = v    # tune one layer only
-        combinations_to_run.append(tuple(config))
-
-
-print (f"Total configurations to run: {len(combinations_to_run)}")
-print (combinations_to_run)
 
 
 def log(msg):
@@ -95,6 +71,8 @@ def append_feature_jsonl(complex_fft_result, label, config_name):
 # ==============================================================================
 total_batches = len(loader)
 print(f"\n Starting FFT processing for {total_batches} batches...")
+
+combinations_to_run = [(2, 3, 3, 3, 3)]
 
 for idx, combo in enumerate(combinations_to_run):
    
