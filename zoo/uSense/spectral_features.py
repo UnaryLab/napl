@@ -91,46 +91,13 @@ def create_grouped_features(feature_dir, output_path):
 
 if __name__ == "__main__":
     main_path = "/content/output/fft_features"
-    # num_variable_layers = 4  # Layers 1 through 4
-    # bitwidth_options = [2, 3, 4, 5, 6]
-    # last_layer_bitwidth = 3
-    # variable_layer_combos = itertools.product(bitwidth_options, repeat=num_variable_layers)
-    # all_combinations = [combo + (last_layer_bitwidth,) for combo in variable_layer_combos]
-
-    values = [2, 3, 4, 5, 6]  # allowed bitwidths
-    num_layers = 5
-
-    all_combinations = []
-    for layer_index in range(num_layers):
-        for v in values:
-            config = [6] * num_layers  # default fixed value (example)
-            config[layer_index] = v    # tune one layer only
-            all_combinations.append(tuple(config))
-
-    # values = [2, 3, 4, 5]
-    # all_combinations = [
-    #     (*combo, 3)           # layer 5 fixed to 3
-    #     for combo in itertools.product(values, repeat=4)
-    #]
-
-    # l1_vals = [2, 3, 4, 5, 6]
-    # l5_vals = [2, 3, 4, 5, 6] 
-    # all_combinations = [(l1, 3, 3, 3, l5) for l1 in l1_vals for l5 in l5_vals]
-
-    # all_combinations = []
-    # for b in [2,3,4,5,6,7,8]:
-    #     all_combinations.append((b,b,b,b,b))
-    
-    # l1_vals = [2, 3, 4, 5, 6]
-    # l5_vals = [2, 3, 4, 5, 6] 
-    # all_combinations = [(l1, 3, 3, 3, l5) for l1 in l1_vals for l5 in l5_vals]
-
+    all_combinations =  [(2, 3, 3, 3, 3)] 
     print(f"Total configurations to test: {len(all_combinations)}")
     for idx, combo in enumerate(all_combinations):   
         print(f"configuration {idx + 1}/{len(all_combinations)}: {combo}")
         path =  os.path.join(main_path, f"{combo}")
         if not os.path.exists(path):
-            #print(f"{Fore.RED}Directory not found: {path}, skipping...")
+            print(f"{Fore.RED}Directory not found: {path}, skipping...")
             continue
         SAVE_PATH = os.path.join(path, "features.npz")
         if os.path.exists(SAVE_PATH): 
