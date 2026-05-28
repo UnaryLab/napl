@@ -209,3 +209,5 @@ __marimo__/
 # vscode
 .vscode
 .vscode/*
+# NAPL RTL generated artifacts
+src/napl/implementation/*/vec/*.vec
