@@ -3,7 +3,7 @@ import napl
 import torch
 
 from loguru import logger
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from napl.utils import *
 from functools import wraps
 
@@ -50,6 +50,67 @@ class global_config_check:
 global_config = global_config_check()
 
 
+@dataclass(frozen=True)
+class pvt_corner:
+    """
+    A full MCMM sign-off scenario at a given tech node: a P/V/T + RC corner
+    crossed with a functional mode. Frozen so it is hashable and usable as a key
+    in hw_params.timing. Mirrors what STA tools (PrimeTime/Tempus) call a
+    scenario = corner (process libset + voltage + temperature + parasitic corner)
+    x mode.
+    """
+    node: str                    # tech node, e.g. 'asap7', 'tsmc28'
+    process: str                 # process corner / libset, e.g. 'ss'/'tt'/'ff'
+    voltage: float               # supply voltage in V, e.g. 0.63
+    temp: float                  # junction temperature in degC, e.g. 125.0 (may be < 0)
+    rc: str = 'typ'              # interconnect (RC) corner, e.g. 'cworst'/'rcworst'/'typ'
+    mode: str = 'func'           # MCMM mode, e.g. 'func'/'scan'/'sleep'
+
+
+@dataclass
+class timing:
+    """
+    Corner-dependent timing of one module, in ns, defined as non-overlapping
+    segments of every input->output route so they add across module boundaries
+    for pre-synthesis critical-path estimation.
+
+    - cp_delay: worst *internal* combinational arc. For a registered module this
+      is the reg-to-reg path (its own fmax limiter); for a purely combinational
+      module (pp_delay == 0) it is the input->output through-delay, which adds
+      into whatever combinational cloud the module sits in.
+    - ir_delay: input port -> first capturing register. 0 for a purely
+      combinational module (no register to terminate at; its delay is in cp_delay).
+      A boundary stub: it belongs to one cloud, so an interior node must keep it 0.
+    - or_delay: last launching register -> output port. 0 for a purely
+      combinational module. Also a boundary stub (interior nodes keep it 0).
+
+    The combinational path created when upstream U drives downstream D is
+    U.or_delay + wire + (cp_delay of any combinational ops between) + D.ir_delay.
+    """
+    cp_delay: float = 0.0
+    ir_delay: float = 0.0
+    or_delay: float = 0.0
+
+
+@dataclass
+class hw_params:
+    """
+    Hardware contract bridging the functional model to generated RTL.
+
+    Technology-independent (must match the sim exactly, identical at every corner):
+    pp_delay is input->output latency in clock cycles (== register stages; 0 ==
+    purely combinational). Composing ops with mismatched pp_delay desynchronizes
+    streams on reconvergent paths, so pp_delay drives both stage count and path
+    balancing.
+
+    Technology- & corner-dependent (synthesis numbers, never affect functional
+    equivalence): timing maps each pvt_corner to its measured ns delays. Empty
+    until characterized by the RTL/STA flow.
+    """
+    pp_delay: int = 0
+    timing: dict = field(default_factory=dict)   # {pvt_corner: timing}
+
+
 class napl_base(torch.nn.Module):
     """
     Base class for all NAPL modules.
@@ -69,6 +130,9 @@ class napl_base(torch.nn.Module):
         self.name = check_name(config)
         
         self.timestep_cur = 0
+
+        # hardware contract for RTL generation; ops override with their own values
+        self.hw = hw_params()
 
 
     def tick(self):
