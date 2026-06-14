@@ -21,6 +21,7 @@ This project uses the `napl` conda env. Always run Python through it: `conda run
 - **Run a single test directly:** `conda run -n napl python tests/operation/test_mul_and.py`
 - **CLI:** `napl -h` (entry point `napl.main:main`). The CLI currently only prints a banner; it is a placeholder.
 - **RTL co-simulation:** from `src/napl/implementation/`, `conda run -n napl make test OP=mul_and`. Requires Icarus Verilog (`iverilog`/`vvp`) on PATH. See "RTL implementation" below.
+- **Maintenance skills/workflow (`.claude/`):** the repo ships five single-kernel skills (`napl-gen-sim`, `napl-opt-sim`, `napl-gen-rtl`, `napl-validate-unarysim`, `napl-validate-sim-rtl`) and the `napl-port-unarysim` workflow that fans out across them to port, optimize, validate, and lower every class. Runs append durable ledger rows under `reports/`.
 
 ### Testing rules
 
@@ -41,7 +42,7 @@ Everything is a `napl_base` (`base/base.py`), a `torch.nn.Module` subclass that 
 ### Layers (`src/napl/`)
 
 - **`base/`**: `napl_base`, the timestep decorators, and `global_config` loaded from `base/global_config.yaml`. Config sets `spike_type` (default `torch.int8`; legal: float/bfloat16/int8) and `non_spike_type` (default `torch.float32`); these become `self.stype` / `self.ntype` everywhere. Editing the YAML changes simulation dtypes globally.
-- **`module/`**: `encoder` (number to spike stream via comparison against an RNG `num_seq`), `decoder` (spike stream to number by counting), and neural layers `linear`/`conv`/`rnn` (FSU streaming kernels `*_fsu` plus binary-domain `*_hub`/`*_fxp`/`*_tlut`/`*_hard` variants). `wta` is a placeholder.
+- **`module/`**: `encoder` (number to spike stream via comparison against an RNG `num_seq`), `decoder` (spike stream to number by counting), and neural layers `linear`/`conv`/`rnn` (FSU streaming kernels `*_fsu`, the partial-count `*_fsu_pc` streaming variant in `conv_fsu_pc`/`linear`, plus binary-domain `*_hub`/`*_fxp`/`*_tlut`/`*_hard` variants). `wta` is a placeholder.
 - **`operation/`**: the gate-level primitives, namely `mul` (`mul_and`=AND/XNOR, `mul_csg`), `add`, `div`, `sqrt`, `square`, `compare` (min/max/lt/gt), activations (`relu`/`sigmoid`/`tanh`), stateful elements (`dff`/`jkff`/`shiftreg`), polarity converters (`bi2uni`/`uni2bi`), and more.
 - **`metric/`**: `accuracy` (progressive error / `report_error`), `correlation`, `stability`.
 - **`algorithm/fft/`**: `butterfly` is implemented; `fft` is a placeholder.
@@ -53,7 +54,7 @@ Everything is a `napl_base` (`base/base.py`), a `torch.nn.Module` subclass that 
 - Modules take a single `config` dict; `napl_base.__init__(config, key_list, polarity_required)` validates required keys. Common keys: `polarity` (`'unipolar'`/`'bipolar'`), `timestep`, `generator` (`sobol`/`lfsr`/`sys`/`rc`/`tc`/`rate`/`temporal`), `dim` (Sobol dimension).
 - **Decorrelation matters:** operands that must be independent are encoded on **distinct Sobol dims** (see the two encoders in `test_mul_and.py`). Reusing a dim correlates streams and biases results.
 - **Polarity:** unipolar maps value to [0,1]; bipolar maps value to [-1,1] via `prob=(x+1)/2`. Many ops branch on `self.polarity`.
-- **Hardware contract (`self.hw`, a `hw_params` from `base/base.py`):** each op sets `self.hw = hw_params(pp_delay=...)` in `__init__`. `pp_delay` = input→output latency in cycles (0 = combinational); it is the one field that must match the generated RTL for sim/HW timing to agree. Per-corner STA numbers live in `self.hw.timing`, a `{pvt_corner: timing}` dict (key = MCMM scenario `node/process/voltage/temp/rc/mode`; value = `cp_delay`/`ir_delay`/`or_delay` in ns). Combinational ops (`pp_delay=0`) put the whole through-delay in `cp_delay` with `ir_delay=or_delay=0`; registered ops fill all three. **Migration in progress:** this supersedes the scalar `self.delay`; only `mul_and`/`mul_csg`/`shiftreg` are converted, the rest still set `self.delay`, and `implementation/README.md` plus the `port-unarysim` skill still reference `self.delay`.
+- **Hardware contract (`self.hw`, a `hw_params` from `base/base.py`):** each op sets `self.hw = hw_params(pp_delay=...)` in `__init__`. `pp_delay` = input→output latency in cycles (0 = combinational); it is the one field that must match the generated RTL for sim/HW timing to agree. Per-corner STA numbers live in `self.hw.timing`, a `{pvt_corner: timing}` dict (key = MCMM scenario `node/process/voltage/temp/rc/mode`; value = `cp_delay`/`ir_delay`/`or_delay` in ns). Combinational ops (`pp_delay=0`) put the whole through-delay in `cp_delay` with `ir_delay=or_delay=0`; registered ops fill all three. **Migration nearly complete:** this supersedes the scalar `self.delay`. Every op with generated RTL now sets `self.hw = hw_params(pp_delay=...)` (pp_delays were written back from the verified RTL); only the single-shot HUB/hard activation ops with no gate-level RTL (`tanh`, `round`, `sigmoid`) still carry `self.delay`. `implementation/README.md` and the `napl-gen-rtl` skill still mention `self.delay`.
 
 ### Gotchas (non-obvious)
 
