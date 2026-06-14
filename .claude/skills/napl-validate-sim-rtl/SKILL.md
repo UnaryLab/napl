@@ -119,6 +119,17 @@ Key points:
   napl **op directly** with those streams (the op boundary, bypassing the decoder), recording
   per-timestep `(op inputs, op output)`. Start from `model.reset()` at `t=0` so the reset
   transient is part of the vectors.
+- **Build the op with the test's sizing config, and make the RTL inherit it.** The op's size
+  (`depth`, `width`, `scale`, `entry`, ...) is a Verilog `parameter`, not a baked-in constant
+  (see the implementation spec). Build the Python model from the **test's** op config (e.g.
+  `test_shiftreg.py`'s `shiftreg_config={'depth': 2}`), and from that SAME config emit
+  `vec/<op>_params.vh` with one `` `define GEN_<PARAM> <value> `` per sizing field. The testbench
+  `` `include "<op>/vec/<op>_params.vh" `` (iverilog resolves it relative to the compile cwd,
+  `implementation/`) and instantiates the DUT with `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the
+  RTL is validated at the test's size, not a stale default. If the existing gen hardcodes a size
+  (an old `localparam`/constant mirrored by a "must match" comment), this is exactly the drift to
+  fix - replace it with the inherited parameter. (Real example: `shiftreg`'s RTL/gen carried
+  `DEPTH=4` while the test used `depth=2`; the co-sim passed only because both wrong copies agreed.)
 - **The RTL is a bit-serial scalar datapath; the test's inputs are vectorized.** The test
   feeds a large tensor (many parallel streams) only to gather SC error statistics. The RTL has
   one 1-bit datapath, so you cannot feed it a vector. Instead drive **representative scalar
@@ -252,6 +263,11 @@ recorded row to the user as part of the verdict.
   arbitrary state, not only at `t=0`.
 - **Bit-serial scalar, not the test's tensor.** The RTL has one 1-bit datapath. Drive
   representative scalar streams encoded with the test's config, not the test's wide tensor.
+- **Validate at the test's size, via inheritance.** Build the model with the test's sizing config
+  and have the RTL inherit it: gen emits `vec/<op>_params.vh` (`` `define GEN_<PARAM> ... ``) from
+  that config; the tb `` `include ``s it (path relative to the compile cwd: `"<op>/vec/<op>_params.vh"`)
+  and overrides the DUT parameter. A hardcoded RTL size that disagrees with `test_<op>.py` is a real
+  finding, not a pass - it means you validated a configuration the test never runs.
 - **pp_delay alignment.** One `forward()` equals one `posedge i_clk`; the model's per-tick
   output already includes its latency, so model vectors align with RTL cycles. A constant offset
   in the mismatches points at a pp_delay or sampling-edge bug, not a logic bug.

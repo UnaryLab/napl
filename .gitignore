@@ -212,3 +212,4 @@ __marimo__/
 # NAPL RTL generated artifacts
 src/napl/implementation/*/vec/*.vec
 src/napl/implementation/*/vec/*.hex
+src/napl/implementation/*/vec/*.vh

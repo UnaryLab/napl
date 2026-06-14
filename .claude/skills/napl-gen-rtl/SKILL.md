@@ -93,20 +93,39 @@ following `src/napl/implementation/README.md` and the auto-injected Verilog rule
   (and its filename) is *exactly* the op name (which may contain underscores), optionally followed by
   a SINGLE polarity postfix `_unipolar` or `_bipolar` when the op has distinct polarity variants. No
   other postfix (no mode/config/version/width tags). No polarity split -> bare op name.
+- **Sizing params are inherited from the Python model, never hardcoded.** A variant is *selected* by
+  module name (the polarity postfix); its *size* is not baked in. Every numeric dimension the op reads
+  from its config (`depth`, `width`, `scale`, `entry`, ...) becomes a Verilog `parameter` (UPPER_CASE)
+  with a default documenting the generated config, and **all bus widths and magic constants derive
+  from those parameters** (`reg [DEPTH-1:0]`; `localparam ACC_HI = 2**(WIDTH-1)-1`; not a literal
+  `30`), so the module is correct at any size. The verified value flows from the model: the gen script
+  emits the param header (below) and the testbench overrides the parameter from it. Do NOT mirror a
+  size as a hand-copied `localparam`/constant kept in sync by a "must match" comment - that is the
+  drift this inheritance removes. An op with no sizing config (e.g. combinational `mul_and`, whose
+  only datum is the 1-bit spike) declares no parameters.
 - **Timing mapping:** one Python `forward()` timestep == one `posedge i_clk`. Active-low `i_rst_n`
   maps to the Python `reset()`, and must bring every register to the EXACT post-`reset()` state of
   the model (not always zero - reload whatever `reset()` sets).
 - **`gen/gen_<op>.py`** - emits `vec/<op>.vec` with golden vectors **from the napl Python model**
-  (`from napl.operation import <op>`), never a hand-derived truth table. Drive the model per timestep
-  from `model.reset()` at t=0 and record per-cycle (inputs, output), one polarity column per variant
-  (see `mul_and`'s `in_0 in_1 out_unipolar out_bipolar`). The bit-serial RTL has one 1-bit datapath,
-  so drive scalar streams.
+  (`from napl.operation import <op>`), never a hand-derived truth table. Read the op's sizing config
+  **once** (mirroring `test_<op>.py`'s op config), build the model from it, drive it per timestep from
+  `model.reset()` at t=0, and record per-cycle (inputs, output), one polarity column per variant (see
+  `mul_and`'s `in_0 in_1 out_unipolar out_bipolar`). The bit-serial RTL has one 1-bit datapath, so
+  drive scalar streams. **Also emit `vec/<op>_params.vh`** from that same config with one
+  `` `define GEN_<PARAM> <value> `` per sizing field (e.g. `` `define GEN_DEPTH 2 ``); this header is
+  the single source of truth the RTL inherits its sizes from. Ops with no sizing config emit no header.
 - **`tb/<op>_tb.v`** - self-checking testbench: replays the vectors cycle by cycle (pulse `i_rst_n`
   low before driving so the co-sim starts from t=0), compares the RTL output to the expected column,
-  and prints `PASS ...` ONLY on a full bit-exact match (the Makefile greps for `^PASS`).
+  and prints `PASS ...` ONLY on a full bit-exact match (the Makefile greps for `^PASS`). When the op
+  has sizing params, `` `include "<op>/vec/<op>_params.vh" `` at the top (iverilog resolves the path
+  relative to the compile cwd, `implementation/`, NOT the tb file - confirmed; `../vec/...` does not
+  resolve under the fixed Makefile) and instantiate the DUT with the override
+  `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the verified hardware is the model's configuration.
 
-Copy the nearest live pattern: `implementation/mul_and/` (combinational) or `implementation/shiftreg/`
-(stateful, non-zero reset). Do NOT edit the shared `Makefile` - it is already generic via `OP=`.
+Copy the nearest live pattern: `implementation/mul_and/` (combinational, no sizing params) or
+`implementation/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
+parameter overridden from `vec/shiftreg_params.vh`). Do NOT edit the shared `Makefile` - it is already
+generic via `OP=` and runs the gen script (which writes the header) before compiling.
 
 ### Step 4 - Verify with the co-simulation
 
@@ -174,6 +193,13 @@ Standalone (a user invoking this skill directly), do both Step 5 and Step 6 norm
   `reset()` and pulse `i_rst_n` low before the stream; a wrong reset value fails on the opening cycles.
 - **One module per polarity, exact naming.** Distinct unipolar/bipolar variants are separate modules
   with a single `_unipolar`/`_bipolar` postfix; never a mode/width/version tag. Filename == module.
+- **Sizing params inherit; they are not hardcoded.** Any dimension the op reads from its config is a
+  Verilog `parameter` with all widths/constants derived from it, the gen script emits its value into
+  `vec/<op>_params.vh` from the model config, and the tb overrides via `` `GEN_<PARAM> ``. A hand-copied
+  `localparam DEPTH = 4` synced by a comment is the bug: `shiftreg`'s RTL/gen had `DEPTH=4` while its
+  test used `depth=2`, and the co-sim passed only because both wrong copies agreed. Inheriting from
+  one source (the model config) makes that drift impossible. Include path is relative to the compile
+  cwd: `` `include "<op>/vec/<op>_params.vh" ``, not `../vec/...`.
 - **pp_delay is min across paths, written to `self.hw`, not `self.delay`.** Use the `hw_params`
   contract and add the `hw_params` import; the legacy scalar `self.delay` is superseded.
 - **Bit-serial scalar datapath.** One 1-bit datapath per (op, variant); the generator drives scalar
