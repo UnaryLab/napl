@@ -213,3 +213,7 @@ __marimo__/
 src/napl/implementation/*/vec/*.vec
 src/napl/implementation/*/vec/*.hex
 src/napl/implementation/*/vec/*.vh
+
+# MCP tool state (serena, tokensave)
+.serena/
+.tokensave/

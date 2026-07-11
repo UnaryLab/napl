@@ -1,7 +1,7 @@
 import torch
 
 from napl.utils import *
-from napl.base import napl_base
+from napl.base import napl_base, hw_params
 
 
 class sync_skewed(napl_base):
@@ -11,19 +11,20 @@ class sync_skewed(napl_base):
     2) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
     """
     def __init__(
-            self, 
+            self,
             config={
                 'width' : 3,
             }
     ):
         super().__init__(config, ['width'], polarity_required=False)
+        self.hw = hw_params(pp_delay=0)
 
         self.width=config['width']
         self.cnt_max = 2**self.width - 1
         self.cnt = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         self.is_first_call = True
 
-        
+
     def reset(self, verbose=False):
         self.timestep_cur = 0
         self.cnt.data = torch.zeros(1, dtype=self.ntype, device=self.cnt.device)
@@ -65,7 +66,11 @@ class sync_skewed(napl_base):
         #       if cnt_not_max == 0: cnt == cnt_max
         #           output_1 = 1
         #           cnt add 1 then saturate to cnt_max: no change
-        output_1 = input_1.add(input_01_10.mul(cnt_not_min * (1 - input_1) + (0 - cnt_not_max) * input_1))
-        self.cnt.data.add_(input_01_10.type(self.ntype).mul(input_1.mul(2).sub(1).type(self.ntype))).clamp_(0, self.cnt_max)
+        # select term cnt_not_min*(1-input_1) - cnt_not_max*input_1 rewritten with fewer
+        # int8 elementwise ops (input_1 is a {0,1} spike, so this identity is exact)
+        select = cnt_not_min - (cnt_not_min + cnt_not_max).mul(input_1)
+        output_1 = input_1.add(input_01_10.mul(select))
+        # operands are small integers ({0,1} and {-1,1}); add_ promotes them and anchors cnt's dtype
+        self.cnt.data.add_(input_01_10.mul(input_1.mul(2).sub(1))).clamp_(0, self.cnt_max)
         return output_1, input_2
-    
+

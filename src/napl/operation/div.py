@@ -1,7 +1,7 @@
 import torch, math
 
 from napl.utils import *
-from napl.base import napl_base
+from napl.base import napl_base, hw_params
 from napl.module import gen_num_seq
 from napl.operation import uni2bi, bi2uni, sign_abs, sync_skewed
 from loguru import logger
@@ -17,14 +17,15 @@ class div_cordiv(napl_base):
     3) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
     """
     def __init__(
-        self, 
+        self,
         config={
             # experiments shows that depth of 2 is the best for accuracy
-            'depth' : 2, 
+            'depth' : 2,
             'generator' : 'Sobol',
         }
     ):
         super().__init__(config, ['depth', 'generator'], polarity_required=False)
+        self.hw = hw_params(pp_delay=0)
 
         self.depth = config['depth']
         assert math.log2(self.depth) == math.ceil(math.log2(self.depth)), logger.error(f'Input depth <{self.depth}> is not power of 2.')
@@ -33,14 +34,17 @@ class div_cordiv(napl_base):
 
         # rand sequence to choose q
         self.rand_seq = torch.nn.Parameter(torch.floor(gen_num_seq(config).mul(self.depth)).type(torch.long), requires_grad=False)
+        # static list of buffer-row indices; lets forward() index buffer_q with a
+        # Python int (a cheap view) instead of a device scalar tensor (a per-timestep GPU sync)
+        self.rand_seq_idx = self.rand_seq.tolist()
         # index of numbers in the rand seq
         self.idx = 0
 
         # the buffer to save a few q
         self.buffer_q = torch.nn.Parameter(torch.zeros(self.depth, dtype=self.stype), requires_grad=False)
-        
+
         self.is_first_call = True
-        
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0
@@ -64,21 +68,28 @@ class div_cordiv(napl_base):
 
         # generate the random number to index buffer_q
         # always generating, no need to deal with conditional probability
-        divisor_eq_1 = torch.eq(divisor, 1).type(self.stype)
-        self.rand_q = self.buffer_q[self.rand_seq[self.idx]]
+        # rand_q is a per-call local (read only on the next line), so keep it off self:
+        # nn.Module.__setattr__ runs Parameter/Module/Tensor isinstance checks on every
+        # assignment and is a measurable per-timestep cost here.
+        divisor_eq_1 = torch.eq(divisor, 1)
+        rand_q = self.buffer_q[self.rand_seq_idx[self.idx]]
         self.idx = (self.idx + 1) % self.depth
-        
-        quotient = (divisor_eq_1 * dividend + (1 - divisor_eq_1) * self.rand_q).view(dividend.size())
-        
-        # buffer_q update based on whether divisor is a valid spike
-        mask_val = divisor_eq_1.type(self.stype)
-        buffer_q_shift = torch.roll(self.buffer_q, 1, dims=0)
-        buffer_q_shift[0] = quotient.clone().detach()
-        buffer_q_no_shift = self.buffer_q.clone().detach()
-        self.buffer_q.data = mask_val * buffer_q_shift + (1 - mask_val) * buffer_q_no_shift
-        
-        return quotient.type(self.stype)
-    
+
+        # select dividend where the divisor spikes, else the buffered q (0/1 blend == where).
+        # where() of two stype operands is already stype, so no .type(self.stype) cast needed.
+        quotient = torch.where(divisor_eq_1, dividend, rand_q).view(dividend.size())
+
+        # buffer_q update: shift in the new quotient only where divisor is a valid spike.
+        # equivalent to roll(+1) with row 0 := quotient, then where(divisor_eq_1, shifted, old);
+        # done as in-place per-row shifts (top-down so each row reads its un-updated source),
+        # avoiding the two full [depth, *shape] allocations of the roll + where form.
+        buf = self.buffer_q.data
+        for r in range(self.depth - 1, 0, -1):
+            buf[r] = torch.where(divisor_eq_1, buf[r - 1], buf[r])
+        buf[0] = torch.where(divisor_eq_1, quotient, buf[0])
+
+        return quotient
+
 
 class div_iscb(napl_base):
     """
@@ -87,12 +98,13 @@ class div_iscb(napl_base):
     2) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
     """
     def __init__(
-        self, 
+        self,
         config={
             'polarity' : 'bipolar',
         }
     ):
         super().__init__(config, ['polarity'], polarity_required=True)
+        self.hw = hw_params(pp_delay=0)
 
         # fix width to optimal 3
         self.sync = sync_skewed({'width': 3})
@@ -110,7 +122,7 @@ class div_iscb(napl_base):
             self.bi2uni_divisor  = bi2uni({'width': 2})
             # fix width to optimal 3
             self.uni2bi_quotient = uni2bi({'width': 3})
-    
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0
@@ -127,8 +139,8 @@ class div_iscb(napl_base):
         bi_abs_quotient = self.uni2bi_quotient(uni_abs_quotient)
         bi_quotient = sign_dividend.type(torch.int8) ^ sign_divisor.type(torch.int8) ^ bi_abs_quotient.type(torch.int8)
         return bi_quotient
-    
-    
+
+
     def unipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
         # dividend and divisor are both spike tensors
         dividend_sync, divisor_sync = self.sync(dividend, divisor)
@@ -143,4 +155,4 @@ class div_iscb(napl_base):
         else:
             output = self.unipolar_forward(dividend, divisor)
         return output.type(self.stype)
-    
+

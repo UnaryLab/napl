@@ -1,13 +1,11 @@
-import os, sys, yaml, json, torch, random
+import os, sys, yaml, json, torch, math
 import numpy as np
 import importlib.util
-import napl
 
 from collections import OrderedDict
 from yamlordereddictloader import SafeDumper
 from yamlordereddictloader import SafeLoader
 from loguru import logger
-from dataclasses import dataclass
 
 
 class bcolors:
@@ -106,7 +104,7 @@ def check_type(input, type):
     check whether input is the required type
     """
     assert isinstance(input, type), logger.error('Invalid input type')
-    
+
 
 def check_file_list(file_list: list):
     """
@@ -139,7 +137,7 @@ def create_dir(directory):
     except OSError:
         logger.error('Create directory: ' +  directory)
         sys.exit()
-    
+
 
 def create_subdir(path: str, subdir_list: list):
     for subdir in subdir_list:
@@ -147,7 +145,7 @@ def create_subdir(path: str, subdir_list: list):
         if not os.path.exists(subdir_path):
             create_dir(subdir_path)
 
-    
+
 def read_yaml(file):
     return yaml.load(open(file), Loader=SafeLoader)
 
@@ -173,7 +171,7 @@ def check_repeated_key(full_dict: OrderedDict, key:str, val: OrderedDict):
         if full_dict[key] == val:
             return True, key
     return False, None
-    
+
 
 # The following interpolate_oneD_linear and interpolate_oneD_quadratic are adapted from accelergy
 # ===============================================================
@@ -288,30 +286,6 @@ def call_func_from_yaml(yaml_path: str=None, header: str=None, func_name: str=No
     return module_py.create(load_cfg, **kwargs)
 
 
-def call_func_from_yaml(yaml_path: str=None, header: str=None, func_name: str=None, py_path: str=None, **kwargs):
-    full_path = get_path(yaml_path)
-    load_cfg = read_yaml(full_path)
-
-    # check yaml header
-    check_yaml_header(load_cfg, header, full_path)
-
-    # get config
-    load_cfg = load_cfg[header]
-
-    # func_name has to be specified
-    check_yaml_cfg(load_cfg, func_name, full_path)
-    func = load_cfg[func_name].lower()
-
-    # find proper func_name to create the header
-    dst_file = os.path.join(py_path, func, func + '.py')
-    spec = importlib.util.spec_from_file_location(f'create_{header}_with_{func}', dst_file)
-    module_py = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module_py
-    spec.loader.exec_module(module_py)
-
-    return module_py.create(load_cfg, **kwargs)
-
-
 def call_func_from_cfg(cfg: dict, header: str, func_name: str, py_path: str, **kwargs):
     check_yaml_cfg(cfg, func_name, '<in-memory>')
     func = cfg[func_name].lower()
@@ -370,6 +344,142 @@ def gen_arange_tensor(polarity: str = 'unipolar', width: int = 8):
     else:
         data = (prob * 2 - 1)
         return (data * (2 ** (width - 1))).floor() / (2 ** (width - 1))
+
+
+def pow2_lshift(input, shift):
+    """
+    Power-of-two left shift for float tensors: input * 2**shift.
+    Stock torch '<<'/'>>' are integer-only, but unary/fixed-point kernels need shifts
+    on float tensors. Use these shims instead of patching the operators. `shift` may be
+    an int or a tensor.
+    """
+    return input * (2.0 ** shift)
+
+
+def pow2_rshift(input, shift):
+    """
+    Power-of-two right shift for float tensors: input / 2**shift. See pow2_lshift.
+    """
+    return input / (2.0 ** shift)
+
+
+def rshift_offset(input, weight, widthi, widthw, rounding="round", quantilei=1, quantilew=1):
+    """
+    Dynamic fixed-point scaling: return the right-shift offsets that bring `input` and
+    `weight` into a `widthi`/`widthw`-bit range (from their quantile-clipped magnitude),
+    plus the output offset that undoes both.
+    """
+    def _mag(x, q):
+        # Magnitude of x clipped to its central q-quantile. q==1 is the full range,
+        # i.e. plain min/max -- short-circuit it so we skip torch.quantile (which sorts
+        # and rejects tensors with > 2**24 elements) on the common default path.
+        if q == 1:
+            return x.abs().max()
+        lower = torch.quantile(x, 0.5 + q / 2)
+        upper = torch.quantile(x, 0.5 - q / 2)
+        return torch.max(lower.abs(), upper.abs())
+
+    with torch.no_grad():
+        imax_int = _mag(input, quantilei).log2()
+        wmax_int = _mag(weight, quantilew).log2()
+
+        if rounding == "round":
+            imax_int = imax_int.round()
+            wmax_int = wmax_int.round()
+        elif rounding == "floor":
+            imax_int = imax_int.floor()
+            wmax_int = wmax_int.floor()
+        elif rounding == "ceil":
+            imax_int = imax_int.ceil()
+            wmax_int = wmax_int.ceil()
+
+        # all-zero / degenerate operands give scale 0, so log2 -> -inf; treat that as a
+        # zero offset so the quantized result is a finite zero instead of NaN.
+        imax_int = torch.nan_to_num(imax_int, nan=0.0, neginf=0.0, posinf=0.0)
+        wmax_int = torch.nan_to_num(wmax_int, nan=0.0, neginf=0.0, posinf=0.0)
+
+        rshift_i = imax_int - widthi
+        rshift_w = wmax_int - widthw
+        rshift_o = max(widthi, widthw) - imax_int - wmax_int
+        return rshift_i, rshift_w, rshift_o
+
+
+def num2tuple(num):
+    """Return num as a 2-tuple: a scalar becomes (num, num), a tuple passes through."""
+    return num if isinstance(num, tuple) else (num, num)
+
+
+def conv2d_output_shape(h_w, kernel_size=1, stride=1, pad=0, dilation=1):
+    """Spatial (H, W) of a conv2d output."""
+    h_w, kernel_size, stride, pad, dilation = num2tuple(h_w), \
+        num2tuple(kernel_size), num2tuple(stride), num2tuple(pad), num2tuple(dilation)
+    pad = num2tuple(pad[0]), num2tuple(pad[1])
+    h = math.floor((h_w[0] + sum(pad[0]) - dilation[0] * (kernel_size[0] - 1) - 1) / stride[0] + 1)
+    w = math.floor((h_w[1] + sum(pad[1]) - dilation[1] * (kernel_size[1] - 1) - 1) / stride[1] + 1)
+    return h, w
+
+
+def conv2d_get_padding(h_w_in, h_w_out, kernel_size=1, stride=1, dilation=1):
+    """Padding (as (top,bottom),(left,right)) to map h_w_in to h_w_out."""
+    h_w_in, h_w_out, kernel_size, stride, dilation = num2tuple(h_w_in), num2tuple(h_w_out), \
+        num2tuple(kernel_size), num2tuple(stride), num2tuple(dilation)
+    p_h = ((h_w_out[0] - 1) * stride[0] - h_w_in[0] + dilation[0] * (kernel_size[0] - 1) + 1)
+    p_w = ((h_w_out[1] - 1) * stride[1] - h_w_in[1] + dilation[1] * (kernel_size[1] - 1) + 1)
+    return (math.floor(p_h / 2), math.ceil(p_h / 2)), (math.floor(p_w / 2), math.ceil(p_w / 2))
+
+
+def truncated_normal(t, mean=0.0, std=0.01):
+    """Return a normal draw truncated to +/-2 std (rejection-sampled). `t` seeds the
+    shape/dtype/device; assign the return value -- out-of-bound resampling rebinds it."""
+    torch.nn.init.normal_(t, mean=mean, std=std)
+    while True:
+        cond = torch.logical_or(t < mean - 2 * std, t > mean + 2 * std)
+        if cond.any():
+            t = torch.where(cond, torch.nn.init.normal_(torch.ones_like(t), mean=mean, std=std), t)
+        else:
+            break
+    return t
+
+
+class NN_SC_Weight_Clipper(object):
+    """
+    Clipper for NN weights/bias into the stochastic-computing range: 'norm' rescales to
+    the full range on the first call, then 'clip' clamps on subsequent calls; both
+    quantize to `bitwidth` bits. Apply via module.apply(clipper).
+    """
+    def __init__(self, frequency=1, mode="bipolar", method="clip", bitwidth=8):
+        self.frequency = frequency
+        self.mode = mode        # "unipolar" or "bipolar"
+        self.method = method    # "clip" or "norm"
+        self.scale = 2 ** bitwidth
+
+    def __call__(self, module):
+        self.method = "clip" if self.frequency > 1 else "norm"
+        if hasattr(module, 'weight'):
+            self.clipping(module.weight.data)
+        if hasattr(module, 'bias') and module.bias is not None:
+            self.clipping(module.bias.data)
+        self.frequency = self.frequency + 1
+
+    def clipping(self, w):
+        if self.mode == "unipolar":
+            if self.method == "norm":
+                w.sub_(torch.min(w)).div_(torch.max(w) - torch.min(w)) \
+                    .mul_(self.scale).round_().clamp_(0.0, self.scale).div_(self.scale)
+            elif self.method == "clip":
+                w.clamp_(0.0, 1.0).mul_(self.scale).round_().clamp_(0.0, self.scale).div_(self.scale)
+            else:
+                raise TypeError(f"unknown method '{self.method}' in NN_SC_Weight_Clipper, expected 'clip' or 'norm'")
+        elif self.mode == "bipolar":
+            if self.method == "norm":
+                w.sub_(torch.min(w)).div_(torch.max(w) - torch.min(w)).mul_(2).sub_(1) \
+                    .mul_(self.scale / 2).round_().clamp_(-self.scale / 2, self.scale / 2).div_(self.scale / 2)
+            elif self.method == "clip":
+                w.clamp_(-1.0, 1.0).mul_(self.scale / 2).round_().clamp_(-self.scale / 2, self.scale / 2).div_(self.scale / 2)
+            else:
+                raise TypeError(f"unknown method '{self.method}' in NN_SC_Weight_Clipper, expected 'clip' or 'norm'")
+        else:
+            raise TypeError(f"unknown mode '{self.mode}' in NN_SC_Weight_Clipper, expected 'unipolar' or 'bipolar'")
 
 
 def check_name(config: dict):

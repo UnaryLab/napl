@@ -1,7 +1,7 @@
 import torch
 
 from napl.utils import *
-from napl.base import napl_base
+from napl.base import napl_base, hw_params
 
 
 class jkff(napl_base):
@@ -13,27 +13,24 @@ class jkff(napl_base):
             config={}
         ):
         super().__init__(config, [], polarity_required=False)
+        self.hw = hw_params(pp_delay=1)
 
         self.q = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
-    
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0
         self.q.data = torch.zeros(1, dtype=torch.int8, device=self.q.device)
 
-    
+
     def forward(self, input_j: torch.tensor, input_k: torch.tensor):
         self.tick()
-        j0 = torch.eq(input_j, 0).type(torch.int8)
-        j1 = 1 - j0
-        k0 = torch.eq(input_k, 0).type(torch.int8)
-        k1 = 1 - k0
-        
-        j0k0 = j0 & k0
-        j1k0 = j1 & k0
-        j0k1 = j0 & k1
-        j1k1 = j1 & k1
-        
-        self.q.data = j0k0 * self.q + j1k0 * torch.ones_like(input_j, dtype=torch.int8) + j0k1 * torch.zeros_like(input_j, dtype=torch.int8) + j1k1 * (1 - self.q)
+        # JK characteristic eq: Q' = (J AND NOT Q) OR (NOT K AND Q). The two
+        # terms are mutually exclusive, so for Q in {0,1} this is a plain select:
+        # Q' = Q ? (NOT K) : J, a single masked select with no mask or
+        # int8-cast temporaries per timestep.
+        self.q.data = torch.where(
+            self.q.bool(), torch.eq(input_k, 0), torch.ne(input_j, 0)
+        ).type(torch.int8)
         return self.q.type(self.stype)
 

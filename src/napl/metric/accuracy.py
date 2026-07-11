@@ -11,7 +11,7 @@ class accuracy(napl_base):
     Progressive precision: 'Fast and accurate computation using stochastic circuits'
     """
     def __init__(
-            self, 
+            self,
             config={
                 'polarity' : 'bipolar',
             }
@@ -50,48 +50,63 @@ class accuracy(napl_base):
         self.spike_error_mae.data = torch.zeros(1, device=self.spike_error_mae.device)
         self.spike_error_rmse.data = torch.zeros(1, device=self.spike_error_rmse.device)
         self.error_flag = False
-    
+
 
     def forward(self, spike: torch.Tensor):
         self.tick()
-        self.error_flag = True
-        # accuracy uses torch.float format to avoid overflow
-        self.spike_count.data = self.spike_count.add(spike.type(torch.float))
-        self.spike_value.data = self.spike_count.div(self.timestep_cur)
+        if not self.error_flag:
+            self.error_flag = True
+        # float accumulator avoids overflow; the 0/1 spike promotes exactly, so no cast.
+        # sv is the fresh div result, so the in-place bipolar rescale leaves sc untouched.
+        sc = self.spike_count
+        # shape-guarded: first forward broadcasts the (1,) seed up to spike's shape
+        # out-of-place; steady state accumulates in place to drop a per-timestep alloc.
+        if sc.shape == spike.shape:
+            sc.add_(spike)
+        else:
+            sc.data = sc.add(spike)
+        sv = sc.div(self.timestep_cur)
         if self.polarity == 'bipolar':
-            self.spike_value.data = self.spike_value.mul(2).sub(1)
+            sv.mul_(2).sub_(1)
+        self.spike_value.data = sv
         return self.spike_value
-    
+
 
     def report_error(self, reference: torch.Tensor, verbose=False):
         # return the error and index of max abs error
         assert self.error_flag == True, logger.error(f'Error flag is not set. Please call forward() before report_error().')
         self.spike_error.data = self.spike_value.sub(reference)
-        self.spike_error_abs_max.data = torch.max(self.spike_error.abs())
-        self.spike_error_abs_min.data = torch.min(self.spike_error.abs())
+        # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.
+        spike_error_abs = self.spike_error.abs()
+        # aminmax: one fused pass for both extremes instead of separate min/max scans.
+        spike_error_abs_amin, spike_error_abs_amax = torch.aminmax(spike_error_abs)
+        self.spike_error_abs_max.data = spike_error_abs_amax
+        self.spike_error_abs_min.data = spike_error_abs_amin
         self.spike_error_avg.data = self.spike_error.mean()
-        self.spike_error_mae.data = self.spike_error.abs().mean()
-        self.spike_error_rmse.data = torch.sqrt(self.spike_error.abs().pow(2).mean())
+        self.spike_error_mae.data = spike_error_abs.mean()
+        self.spike_error_rmse.data = torch.sqrt(spike_error_abs.pow(2).mean())
 
         if verbose:
             logger.info(f'Accuracy report for accuracy instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
             logger.info(f'    Max absolute error:     <{self.spike_error_abs_max.item()}>')
             logger.info(f'    Min absolute error:     <{self.spike_error_abs_min.item()}>')
-            logger.info(f'    Mean error:             <{self.spike_error_mae.item()}>')
+            logger.info(f'    Mean error:             <{self.spike_error_avg.item()}>')
             logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
             logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
             logger.info(f'')
-        return self.spike_error, torch.argmax(self.spike_error.abs())
-    
+        return self.spike_error, torch.argmax(spike_error_abs)
+
 
 def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
     # return the error and index of max abs error
     spike_error = spike_value.sub(reference)
-    spike_error_abs_max = torch.max(spike_error.abs())
-    spike_error_abs_min = torch.min(spike_error.abs())
+    # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.
+    spike_error_abs = spike_error.abs()
+    # aminmax: one fused pass for both extremes instead of separate min/max scans.
+    spike_error_abs_min, spike_error_abs_max = torch.aminmax(spike_error_abs)
     spike_error_avg = spike_error.mean()
-    spike_error_mae = spike_error.abs().mean()
-    spike_error_rmse = torch.sqrt(spike_error.abs().pow(2).mean())
+    spike_error_mae = spike_error_abs.mean()
+    spike_error_rmse = torch.sqrt(spike_error_abs.pow(2).mean())
 
     logger.info(f'Accuracy report: ')
     logger.info(f'    Max absolute error:     <{spike_error_abs_max.item()}>')
@@ -100,5 +115,5 @@ def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
     logger.info(f'    Mean absolute error:    <{spike_error_mae.item()}>')
     logger.info(f'    Root mean square error: <{spike_error_rmse.item()}>')
     logger.info(f'')
-    return spike_error, torch.argmax(spike_error.abs())
+    return spike_error, torch.argmax(spike_error_abs)
 

@@ -15,3 +15,4 @@ from .shiftreg import *
 from .div import *
 from .sqrt import *
 from .compare import *
+from .round import *

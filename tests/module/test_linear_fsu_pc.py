@@ -1,0 +1,134 @@
+import time
+import torch
+
+from napl.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import *
+from napl.module import encoder, linear_fsu_pc
+from napl.module.linear import linear_fsu
+
+
+def _devices():
+    devs = ['cpu']
+    if torch.cuda.is_available():
+        devs.append('cuda')
+    if torch.backends.mps.is_available():
+        devs.append('mps')
+    return devs
+
+
+class napl_linear_fsu_pc(napl_base):
+    """Wire encoder -> linear_fsu_pc and accumulate the per-timestep PC count."""
+    def __init__(self, codec_config, pc_config, weight, bias):
+        super().__init__()
+        self.encoder = encoder(codec_config)
+        self.pc = linear_fsu_pc(weight, bias, pc_config)
+        self.acc = None
+
+    @napl_sim_timesteps
+    def forward(self, input_x, timesteps=256):
+        i_spike = self.encoder(input_x)
+        count = self.pc(i_spike)
+        self.acc = count if self.acc is None else self.acc + count
+
+    def reset(self, verbose=False):
+        self.timestep_cur = 0
+        self.encoder.reset()
+        self.pc.reset()
+        self.acc = None
+
+
+def _pc_value(mean_count, polarity, entry):
+    """Recover the inner product from the mean PC count (AND-count / XNOR-count form)."""
+    if polarity == 'bipolar':
+        return 2 * mean_count - entry
+    return mean_count
+
+
+def test_linear_fsu_pc():
+    """
+    The streaming FSU parallel-counter (linear_fsu_pc) reproduces (W x + b) within a
+    stochastic-computing bound, for both polarities, on every device. Per-timestep the PC
+    count lies in [0, entry]; accumulated/T it recovers the inner product (directly for
+    unipolar, as 2*mean - entry for bipolar). UnarySim reference: FSULinearPC.
+    """
+    timestep = 1024
+    in_features, out_features = 16, 8
+    bound = 3.0 / (timestep ** 0.5)   # SC bound, with slack for fan-in summation
+
+    for device in _devices():
+        for polarity in ['unipolar', 'bipolar']:
+            for has_bias in [True, False]:
+                input_x = gen_rand_tensor(polarity, shape=(in_features,), width=8).type(global_config.ntype).to(device)
+                weight = gen_rand_tensor(polarity, shape=(out_features, in_features), width=8).type(global_config.ntype).to(device)
+                bias = gen_rand_tensor(polarity, shape=(out_features,), width=8).type(global_config.ntype).to(device) if has_bias else None
+
+                codec_config = {'polarity': polarity, 'timestep': timestep, 'generator': 'sobol', 'dim': 1}
+                pc_config = {'polarity': polarity, 'timestep': timestep, 'generator': 'sobol', 'dim': 2}
+
+                inst = napl_linear_fsu_pc(codec_config, pc_config, weight, bias).to(device)
+                inst(input_x, timesteps=timestep)
+
+                entry = in_features + (1 if has_bias else 0)
+                ref = weight @ input_x + (bias if has_bias else 0)
+                val = _pc_value(inst.acc / timestep, polarity, entry)
+
+                err = (val - ref).abs()
+                rmse = torch.sqrt(err.pow(2).mean()).item()
+                assert err.max().item() < 0.1, \
+                    f'{device}/{polarity}/bias={has_bias}: max err {err.max().item()} too large'
+                assert rmse < bound * 3, \
+                    f'{device}/{polarity}/bias={has_bias}: rmse {rmse} exceeds bound {bound*3}'
+                assert inst.pc.timestep_cur == timestep
+                print(f'[{device}] {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
+                inst.reset()
+
+    # known-answer corner: unipolar all-ones input & weight => PC count == entry every step
+    device = _devices()[0]
+    w1 = torch.ones(out_features, in_features).type(global_config.ntype).to(device)
+    x1 = torch.ones(in_features).type(global_config.ntype).to(device)
+    inst = napl_linear_fsu_pc({'polarity': 'unipolar', 'timestep': 64, 'generator': 'sobol', 'dim': 1},
+                              {'polarity': 'unipolar', 'timestep': 64, 'generator': 'sobol', 'dim': 2},
+                              w1, None).to(device)
+    inst(x1, timesteps=64)
+    assert torch.allclose(inst.acc / 64, torch.full((out_features,), float(in_features), device=device)), \
+        'all-ones unipolar PC count should equal in_features every step'
+    inst.reset()
+    print('known-answer corner passed.')
+
+    # performance: time linear_fsu_pc (no accumulator) vs linear_fsu (with scaled adder)
+    # on identical inputs; the PC kernel should not be slower than the full linear.
+    device = _devices()[-1]
+    sync = (lambda: torch.cuda.synchronize()) if device == 'cuda' else \
+           ((lambda: torch.mps.synchronize()) if device == 'mps' else (lambda: None))
+    input_x = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype).to(device)
+    weight = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype).to(device)
+    bias = gen_rand_tensor('bipolar', shape=(out_features,), width=8).type(global_config.ntype).to(device)
+    pc_cfg = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2}
+    enc = encoder({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}).to(device)
+    pc = linear_fsu_pc(weight, bias, pc_cfg).to(device)
+    lin = linear_fsu(weight, bias, {**pc_cfg, 'scale': None, 'width': 12}).to(device)
+
+    spikes = [enc(input_x).clone() for _ in range(timestep)]
+    enc.reset()
+    sync()
+    t0 = time.time()
+    for s in spikes:
+        pc(s)
+    sync()
+    t_pc = time.time() - t0
+    pc.reset()
+    sync()
+    t0 = time.time()
+    for s in spikes:
+        lin(s)
+    sync()
+    t_lin = time.time() - t0
+    lin.reset()
+    print(f'[{device}] perf: linear_fsu_pc {t_pc*1e3:.1f}ms vs linear_fsu {t_lin*1e3:.1f}ms '
+          f'(speedup {t_lin/max(t_pc,1e-9):.2f}x)')
+
+    print('Test passed.')
+
+
+if __name__ == '__main__':
+    test_linear_fsu_pc()

@@ -46,10 +46,10 @@ def get_sysrand_seq(width=8):
     """
     # return torch.randperm(2**width)/2**width
     return torch.rand(2**width)
-    
-    
+
+
 def gen_num_seq(config={
-            'width' : 8, 
+            'width' : 8,
             'generator' : 'Sobol'
         }):
     """
@@ -64,7 +64,7 @@ def gen_num_seq(config={
 
     assert generator in legal_rngs, \
         logger.error(f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.')
-    
+
     if (generator == 'sobol') or (generator == 'rc') or (generator == 'rate'):
         # get the requested dimension of sobol random number sequence
         # rate coding defaults to sobol sequence
@@ -80,9 +80,9 @@ def gen_num_seq(config={
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
     elif generator == 'sys':
         num_seq = get_sysrand_seq(width=width)
-        
+
     return torch.nn.Parameter(num_seq.type(global_config.ntype), requires_grad=False)
-    
+
 
 def input_scale(input, quantile=1):
     """
@@ -90,7 +90,7 @@ def input_scale(input, quantile=1):
     The remaining data count for 'quantile' quantile of the total data.
     The input quantile needs to be within (0, 1].
     """
-    
+
     assert quantile > 0 and quantile <= 1, \
         logger.error(f'Invalid quantile: <{quantile}>; legal values: (0, 1].')
 
@@ -106,7 +106,7 @@ def input_scale(input, quantile=1):
 
 class encoder(napl_base):
     def __init__(
-            self, 
+            self,
             config:dict={
                 'polarity': 'bipolar',
                 'timestep': 256,
@@ -121,29 +121,43 @@ class encoder(napl_base):
         self.generator = config['generator'].lower()
         self.len = 2**self.width
 
+        # resolve the polarity branch once: avoids a per-timestep string compare in forward()
+        self._is_bipolar = (self.polarity == 'bipolar')
+
         # generate the number sequence
         # the sequence is used to compare with the input data
         config_updated = {'width': self.width}
         config_updated.update(config)
         self.num_seq = gen_num_seq(config=config_updated)
-        
+
+        # avoid recomputing the bipolar prob transform when re-encoding an unchanged input
+        self._prob_cache = None
+
 
     def reset(self, verbose=False):
         """
         Reset the timestep and spike count.
         """
         self.timestep_cur = 0
-        
+        # drop the cached input/prob so reset releases the pinned tensors
+        self._prob_cache = None
+
 
     def forward(self, input: torch.Tensor):
         self.tick()
         # use gt to generate the spike
         # if input is 0, then a all 0 spike train is generated
         # if input is 1, then one spike in the spike train will be 0
-        if self.polarity == 'bipolar':
-            prob = (input + 1)/2
-        elif self.polarity == 'unipolar':
+        if self._is_bipolar:
+            c = self._prob_cache
+            if c is not None and c[0] is input and c[1] == input._version:
+                prob = c[2]
+            else:
+                prob = (input + 1)/2
+                if not input.requires_grad:
+                    self._prob_cache = (input, input._version, prob)
+        else:
             prob = input
         spike = torch.gt(prob, self.num_seq[(self.timestep_cur-1) % self.len]).type(self.stype)
         return spike
-        
+

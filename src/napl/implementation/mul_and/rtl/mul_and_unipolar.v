@@ -6,15 +6,15 @@
 // RTL counterpart of napl.operation.mul_and with config polarity='unipolar'
 // (src/napl/operation/mul.py).  One spike from each stream per cycle; no state.
 //
-//   out = in_0 & in_1        (AND)
+//   o_out = i_in_0 & i_in_1        (AND)
 //
 // Reference: uGEMM: Unary Computing (Architecture) for GEMM Applications.
 //==============================================================================
 module mul_and_unipolar (
-    input  wire in_0,   // spike stream 0
-    input  wire in_1,   // spike stream 1
-    output wire out     // product spike
+    input  wire i_in_0,   // spike stream 0
+    input  wire i_in_1,   // spike stream 1
+    output wire o_out     // product spike
 );
-    assign out = in_0 & in_1;
+    assign o_out = i_in_0 & i_in_1;
 endmodule
 `default_nettype wire
