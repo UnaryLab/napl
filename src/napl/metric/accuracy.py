@@ -19,7 +19,6 @@ class accuracy(napl_base):
         super().__init__(config, ['polarity'])
 
         self.spike_count = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
-        self.spike_value = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
         self.spike_error = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
 
         # absolute max error
@@ -33,8 +32,6 @@ class accuracy(napl_base):
         # root mean square error
         self.spike_error_rmse = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
 
-        self.error_flag = False
-
 
     def reset(self, verbose=False):
         """
@@ -42,22 +39,31 @@ class accuracy(napl_base):
         """
         self.timestep_cur = 0
         self.spike_count.data = torch.zeros(1, device=self.spike_count.device)
-        self.spike_value.data = torch.zeros(1, device=self.spike_value.device)
         self.spike_error.data = torch.zeros(1, device=self.spike_error.device)
         self.spike_error_abs_max.data = torch.zeros(1, device=self.spike_error_abs_max.device)
         self.spike_error_abs_min.data = torch.zeros(1, device=self.spike_error_abs_min.device)
         self.spike_error_avg.data = torch.zeros(1, device=self.spike_error_avg.device)
         self.spike_error_mae.data = torch.zeros(1, device=self.spike_error_mae.device)
         self.spike_error_rmse.data = torch.zeros(1, device=self.spike_error_rmse.device)
-        self.error_flag = False
+
+
+    @property
+    def spike_value(self):
+        """
+        Progressive value, computed on access from the accumulated spike_count.
+        Returns a fresh tensor; before any forward() it is the zeros seed.
+        """
+        if self.timestep_cur == 0:
+            return torch.zeros_like(self.spike_count)
+        # sv is the fresh div result, so the in-place bipolar rescale leaves spike_count untouched.
+        sv = self.spike_count.div(self.timestep_cur)
+        if self.polarity == 'bipolar':
+            sv.mul_(2).sub_(1)
+        return sv
 
 
     def forward(self, spike: torch.Tensor):
-        self.tick()
-        if not self.error_flag:
-            self.error_flag = True
         # float accumulator avoids overflow; the 0/1 spike promotes exactly, so no cast.
-        # sv is the fresh div result, so the in-place bipolar rescale leaves sc untouched.
         sc = self.spike_count
         # shape-guarded: first forward broadcasts the (1,) seed up to spike's shape
         # out-of-place; steady state accumulates in place to drop a per-timestep alloc.
@@ -65,17 +71,16 @@ class accuracy(napl_base):
             sc.add_(spike)
         else:
             sc.data = sc.add(spike)
-        sv = sc.div(self.timestep_cur)
-        if self.polarity == 'bipolar':
-            sv.mul_(2).sub_(1)
-        self.spike_value.data = sv
-        return self.spike_value
+        # no return: evaluating the spike_value property here would redo the div
+        # every timestep; readers access .spike_value on demand instead.
 
 
-    def report_error(self, reference: torch.Tensor, verbose=False):
+    def analyze(self, reference: torch.Tensor, verbose=False):
         # return the error and index of max abs error
-        assert self.error_flag == True, logger.error(f'Error flag is not set. Please call forward() before report_error().')
-        self.spike_error.data = self.spike_value.sub(reference)
+        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        # one property access: spike_value computes from spike_count on each read
+        spike_value = self.spike_value
+        self.spike_error.data = spike_value.sub(reference)
         # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.
         spike_error_abs = self.spike_error.abs()
         # aminmax: one fused pass for both extremes instead of separate min/max scans.
@@ -97,7 +102,7 @@ class accuracy(napl_base):
         return self.spike_error, torch.argmax(spike_error_abs)
 
 
-def report_error(spike_value: torch.Tensor, reference: torch.Tensor):
+def analyze_error(spike_value: torch.Tensor, reference: torch.Tensor):
     # return the error and index of max abs error
     spike_error = spike_value.sub(reference)
     # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.

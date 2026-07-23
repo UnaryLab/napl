@@ -1,13 +1,14 @@
 import torch
 
 from napl.base import napl_base
+from loguru import logger
 
 
 class correlation(napl_base):
     """
     Stochastic cross-correlation (SCC) between two spike streams, accumulated over
     timesteps. Call forward(in_1, in_2) once per timestep to accumulate the joint
-    histogram of bit pairs, then report() to compute the SCC. If only in_1 is given,
+    histogram of bit pairs, then analyze() to compute the SCC. If only in_1 is given,
     the SCC is computed between the stream and its one-step-delayed self
     (autocorrelation). Reference: "Exploiting Correlation in Stochastic Circuit
     Design".
@@ -36,7 +37,6 @@ class correlation(napl_base):
 
 
     def forward(self, in_1, in_2=None):
-        self.tick()
         if in_2 is None:
             in_2 = self.in_1_d.clone().detach()
             self.in_1_d.data = in_1.clone().detach().type(self.ntype)
@@ -54,7 +54,11 @@ class correlation(napl_base):
         self.sum_2.data = self.sum_2.add(in_2_is_1)
 
 
-    def report_corr(self):
+    @property
+    def correlation(self):
+        """
+        SCC, computed on access from the accumulated bit-pair counts.
+        """
         a = self.paired_11               # 11
         b = self.sum_1 - a               # 10 = (1-count of in_1) - 11
         c = self.sum_2 - a               # 01 = (1-count of in_2) - 11
@@ -72,3 +76,29 @@ class correlation(napl_base):
         corr_gt = ad_minus_bc.div(torch.max(torch.min(a_plus_b, a_plus_c) * n - a_plus_b * a_plus_c, ones))
         corr_le = ad_minus_bc.div(torch.max(a_plus_b * a_plus_c - torch.max(a_minus_d, zeros) * n, ones))
         return ad_gt_bc * corr_gt + ad_le_bc * corr_le
+
+
+    def analyze(self, verbose=False):
+        # return the correlation and index of max abs correlation
+        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        # one property access: correlation computes from the accumulated counts on each read
+        correlation = self.correlation
+        # abs() is reused below; compute once to avoid redundant full-tensor passes.
+        correlation_abs = correlation.abs()
+        # aminmax: one fused pass for both extremes instead of separate min/max scans.
+        correlation_abs_amin, correlation_abs_amax = torch.aminmax(correlation_abs)
+        self.correlation_abs_max = correlation_abs_amax
+        self.correlation_abs_min = correlation_abs_amin
+        self.correlation_avg = correlation.mean()
+        self.correlation_mae = correlation_abs.mean()
+        self.correlation_rmse = torch.sqrt(correlation_abs.pow(2).mean())
+
+        if verbose:
+            logger.info(f'Correlation report for correlation instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
+            logger.info(f'    Max absolute correlation:     <{self.correlation_abs_max.item()}>')
+            logger.info(f'    Min absolute correlation:     <{self.correlation_abs_min.item()}>')
+            logger.info(f'    Mean correlation:             <{self.correlation_avg.item()}>')
+            logger.info(f'    Mean absolute correlation:    <{self.correlation_mae.item()}>')
+            logger.info(f'    Root mean square correlation: <{self.correlation_rmse.item()}>')
+            logger.info(f'')
+        return correlation, torch.argmax(correlation_abs)
