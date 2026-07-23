@@ -87,7 +87,7 @@ model before writing a line), simplicity first (the smallest gate-level circuit 
 goal-driven execution with a verifiable success criterion (`make test OP=<op>` PASSes bit-exactly).
 
 Lay the op out self-contained under `src/napl/implementation/<op>/{rtl,tb,gen,vec,build}/`,
-following `src/napl/implementation/README.md` and the auto-injected Verilog rules:
+following the repo-root `RULE_RTL.md` and the auto-injected Verilog rules:
 
 - **`rtl/*.v`** - one synthesizable module per concrete variant. **Module naming:** the module name
   (and its filename) is *exactly* the op name (which may contain underscores), optionally followed by
@@ -210,7 +210,7 @@ Standalone (a user invoking this skill directly), do both Step 5 and Step 6 norm
 
 ## References
 
-- `src/napl/implementation/README.md` - the RTL spec: layout, naming, combinational vs clocked, the
+- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
   `i_clk`/`i_rst_n` and reset-state contract.
 - `src/napl/implementation/mul_and/` - canonical combinational example (rtl, tb, gen).
 - `src/napl/implementation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.

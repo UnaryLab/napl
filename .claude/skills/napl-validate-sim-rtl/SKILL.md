@@ -279,7 +279,7 @@ recorded row to the user as part of the verdict.
 
 ## References
 
-- `src/napl/implementation/README.md` - the RTL spec: layout, naming, combinational vs clocked,
+- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
   the `i_clk`/`i_rst_n` and reset-state contract.
 - `src/napl/implementation/mul_and/` - canonical combinational example (gen, tb, rtl).
 - `src/napl/implementation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
