@@ -1,8 +1,9 @@
-import torch
+import time
+
 import torch.nn.functional as F
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import gen_rand_tensor
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder, conv_fsu
 
 
@@ -27,23 +28,36 @@ def test_conv_fsu():
     ntype = global_config.ntype
     timestep = 256
     b, ic, oc, hw, k = 2, 3, 4, 8, 3
-    x = gen_rand_tensor('bipolar', (b, ic, hw, hw), 8).type(ntype)
-    weight = gen_rand_tensor('bipolar', (oc, ic, k, k), 8).type(ntype)
-    bias = gen_rand_tensor('bipolar', (oc,), 8).type(ntype)
+    x_cpu = gen_rand_tensor('bipolar', (b, ic, hw, hw), 8).type(ntype)
+    weight_cpu = gen_rand_tensor('bipolar', (oc, ic, k, k), 8).type(ntype)
+    bias_cpu = gen_rand_tensor('bipolar', (oc,), 8).type(ntype)
     entry = ic * k * k + 1
 
     codec = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}
     fsu = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2, 'width': 12}
 
-    for pad in [0, 1]:
-        inst = napl_conv_fsu(codec, weight, bias, 1, pad, fsu)
-        inst(x, timesteps=timestep)
-        ref = F.conv2d(x, weight, bias, stride=1, padding=pad) / entry
-        rmse = (inst.decoder.spike_value - ref).pow(2).mean().sqrt().item()
-        print(f'  pad={pad} conv_fsu rmse={rmse:.4f}')
-        assert inst.decoder.spike_value.shape == ref.shape
-        assert rmse < 0.03, (pad, rmse)
-        assert inst.conv.timestep_cur == timestep
+    for device in devices():
+        x = x_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        for pad in [0, 1]:
+            inst = napl_conv_fsu(codec, weight, bias, 1, pad, fsu).to(device)
+            sync(device)
+            start = time.perf_counter()
+            inst(x, timesteps=timestep)
+            sync(device)
+            elapsed = time.perf_counter() - start
+            ref = F.conv2d(x, weight, bias, stride=1, padding=pad) / entry
+            rmse = (inst.decoder.spike_value - ref).pow(2).mean().sqrt().item()
+            print(
+                f'[{device}] pad={pad} conv_fsu rmse={rmse:.4f}, '
+                f'time={elapsed * 1000:.1f}ms'
+            )
+            assert inst.decoder.spike_value.shape == ref.shape
+            assert rmse < 0.03, (device, pad, rmse)
+            assert inst.conv.timestep_cur == timestep
+            inst.reset()
+            assert inst.conv.timestep_cur == 0
 
     print('Test passed.')
 

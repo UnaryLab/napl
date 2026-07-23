@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import dff
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_dff(napl_base):
@@ -29,8 +31,6 @@ def test_dff():
     Test dff with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -41,24 +41,34 @@ def test_dff():
     }
     
     # Generate random inputs based on polarity
-    input = gen_rand_tensor(codec_config['polarity'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(
+        codec_config['polarity'],
+        shape=(10,),
+        width=math.log2(codec_config['timestep']),
+    ).type(global_config.ntype)
 
-    # generate the napl_dff instance
-    dff_inst = napl_dff(codec_config, dff_config).to(device)
-    dff_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        dff_inst = napl_dff(codec_config, dff_config).to(device)
 
-    # calculate the reference output
-    r_value = input
+        sync(device)
+        start = time.perf_counter()
+        dff_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # report the error
-    report_error(dff_inst.decoder.spike_value, r_value)
+        error, _ = analyze_error(dff_inst.decoder.spike_value, input)
+        rmse = error.pow(2).mean().sqrt().item()
+        bound = 2.0 / math.sqrt(codec_config['timestep'])
+        assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
 
-    assert dff_inst.dff.timestep_cur == codec_config['timestep']
-    dff_inst.reset()
+        assert dff_inst.dff.timestep_cur == codec_config['timestep']
+        dff_inst.reset()
+        assert dff_inst.dff.timestep_cur == 0
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_dff()
-

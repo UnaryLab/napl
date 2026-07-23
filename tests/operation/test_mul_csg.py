@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import mul_csg
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_mul_csg(napl_base):
@@ -29,8 +31,6 @@ def test_mul_csg():
     Test mul_csg with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config={
         'polarity': 'bipolar',
         'timestep': 1024,
@@ -39,25 +39,28 @@ def test_mul_csg():
     mul_csg_config=codec_config
 
     # Generate random inputs based on polarity
-    input_0 = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_0_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
+    input_1_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
-    # generate the napl_mul_csg instance
-    mul_csg_inst = napl_mul_csg(codec_config, mul_csg_config).to(device)
-    mul_csg_inst(input_0, input_1, timesteps=codec_config['timestep'])
+    for device in devices():
+        input_0 = input_0_cpu.to(device)
+        input_1 = input_1_cpu.to(device)
+        mul_csg_inst = napl_mul_csg(codec_config, mul_csg_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        mul_csg_inst(input_0, input_1, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = input_0 * input_1
-
-    # report the error
-    report_error(mul_csg_inst.decoder.spike_value, r_value)
-
-    assert mul_csg_inst.mul_csg.timestep_cur == codec_config['timestep']
-    mul_csg_inst.reset()
+        r_value = input_0 * input_1
+        analyze_error(mul_csg_inst.decoder.spike_value, r_value)
+        assert mul_csg_inst.mul_csg.timestep_cur == codec_config['timestep']
+        mul_csg_inst.reset()
+        assert mul_csg_inst.mul_csg.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_mul_csg()
-

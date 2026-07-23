@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import uni2bi
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_uni2bi(napl_base):
@@ -29,8 +31,6 @@ def test_uni2bi():
     Test uni2bi with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config1={
         'polarity': 'unipolar',
         'timestep': 256,
@@ -48,24 +48,26 @@ def test_uni2bi():
     }
     
     # Generate random inputs based on polarity
-    input = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
 
     # generate the napl_uni2bi instance
-    uni2bi_inst = napl_uni2bi(codec_config1, codec_config2, uni2bi_config).to(device)
-    uni2bi_inst(input, timesteps=codec_config1['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        uni2bi_inst = napl_uni2bi(codec_config1, codec_config2, uni2bi_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        uni2bi_inst(input, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = input
-
-    # report the error
-    report_error(uni2bi_inst.decoder.spike_value, r_value)
-
-    assert uni2bi_inst.uni2bi.timestep_cur == codec_config1['timestep']
-    uni2bi_inst.reset()
+        analyze_error(uni2bi_inst.decoder.spike_value, input)
+        assert uni2bi_inst.uni2bi.timestep_cur == codec_config1['timestep']
+        uni2bi_inst.reset()
+        assert uni2bi_inst.uni2bi.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_uni2bi()
-

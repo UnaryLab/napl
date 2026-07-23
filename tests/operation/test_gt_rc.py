@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import gt_rc
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_gt_rc(napl_base):
@@ -31,8 +33,6 @@ def test_gt_rc():
     Test gt_rc with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config1={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -54,27 +54,34 @@ def test_gt_rc():
     gt_rc_config=codec_config1
 
     # Generate random inputs based on polarity
-    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
+    input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
 
-    # generate the napl_gt_rc instance
-    gt_rc_inst = napl_gt_rc(codec_config1, codec_config2, codec_config3, gt_rc_config).to(device)
-    gt_rc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+    for device in devices():
+        input_0 = input_0_cpu.to(device)
+        input_1 = input_1_cpu.to(device)
+        gt_rc_inst = napl_gt_rc(codec_config1, codec_config2, codec_config3, gt_rc_config).to(device)
 
-    # calculate the reference output
-    r_value = (input_0 > input_1).type(global_config.ntype)
+        sync(device)
+        start = time.perf_counter()
+        gt_rc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # report the error
-    _, idx = report_error(gt_rc_inst.decoder.spike_value, r_value)
+        r_value = (input_0 > input_1).type(global_config.ntype)
+        error, idx = analyze_error(gt_rc_inst.decoder.spike_value, r_value)
+        rmse = error.pow(2).mean().sqrt().item()
+        bound = 2.0 / math.sqrt(codec_config1['timestep'])
+        assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
 
-    print(f'index with the largest error: {idx.item():7d}\tinput 0: {input_0[idx].item(): .5f}\tinput 1: {input_1[idx].item(): .5f}\tvalue gt_rc: {gt_rc_inst.decoder.spike_value[idx].item(): .5f}')
-    
-    assert gt_rc_inst.gt_rc.timestep_cur == codec_config1['timestep']
-    gt_rc_inst.reset()
+        print(f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}, time={elapsed:.3f}s, '
+              f'max-error index={idx.item():7d}')
+        assert gt_rc_inst.gt_rc.timestep_cur == codec_config1['timestep']
+        gt_rc_inst.reset()
+        assert gt_rc_inst.gt_rc.timestep_cur == 0
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_gt_rc()
-

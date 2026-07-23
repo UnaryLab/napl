@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import square_dff
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_square_dff(napl_base):
@@ -29,8 +31,6 @@ def test_square_dff():
     Test square_dff with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -43,24 +43,27 @@ def test_square_dff():
     }
     
     # Generate random inputs based on polarity
-    input = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
     # generate the napl_square_dff instance
-    square_dff_inst = napl_square_dff(codec_config, square_dff_config).to(device)
-    square_dff_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        square_dff_inst = napl_square_dff(codec_config, square_dff_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        square_dff_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = input * input
-
-    # report the error
-    report_error(square_dff_inst.decoder.spike_value, r_value)
-
-    assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
-    square_dff_inst.reset()
+        r_value = input * input
+        analyze_error(square_dff_inst.decoder.spike_value, r_value)
+        assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
+        square_dff_inst.reset()
+        assert square_dff_inst.square_dff.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_square_dff()
-

@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import shiftreg
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_shiftreg(napl_base):
@@ -29,8 +31,6 @@ def test_shiftreg():
     Test shiftreg with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -41,26 +41,26 @@ def test_shiftreg():
     }
     
     # Generate random inputs based on polarity
-    input = gen_rand_tensor(codec_config['polarity'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
     # generate the napl_shiftreg instance
-    shiftreg_inst = napl_shiftreg(codec_config, shiftreg_config).to(device)
-    for idx in range(shiftreg_config['depth']):
-        print(shiftreg_inst.shiftreg.reg[idx])
-    shiftreg_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        shiftreg_inst = napl_shiftreg(codec_config, shiftreg_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        shiftreg_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = input
-
-    # report the error
-    report_error(shiftreg_inst.decoder.spike_value, r_value)
-
-    assert shiftreg_inst.shiftreg.timestep_cur == codec_config['timestep']
-    shiftreg_inst.reset()
+        analyze_error(shiftreg_inst.decoder.spike_value, input)
+        assert shiftreg_inst.shiftreg.timestep_cur == codec_config['timestep']
+        shiftreg_inst.reset()
+        assert shiftreg_inst.shiftreg.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_shiftreg()
-

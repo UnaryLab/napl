@@ -1,10 +1,12 @@
-import torch, math
+import math
+import time
+
 
 from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
+from napl.utils import devices, gen_rand_tensor, sync
 from napl.module import encoder, decoder
 from napl.operation import bi2uni
-from napl.metric import report_error
+from napl.metric import analyze_error
 
 
 class napl_bi2uni(napl_base):
@@ -29,8 +31,6 @@ def test_bi2uni():
     Test bi2uni with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config1={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -49,24 +49,34 @@ def test_bi2uni():
     
     # Generate random inputs based on polarity
     # all inputs shall be positive
-    input = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(
+        codec_config2['polarity'],
+        shape=(10000,),
+        width=math.log2(codec_config1['timestep']),
+    ).type(global_config.ntype)
 
-    # generate the napl_bi2uni instance
-    bi2uni_inst = napl_bi2uni(codec_config1, codec_config2, bi2uni_config).to(device)
-    bi2uni_inst(input, timesteps=codec_config1['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        bi2uni_inst = napl_bi2uni(codec_config1, codec_config2, bi2uni_config).to(device)
 
-    # calculate the reference output
-    r_value = input
+        sync(device)
+        start = time.perf_counter()
+        bi2uni_inst(input, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # report the error
-    report_error(bi2uni_inst.decoder.spike_value, r_value)
+        error, _ = analyze_error(bi2uni_inst.decoder.spike_value, input)
+        rmse = error.pow(2).mean().sqrt().item()
+        bound = 2.0 / math.sqrt(codec_config1['timestep'])
+        assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
 
-    assert bi2uni_inst.bi2uni.timestep_cur == codec_config1['timestep']
-    bi2uni_inst.reset()
+        assert bi2uni_inst.bi2uni.timestep_cur == codec_config1['timestep']
+        bi2uni_inst.reset()
+        assert bi2uni_inst.bi2uni.timestep_cur == 0
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_bi2uni()
-
