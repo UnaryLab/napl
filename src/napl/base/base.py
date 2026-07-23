@@ -116,6 +116,10 @@ class napl_base(torch.nn.Module):
     Base class for all NAPL modules.
     This class initializes the global configuration and provides a common interface for all modules.
     """
+    # Streaming modules advance timestep_cur once per call; single-shot
+    # binary-domain classes override with False.
+    streaming = True
+
     def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
         super().__init__()
         # Load global configuration
@@ -137,6 +141,28 @@ class napl_base(torch.nn.Module):
 
     def tick(self):
         self.timestep_cur += 1
+
+
+    def __call__(self, *args, **kwargs):
+        """
+        On streaming modules, every call advances timestep_cur by one before
+        forward runs; single-shot modules (streaming = False) never tick.
+        """
+        # __call__ override, not register_forward_pre_hook: a hook on every module
+        # forces nn.Module's slow call path per timestep.
+        if self.streaming:
+            self.tick()
+        return super().__call__(*args, **kwargs)
+
+
+    @property
+    def valid(self):
+        """
+        True once forward() has run at least once since __init__/reset().
+        Meaningful only for streaming modules; single-shot modules never tick,
+        so it stays False.
+        """
+        return self.timestep_cur > 0
 
 
     def reset(self, verbose=False):
