@@ -7,7 +7,7 @@ A neuro-adaptive programming language for general-purpose neuromorphic computing
 NAPL is UnaryLab's PyTorch framework for programmable spike processing. It runs per-timestep spike-stream simulation and single-shot binary-domain kernels, with verified Verilog counterparts for a subset of operations.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): dataflow, execution models, package map, and the Python-to-RTL contract. Read it before editing execution semantics.
-- [RULE_TEST.md](RULE_TEST.md) and [RULE_RTL.md](RULE_RTL.md): the test policy and the RTL design/verification policy.
+- [RULE_SIM.md](RULE_SIM.md) and [RULE_HW.md](RULE_HW.md): the simulation test policy and the hardware design/verification policy.
 - [`src/napl/hw/`](src/napl/hw/): the Verilog counterpart of `napl.sim.operation`, with RTL co-simulation via `conda run -n napl make -C src/napl/hw test OP=<op>`.
 
 ## Requirements

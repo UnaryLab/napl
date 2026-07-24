@@ -2,6 +2,8 @@
 // compares o_max/o_arg to the golden columns from the napl Python model.
 // Prints "PASS" only on a full bit-exact match.
 `timescale 1ns / 1ps
+`default_nettype none
+`include "max_rc/vec/max_rc_params.vh"
 module max_rc_tb;
     reg  clk;
     reg  rst_n;
@@ -11,7 +13,7 @@ module max_rc_tb;
     wire o_arg;
 
     integer fd, code, errors, count;
-    integer v_in_0, v_in_1, v_max, v_arg;
+    integer v_reset, v_in_0, v_in_1, v_max, v_arg;
     reg [1023:0] line;
 
     max_rc dut (
@@ -45,18 +47,30 @@ module max_rc_tb;
             $finish;
         end
 
+        if (`GEN_PP_DELAY != 0) begin
+            $display("FAIL max_rc: observed latency 0, expected pp_delay %0d", `GEN_PP_DELAY);
+            $finish;
+        end
+
         // Drive each vector on the negedge, sample outputs (combinational) the
         // same cycle, then advance the posedge to update state.
         while (!$feof(fd)) begin
             code = $fgets(line, fd);
             if (code == 0) begin
                 // skip
-            end else if (line[7:0] == "#") begin
-                // comment line, skip
             end else begin
-                code = $sscanf(line, "%d %d %d %d", v_in_0, v_in_1, v_max, v_arg);
-                if (code == 4) begin
+                code = $sscanf(
+                    line, "%d %d %d %d %d",
+                    v_reset, v_in_0, v_in_1, v_max, v_arg
+                );
+                if (code == 5) begin
                     @(negedge clk);
+                    if (v_reset != 0) begin
+                        rst_n = 1'b0;
+                        @(posedge clk);
+                        @(negedge clk);
+                        rst_n = 1'b1;
+                    end
                     in_0 = v_in_0[0];
                     in_1 = v_in_1[0];
                     #1;  // let combinational outputs settle
@@ -80,3 +94,4 @@ module max_rc_tb;
         $finish;
     end
 endmodule
+`default_nettype wire

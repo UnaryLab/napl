@@ -54,6 +54,13 @@ module square_dff_tb;
         i_rst_n = 1'b1;
         n       = 0;
         fails   = 0;
+        if (`GEN_PP_DELAY != 0) begin
+            $display(
+                "FAIL square_dff: observed latency 0, expected pp_delay %0d",
+                `GEN_PP_DELAY
+            );
+            fails = fails + 1;
+        end
 
         // Pulse reset low across a clock edge -> delay line = 0 (matches reset()).
         i_rst_n = 1'b0;

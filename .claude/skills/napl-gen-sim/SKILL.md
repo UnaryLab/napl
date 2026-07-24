@@ -141,7 +141,7 @@ Add `tests/<subpackage>/test_<name>.py` by copying the matching skeleton:
 `tests/template_streaming_kernel.py` for per-timestep kernels, or
 `tests/template_single_shot_trainable.py` for trainable binary-domain kernels. Fill in every TODO
 (see `tests/operation/test_mul_and.py` for streaming wiring), run on **every device** (CPU +
-MPS/CUDA), and check the correctness and performance gates in `RULE_TEST.md`, with an
+MPS/CUDA), and check the correctness and performance gates in `RULE_SIM.md`, with an
 `if __name__ == '__main__'` entry point. Add the new correspondence to
 `.claude/skills/napl-validate-unarysim/references/mapping.md` so future validations find it.
 

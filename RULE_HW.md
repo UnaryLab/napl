@@ -1,4 +1,4 @@
-# NAPL RTL rules
+# NAPL hardware rules
 
 This file is the canonical design and verification policy for `src/napl/hw/`, plus its directory layout and commands. Where `src/napl/sim/operation/` is the *functional* Python model, the `src/napl/hw/` tree is its *hardware* counterpart: Verilog-2001 implementations of the NAPL stochastic-computing operations, one synthesizable module per concrete operation variant, each verified against the Python model with golden-vector co-simulation. Policy comes first; the layout and flow mechanics follow.
 
@@ -6,7 +6,7 @@ This file is the canonical design and verification policy for `src/napl/hw/`, pl
 
 General Verilog style (Verilog-2001, `i_`/`o_` port prefixes, `i_clk`/active-low `i_rst_n`, one module per file with the file name equal to the module name, lint-clean) follows the unarylab-research plugin's verilog-rules hook, which injects the full rules when a Verilog file is edited.
 
-1. **Variants and names.** Implement one module per concrete operation variant. Do not select behavior variants with parameters. Use the exact operation name with at most one `_unipolar` or `_bipolar` postfix and no other postfix; an operation with no polarity split uses the bare operation name. Distinct operations or port sets are separate operations with their own folders (e.g. `mul_and` vs `mul_csg`).
+1. **Variants and names.** Use `_unipolar` and `_bipolar` modules whenever polarity changes the circuit; do not select polarity-dependent logic with a parameter. An operation whose circuit is identical across supported polarities uses the bare operation name. A non-polarity Python configuration field that selects between circuits, such as `scaled`, is an integer Verilog parameter fixed at elaboration, never a runtime input. Distinct operations or port sets are separate operations with their own folders (e.g. `mul_and` vs `mul_csg`).
 2. **Sizing parameters.** Sizing fields such as depth or width remain Verilog parameters derived from the Python configuration. Declare each with a default documenting the configuration it was generated for, and derive every bus width and internal constant from the parameters so the module is correct at any size.
 3. **Spikes and cycles.** Spikes are 1-bit wires, one spike per stream per clock. Ports trace to the Python `forward()` arguments (e.g. `i_in_0`, `i_in_1`, `o_out`). Each module is one scalar circuit per operation variant; vectorization across lanes is replication handled by higher-level blocks, not baked into the operation. One Python `forward()` timestep corresponds to one `posedge i_clk`.
 4. **Reset.** Every register must return to the exact post-`reset()` state of the Python model when `i_rst_n` is asserted low. The correct state is not necessarily zero.
@@ -28,7 +28,7 @@ Golden-vector co-simulation is the source of functional truth. Expected outputs 
 
 For each RTL-backed change:
 
-1. Run the operation's Python test under the rules in [RULE_TEST.md](RULE_TEST.md).
+1. Run the operation's Python test under the rules in [RULE_SIM.md](RULE_SIM.md).
 2. From `src/napl/hw/`, run `conda run -n napl make test OP=<op>` and require an exit status of zero and a full-match `PASS`.
 3. For a stateful operation, verify the first post-reset cycle and a reset asserted after state has changed, then replay the same inputs.
 4. Verify the measured cycle latency against `self.hw.pp_delay`, including every supported sizing configuration used by the test.
@@ -36,7 +36,7 @@ For each RTL-backed change:
 
 ## Directory layout
 
-The tree contains 26 implemented op folders, plus the generic `Makefile` and the shared golden-vector helper `_gen_common.py` (`encode_value`, `pair_streams`, ...). Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_and` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
+The tree contains 36 implemented op folders, plus the generic `Makefile` and the shared golden-vector helper `_gen_common.py` (`encode_value`, `pair_streams`, ...). Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_and` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
 
 Each operation is self-contained in its own folder:
 

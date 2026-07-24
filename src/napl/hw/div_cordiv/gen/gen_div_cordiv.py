@@ -86,7 +86,11 @@ def main():
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     # Emit the param header the testbench includes to override the RTL parameter.
-    PARAMS.write_text(f"`define GEN_DEPTH {DIV_CORDIV['depth']}\n")
+    PARAMS.write_text(
+        f"`define GEN_DEPTH {model.depth}\n"
+        f"`define GEN_WIDTH {model.width}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+    )
 
     rows = 0
     with VEC.open("w") as f:
@@ -99,7 +103,10 @@ def main():
         model.reset()
         rows += run_segment(model, f, seg_b)
 
-    print(f"wrote {VEC} ({rows} vectors, DEPTH={DIV_CORDIV['depth']}) and {PARAMS}")
+    print(
+        f"wrote {VEC} ({rows} vectors, DEPTH={model.depth}, WIDTH={model.width}) "
+        f"and {PARAMS} (GEN_PP_DELAY={model.hw.pp_delay})"
+    )
 
 
 if __name__ == "__main__":

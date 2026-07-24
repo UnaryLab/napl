@@ -1,6 +1,6 @@
-# NAPL test rules
+# NAPL simulation rules
 
-This file is the canonical verification policy for the Python simulation model only; an RTL-backed change must also satisfy every gate in [RULE_RTL.md](RULE_RTL.md). Every new or changed behavior must have an automated check that fails when the behavior is wrong. Streaming-kernel tests start from [tests/template_streaming_kernel.py](tests/template_streaming_kernel.py) and single-shot trainable-kernel tests from [tests/template_single_shot_trainable.py](tests/template_single_shot_trainable.py); both call the suite drivers `streaming_suite` and `single_shot_suite` in [src/napl/utils/_shared_test.py](src/napl/utils/_shared_test.py), which also holds the shared input cloning, equality checks, and benchmark timing.
+This file is the canonical verification policy for the Python simulation model only; an RTL-backed change must also satisfy every gate in [RULE_HW.md](RULE_HW.md). Every new or changed behavior must have an automated check that fails when the behavior is wrong. Streaming-kernel tests start from [tests/template_streaming_kernel.py](tests/template_streaming_kernel.py) and single-shot trainable-kernel tests from [tests/template_single_shot_trainable.py](tests/template_single_shot_trainable.py); both call the suite drivers `streaming_suite` and `single_shot_suite` in [src/napl/utils/_shared_test.py](src/napl/utils/_shared_test.py), which also holds the shared input cloning, equality checks, and benchmark timing.
 
 ## Core gates
 

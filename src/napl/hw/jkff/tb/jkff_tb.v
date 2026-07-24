@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 `default_nettype none
+`include "jkff/vec/jkff_params.vh"
 //==============================================================================
 // Self-checking testbench for jkff.
 //
@@ -7,8 +8,7 @@
 // and asserts the RTL reproduces them. jkff is stateful, so the stream is
 // replayed cycle by cycle: i_rst_n is pulsed low first (Python reset(): q<-0),
 // then each vector drives the inputs, takes one posedge i_clk, and the registered
-// output is compared. Prints "PASS ..." iff every vector matches; the Makefile
-// greps for that line to decide the exit status.
+// output is compared. An R marker repeats reset after q has changed.
 //
 // Run (from src/napl/hw/):
 //   make test OP=jkff
@@ -30,6 +30,7 @@ module jkff_tb;
     always #5 i_clk = ~i_clk;
 
     integer fd, code, n, fails;
+    reg [8*8-1:0] tok;
     reg j, k, exp_q;
 
     initial begin
@@ -48,9 +49,24 @@ module jkff_tb;
 
         n = 0;
         fails = 0;
+        if (`GEN_PP_DELAY != 1) begin
+            $display("FAIL jkff: observed latency 1, expected pp_delay %0d", `GEN_PP_DELAY);
+            fails = fails + 1;
+        end
         while (!$feof(fd)) begin
-            code = $fscanf(fd, "%b %b %b\n", j, k, exp_q);
-            if (code == 3) begin
+            code = $fscanf(fd, "%s", tok);
+            if (code != 1) begin
+                code = 0;
+            end else if (tok == "R") begin
+                i_rst_n   = 1'b0;
+                i_input_j = 1'b0;
+                i_input_k = 1'b0;
+                @(posedge i_clk);
+                @(negedge i_clk);
+                i_rst_n = 1'b1;
+            end else begin
+                j = (tok[7:0] == "1");
+                code = $fscanf(fd, "%b %b\n", k, exp_q);
                 // Drive inputs before the edge that updates the register.
                 @(negedge i_clk);
                 i_input_j = j;

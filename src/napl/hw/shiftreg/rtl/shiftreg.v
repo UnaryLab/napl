@@ -19,6 +19,8 @@
 // the testbench overrides it with `GEN_DEPTH (emitted by gen/gen_shiftreg.py from
 // the same config test_shiftreg.py uses), so the verified hardware always tracks
 // the simulator. The default here is only a standalone-elaboration fallback.
+//
+// Verify from src/napl/hw/: conda run -n napl make test OP=shiftreg
 //==============================================================================
 module shiftreg #(
     parameter integer DEPTH = 2   // inherited from config['depth']; tb overrides via `GEN_DEPTH
@@ -33,19 +35,44 @@ module shiftreg #(
     // load i_in into the tail.
     reg [DEPTH-1:0] reg_q;
 
-    integer i;
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            // Reload the model's reset() state: reg[i] = i % 2.
-            for (i = 0; i < DEPTH; i = i + 1)
-                reg_q[i] <= i[0];
-        end else begin
-            // Shift: drop the oldest (reg_q[0]), slide the rest down, append i_in.
-            for (i = 0; i < DEPTH-1; i = i + 1)
-                reg_q[i] <= reg_q[i+1];
-            reg_q[DEPTH-1] <= i_in;
+    genvar index;
+    generate
+        for (index = 0; index < DEPTH; index = index + 1) begin : g_register
+            if (index == DEPTH-1) begin : g_tail
+                if ((index % 2) == 0) begin : g_reset_zero
+                    always @(posedge i_clk or negedge i_rst_n) begin
+                        if (!i_rst_n)
+                            reg_q[index] <= 1'b0;
+                        else
+                            reg_q[index] <= i_in;
+                    end
+                end else begin : g_reset_one
+                    always @(posedge i_clk or negedge i_rst_n) begin
+                        if (!i_rst_n)
+                            reg_q[index] <= 1'b1;
+                        else
+                            reg_q[index] <= i_in;
+                    end
+                end
+            end else begin : g_body
+                if ((index % 2) == 0) begin : g_reset_zero
+                    always @(posedge i_clk or negedge i_rst_n) begin
+                        if (!i_rst_n)
+                            reg_q[index] <= 1'b0;
+                        else
+                            reg_q[index] <= reg_q[index+1];
+                    end
+                end else begin : g_reset_one
+                    always @(posedge i_clk or negedge i_rst_n) begin
+                        if (!i_rst_n)
+                            reg_q[index] <= 1'b1;
+                        else
+                            reg_q[index] <= reg_q[index+1];
+                    end
+                end
+            end
         end
-    end
+    endgenerate
 
     // Output is always the oldest cell.
     assign o_out = reg_q[0];

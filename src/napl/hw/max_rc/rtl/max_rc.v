@@ -1,3 +1,6 @@
+`timescale 1ns/1ps
+`default_nettype none
+
 // max_rc: streaming max + argmax of two rate-coded spike streams via sync_skewed.
 // One forward() timestep == one posedge i_clk. Outputs are combinational from the
 // current inputs and registered state (sync counter + argmax dff); the registers
@@ -9,6 +12,7 @@
 //
 // Matches napl.sim.operation.max_rc forward(): o_max uses the OLD dff, o_arg is the
 // NEW (post-update) dff, both available the same cycle.
+// Verify from src/napl/hw with: make test OP=max_rc
 module max_rc (
     input  wire i_clk,
     input  wire i_rst_n,
@@ -67,3 +71,5 @@ module max_rc (
         end
     end
 endmodule
+
+`default_nettype wire

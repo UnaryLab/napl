@@ -16,7 +16,7 @@ class tanh_pn(napl_base):
             }
     ):
         super().__init__(config, ['depth'], polarity_required=False)
-        self.hw = hw_params(pp_delay=0)
+        self.hw = hw_params(pp_delay=1)
 
         self.depth = config['depth']
 

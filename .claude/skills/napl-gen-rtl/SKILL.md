@@ -115,7 +115,7 @@ model before writing a line), simplicity first (the smallest gate-level circuit 
 goal-driven execution with a verifiable success criterion (`make test OP=<op>` PASSes bit-exactly).
 
 Lay the op out self-contained under `src/napl/hw/<op>/{rtl,tb,gen,vec,build}/`,
-following the repo-root `RULE_RTL.md` and the auto-injected Verilog rules:
+following the repo-root `RULE_HW.md` and the auto-injected Verilog rules:
 
 - **`rtl/*.v`** - one synthesizable module per concrete variant. **Module naming:** the module name
   (and its filename) is *exactly* the op name (which may contain underscores), optionally followed by
@@ -198,7 +198,7 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
 - Editing a `.v` file auto-injects the global **Verilog rules** via the `verilog-rules.sh` hook
   (Verilog-2001; clock `i_clk`; active-low `i_rst_n`; `i_`/`o_` port prefixes; `_n` for active-low;
   one module per file with filename == module; Verilator-lint-clean). Follow them.
-- Follow the repo-root `RULE_RTL.md` for layout, commands, naming, combinational vs clocked, and the
+- Follow the repo-root `RULE_HW.md` for layout, commands, naming, combinational vs clocked, and the
   `i_clk`/`i_rst_n` and reset-state contract.
 - **Operation subpackage only.** napl `module`/`metric`/`algorithm` classes have no gate-level RTL;
   report and stop if asked for one.
@@ -210,7 +210,7 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
 - `scripts/record_gen_rtl.py` - append a uniform row to `reports/napl-gen-rtl-report.md` (Step 6).
   Creates the file with a header on first use, escapes table-breaking pipes, dedupes, and sorts by
   class name.
-- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
+- `RULE_HW.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
   `i_clk`/`i_rst_n` and reset-state contract.
 - `src/napl/hw/mul_and/` - canonical combinational example (rtl, tb, gen).
 - `src/napl/hw/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.

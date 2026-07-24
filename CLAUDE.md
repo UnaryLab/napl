@@ -22,7 +22,7 @@ This project uses the `napl` conda env. Always run Python through it: `conda run
 
 ### Testing rules
 
-All tests must follow [RULE_TEST.md](RULE_TEST.md), the canonical policy for execution-model checks, device coverage, numerical fidelity, gradients, performance, and verification evidence. RTL-backed changes must also follow [RULE_RTL.md](RULE_RTL.md).
+All simulation tests must follow [RULE_SIM.md](RULE_SIM.md), the canonical policy for execution-model checks, device coverage, numerical fidelity, gradients, performance, and verification evidence. RTL-backed changes must also follow [RULE_HW.md](RULE_HW.md).
 
 ## Critical implementation gotchas
 
@@ -32,8 +32,8 @@ All tests must follow [RULE_TEST.md](RULE_TEST.md), the canonical policy for exe
 
 ## RTL implementation (`src/napl/hw/`)
 
-The Verilog-2001 hardware counterpart of `sim/operation/` lives under `src/napl/hw/`. Follow [RULE_RTL.md](RULE_RTL.md) for the mandatory RTL design and verification rules plus the layout and commands.
+The Verilog-2001 hardware counterpart of `sim/operation/` lives under `src/napl/hw/`. Follow [RULE_HW.md](RULE_HW.md) for the mandatory RTL design and verification rules plus the layout and commands.
 
 ## Git
 
-Don't commit or push unless asked. Generated RTL artifacts are covered by [RULE_RTL.md](RULE_RTL.md).
+Don't commit or push unless asked. Generated RTL artifacts are covered by [RULE_HW.md](RULE_HW.md).

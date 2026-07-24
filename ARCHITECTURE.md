@@ -1,6 +1,6 @@
 # NAPL architecture
 
-This document is the canonical description of NAPL's current design and package boundaries. Verification requirements live in [RULE_TEST.md](RULE_TEST.md) and [RULE_RTL.md](RULE_RTL.md).
+This document is the canonical description of NAPL's current design and package boundaries. Verification requirements live in [RULE_SIM.md](RULE_SIM.md) and [RULE_HW.md](RULE_HW.md).
 
 ## Purpose and dataflow
 
@@ -151,7 +151,7 @@ Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Onl
 
 `src/napl/hw/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
 
-Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_RTL.md](RULE_RTL.md) for the mandatory design and verification contract and the folder layout and commands.
+Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_HW.md](RULE_HW.md) for the mandatory design and verification contract and the folder layout and commands.
 
 ## Incomplete boundaries
 

@@ -1,3 +1,6 @@
+`timescale 1ns/1ps
+`default_nettype none
+
 // mul_csg_bipolar -- unary multiply by conditional spike generation (bipolar).
 //
 // Bit-serial port of napl mul_csg.forward() (bipolar branch). i_in_1 is the
@@ -19,6 +22,7 @@
 // for the inherited WIDTH and loaded via $readmemb from vec/mul_csg_rom.hex; the
 // bipolar branch reuses the SAME table at both indices, so one ROM file serves
 // both read ports.
+// Verify from src/napl/hw with: make test OP=mul_csg
 module mul_csg_bipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (
@@ -31,8 +35,8 @@ module mul_csg_bipolar #(
 
     reg  [WIDTH-1:0] seq_idx;
     reg  [WIDTH-1:0] seq_idx_inv;
-    reg  [WIDTH-1:0] num_seq;
-    reg  [WIDTH-1:0] num_seq_inv;
+    wire [WIDTH-1:0] num_seq;
+    wire [WIDTH-1:0] num_seq_inv;
     wire             spike;
     wire             spike_inv;
     wire             path;
@@ -46,11 +50,8 @@ module mul_csg_bipolar #(
     reg  [WIDTH-1:0] num_seq_rom [0:(1<<WIDTH)-1];
     initial $readmemb("vec/mul_csg_rom.hex", num_seq_rom);
 
-    // combinational ROM reads in the current counters (same array, two ports)
-    always @(*) begin
-        num_seq     = num_seq_rom[seq_idx];
-        num_seq_inv = num_seq_rom[seq_idx_inv];
-    end
+    assign num_seq = num_seq_rom[seq_idx];
+    assign num_seq_inv = num_seq_rom[seq_idx_inv];
 
     assign spike     = (i_in_1 > {1'b0, num_seq})     ? 1'b1 : 1'b0;
     assign spike_inv = (i_in_1 > {1'b0, num_seq_inv}) ? 1'b1 : 1'b0;
@@ -69,3 +70,5 @@ module mul_csg_bipolar #(
     end
 
 endmodule
+
+`default_nettype wire

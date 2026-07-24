@@ -10,6 +10,8 @@
 //   the two terms are mutually exclusive, so for Q in {0,1}:  Q' = Q ? ~K : J
 //
 // i_rst_n (active-low) maps to the Python reset(): q <- 0.
+//
+// Verify from src/napl/hw/: conda run -n napl make test OP=jkff
 //==============================================================================
 module jkff (
     input  wire i_clk,

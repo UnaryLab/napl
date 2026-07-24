@@ -15,6 +15,7 @@
 // we (1) check o_out == expected against the CURRENT register state, (2) drive
 // i_in, then (3) pulse one posedge i_clk to perform the shift. i_rst_n is held
 // low first so the co-sim starts from the exact post-reset() state (reg[i]=i%2).
+// An R marker repeats reset after the register has changed.
 //
 // Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
 //
@@ -35,6 +36,7 @@ module shiftreg_tb;
     );
 
     integer fd, code, n, fails;
+    reg [8*8-1:0] tok;
     reg a, exp_out;
 
     // Free-running clock: 10ns period.
@@ -63,9 +65,27 @@ module shiftreg_tb;
 
         n = 0;
         fails = 0;
+        if (`GEN_PP_DELAY != `GEN_DEPTH) begin
+            $display(
+                "FAIL shiftreg: observed latency %0d, expected pp_delay %0d",
+                `GEN_DEPTH,
+                `GEN_PP_DELAY
+            );
+            fails = fails + 1;
+        end
         while (!$feof(fd)) begin
-            code = $fscanf(fd, "%b %b\n", a, exp_out);
-            if (code == 2) begin
+            code = $fscanf(fd, "%s", tok);
+            if (code != 1) begin
+                code = 0;
+            end else if (tok == "R") begin
+                rst_n  = 1'b0;
+                in_bit = 1'b0;
+                @(posedge clk);
+                @(negedge clk);
+                rst_n = 1'b1;
+            end else begin
+                a = (tok[7:0] == "1");
+                code = $fscanf(fd, "%b\n", exp_out);
                 // We are on a negedge: registers are stable. o_out is the oldest
                 // cell (what forward() returns this timestep); check it, then
                 // drive this cycle's input and let the NEXT posedge shift it in.

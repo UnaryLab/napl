@@ -79,12 +79,19 @@ def main():
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     # Emit the param header the testbench includes to override the RTL parameter.
-    PARAMS.write_text(f"`define GEN_DEPTH {SQUARE_DFF['depth']}\n")
+    model = square_dff(config=dict(SQUARE_DFF))
+    PARAMS.write_text(
+        f"`define GEN_DEPTH {SQUARE_DFF['depth']}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+    )
 
     with VEC.open("w") as f:
         for (rst, s), u, b in zip(DRIVE, out_uni, out_bi):
             f.write(f"{rst} {s} {u} {b}\n")
-    print(f"wrote {VEC} ({len(DRIVE)} vectors) and {PARAMS} (GEN_DEPTH={SQUARE_DFF['depth']})")
+    print(
+        f"wrote {VEC} ({len(DRIVE)} vectors) and {PARAMS} "
+        f"(GEN_DEPTH={SQUARE_DFF['depth']}, GEN_PP_DELAY={model.hw.pp_delay})"
+    )
 
 
 if __name__ == "__main__":

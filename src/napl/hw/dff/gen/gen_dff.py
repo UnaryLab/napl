@@ -61,7 +61,10 @@ def main():
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     # Emit the param header the testbench includes to override the RTL parameter.
-    PARAMS.write_text(f"`define GEN_DEPTH {DFF['depth']}\n")
+    PARAMS.write_text(
+        f"`define GEN_DEPTH {DFF['depth']}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+    )
 
     rows = 0
     with VEC.open("w") as f:
@@ -73,7 +76,10 @@ def main():
             out_spike = int(model(in_spike).item())
             f.write(f"{bit} {out_spike}\n")
             rows += 1
-    print(f"wrote {VEC} ({rows} vectors, reset@{reset_at}) and {PARAMS} (GEN_DEPTH={DFF['depth']})")
+    print(
+        f"wrote {VEC} ({rows} vectors, reset@{reset_at}) and {PARAMS} "
+        f"(GEN_DEPTH={DFF['depth']}, GEN_PP_DELAY={model.hw.pp_delay})"
+    )
 
 
 if __name__ == "__main__":

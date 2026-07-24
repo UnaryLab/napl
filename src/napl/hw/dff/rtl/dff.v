@@ -20,6 +20,8 @@
 // the testbench overrides it with `GEN_DEPTH (emitted by gen/gen_dff.py from the
 // same config test_dff.py uses), so the verified hardware always tracks the
 // simulator. The default here is only a standalone-elaboration fallback.
+//
+// Verify from src/napl/hw/: conda run -n napl make test OP=dff
 //==============================================================================
 module dff #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
@@ -34,18 +36,26 @@ module dff #(
     // load i_in into the tail. (At DEPTH=1 this is a single D flip-flop.)
     reg [DEPTH-1:0] reg_q;
 
-    integer i;
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            // Reload the model's reset() state: the FIFO is all zeros.
-            reg_q <= {DEPTH{1'b0}};
-        end else begin
-            // Shift: drop the oldest (reg_q[0]), slide the rest down, append i_in.
-            for (i = 0; i < DEPTH-1; i = i + 1)
-                reg_q[i] <= reg_q[i+1];
-            reg_q[DEPTH-1] <= i_in;
+    genvar index;
+    generate
+        for (index = 0; index < DEPTH; index = index + 1) begin : g_register
+            if (index == DEPTH-1) begin : g_tail
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        reg_q[index] <= 1'b0;
+                    else
+                        reg_q[index] <= i_in;
+                end
+            end else begin : g_body
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        reg_q[index] <= 1'b0;
+                    else
+                        reg_q[index] <= reg_q[index+1];
+                end
+            end
         end
-    end
+    endgenerate
 
     // Output is always the oldest cell.
     assign o_out = reg_q[0];

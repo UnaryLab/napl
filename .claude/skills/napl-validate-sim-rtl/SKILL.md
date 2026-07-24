@@ -285,7 +285,7 @@ recorded row to the user as part of the verdict.
   `reports/napl-validate-sim-rtl-report.md` (Step 6). Creates the file with a header on first use,
   escapes table-breaking pipes, dedupes identical rows, and keeps the log sorted by kernel then
   date so re-validations of one kernel group together.
-- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
+- `RULE_HW.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
   the `i_clk`/`i_rst_n` and reset-state contract.
 - `src/napl/hw/mul_and/` - canonical combinational example (gen, tb, rtl).
 - `src/napl/hw/shiftreg/` - canonical stateful example: per-cycle stream, non-zero

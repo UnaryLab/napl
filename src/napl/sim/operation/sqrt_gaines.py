@@ -23,7 +23,7 @@ class sqrt_gaines(napl_base):
         },
     ):
         super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
-        self.hw = hw_params(pp_delay=0)
+        self.hw = hw_params(pp_delay=1)
 
         self.width = config['width']
         self.cnt_max = 2**self.width - 1

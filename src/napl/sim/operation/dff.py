@@ -13,9 +13,8 @@ class dff(napl_base):
             config={'depth': 1}
         ):
         super().__init__(config, ['depth'], polarity_required=False)
-        self.hw = hw_params(pp_delay=1)
-
         self.depth = config['depth']
+        self.hw = hw_params(pp_delay=self.depth)
         # device-anchor Parameter: tracks device for .to() and lazy buffer init.
         self.reg = torch.nn.Parameter(torch.zeros(1, dtype=self.stype), requires_grad=False)
         # FIFO rows held as a list of tensor references (no per-timestep copy).

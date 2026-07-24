@@ -67,6 +67,14 @@ module dff_tb;
 
         n = 0;
         fails = 0;
+        if (`GEN_PP_DELAY != `GEN_DEPTH) begin
+            $display(
+                "FAIL dff: observed latency %0d, expected pp_delay %0d",
+                `GEN_DEPTH,
+                `GEN_PP_DELAY
+            );
+            fails = fails + 1;
+        end
         while (!$feof(fd)) begin
             // Try to read a data row "<in> <out>". A lone "R" line is a reset
             // marker. We read the first whitespace-delimited token as a string

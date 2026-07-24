@@ -30,7 +30,10 @@ module div_cordiv_tb;
     reg  dividend, divisor;
     wire quotient;
 
-    div_cordiv #(.DEPTH(`GEN_DEPTH)) dut (
+    div_cordiv #(
+        .DEPTH(`GEN_DEPTH),
+        .WIDTH(`GEN_WIDTH)
+    ) dut (
         .i_clk(clk),
         .i_rst_n(rst_n),
         .i_dividend(dividend),
@@ -60,6 +63,13 @@ module div_cordiv_tb;
         divisor = 1'b0;
         n = 0;
         fails = 0;
+        if (`GEN_PP_DELAY != 0) begin
+            $display(
+                "FAIL div_cordiv: observed latency 0, expected pp_delay %0d",
+                `GEN_PP_DELAY
+            );
+            $finish;
+        end
 
         // Power-on reset before the first stream.
         do_reset;

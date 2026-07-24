@@ -21,6 +21,7 @@
 // is only a standalone-elaboration fallback.
 //
 // Reference: uGEMM: Unary Computing (Architecture) for GEMM Applications.
+// Verify from src/napl/hw/: conda run -n napl make test OP=square_dff
 //==============================================================================
 module square_dff_unipolar #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
@@ -34,19 +35,26 @@ module square_dff_unipolar #(
     // this cycle); in_d[DEPTH-1] holds the most recently written input.
     reg [DEPTH-1:0] in_d;
 
-    integer i;
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            // reset() initializes the dff buffer to all-zeros.
-            for (i = 0; i < DEPTH; i = i + 1)
-                in_d[i] <= 1'b0;
-        end else begin
-            // Shift: drop the oldest, slide the rest down, append i_in.
-            for (i = 0; i < DEPTH-1; i = i + 1)
-                in_d[i] <= in_d[i+1];
-            in_d[DEPTH-1] <= i_in;
+    genvar index;
+    generate
+        for (index = 0; index < DEPTH; index = index + 1) begin : g_register
+            if (index == DEPTH-1) begin : g_tail
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        in_d[index] <= 1'b0;
+                    else
+                        in_d[index] <= i_in;
+                end
+            end else begin : g_body
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        in_d[index] <= 1'b0;
+                    else
+                        in_d[index] <= in_d[index+1];
+                end
+            end
         end
-    end
+    endgenerate
 
     // Combinational product of the current input and its oldest delayed copy.
     assign o_out = i_in & in_d[0];

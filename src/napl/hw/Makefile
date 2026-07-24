@@ -29,7 +29,7 @@ vectors:
 
 compile: vectors
 	mkdir -p $(OP)/build
-	$(IVERILOG) -g2012 -Wall -o $(OP)/build/sim $(OP)/rtl/*.v $(OP)/tb/$(OP)_tb.v
+	$(IVERILOG) -g2001 -Wall -o $(OP)/build/sim $(OP)/rtl/*.v $(OP)/tb/$(OP)_tb.v
 
 # vvp runs from inside the op folder so the testbench's relative path
 # (vec/<op>.vec) resolves.

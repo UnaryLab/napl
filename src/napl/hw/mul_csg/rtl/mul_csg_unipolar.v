@@ -1,3 +1,6 @@
+`timescale 1ns/1ps
+`default_nettype none
+
 // mul_csg_unipolar -- unary multiply by conditional spike generation (unipolar).
 //
 // Bit-serial port of napl mul_csg.forward() (unipolar branch). i_in_1 is the
@@ -17,6 +20,7 @@
 // i_in_1 operand bus (WIDTH+1 bits, so prob 1.0 -> 2**WIDTH is representable).
 // The num_seq ROM is GENERATED from the model for the inherited WIDTH and loaded
 // via $readmemb from vec/mul_csg_rom.hex, so the table follows WIDTH.
+// Verify from src/napl/hw with: make test OP=mul_csg
 module mul_csg_unipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (
@@ -28,7 +32,7 @@ module mul_csg_unipolar #(
 );
 
     reg  [WIDTH-1:0] seq_idx;
-    reg  [WIDTH-1:0] num_seq;
+    wire [WIDTH-1:0] num_seq;
     wire             spike;
 
     // num_seq ROM generated from the model for the inherited WIDTH (one entry per
@@ -38,10 +42,7 @@ module mul_csg_unipolar #(
     reg  [WIDTH-1:0] num_seq_rom [0:(1<<WIDTH)-1];
     initial $readmemb("vec/mul_csg_rom.hex", num_seq_rom);
 
-    // combinational ROM read in the current seq_idx
-    always @(*) begin
-        num_seq = num_seq_rom[seq_idx];
-    end
+    assign num_seq = num_seq_rom[seq_idx];
 
     assign spike = (i_in_1 > {1'b0, num_seq}) ? 1'b1 : 1'b0;
     assign o_out = i_in_0 & spike;
@@ -54,3 +55,5 @@ module mul_csg_unipolar #(
     end
 
 endmodule
+
+`default_nettype wire
