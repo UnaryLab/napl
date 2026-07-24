@@ -1,15 +1,15 @@
 """
 Per-device (cpu/cuda/mps) test of the stability metric: per-element stability of
 a sobol-coded stream is in [0, 1] with a high mean, and a reset re-run
-reproduces the identical result. Timing is absolute (no baseline exists).
+reproduces the identical result. Performance is compared with the same metric
+on CPU.
 """
-import time
-
 import torch
 
 from napl.metric import stability
 from napl.module import encoder
-from napl.utils import devices, gen_rand_tensor, sync
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import benchmark, devices, timer
 
 
 def run_stability(val, device, timestep, modules=None):
@@ -23,18 +23,18 @@ def run_stability(val, device, timestep, modules=None):
         }
         modules = (
             encoder(cfg).to(device),
-            stability(v, {'polarity': 'bipolar', 'threshold': 0.05}).to(device),
+            stability(
+                val, {'polarity': 'bipolar', 'threshold': 0.05}
+            ).to(device),
         )
     enc, stab = modules
+    assert stab.source.device.type == device
 
-    sync(device)
-    start = time.time()
-    for _ in range(timestep):
-        stab(enc(v))
+    with timer(device) as elapsed:
+        for _ in range(timestep):
+            stab(enc(v))
     result = stab.analyze()[0].detach().cpu().clone()
-    sync(device)
-    elapsed = time.time() - start
-    return result, elapsed, modules
+    return result, elapsed.seconds, modules
 
 
 def test_fidelity():
@@ -54,6 +54,41 @@ def test_fidelity():
         )
 
 
+def test_known_answer():
+    timestep = 4
+    source = torch.ones(2)
+    spike = torch.tensor([1.0, 0.0])
+
+    for device in devices():
+        for polarity in ('unipolar', 'bipolar'):
+            metric = stability(
+                source,
+                {'polarity': polarity, 'threshold': 0.05},
+            ).to(device)
+            assert metric.source.device.type == device
+            assert not metric.valid
+            for _ in range(timestep):
+                metric(spike.to(device))
+            result, max_index = metric.analyze()
+            expected = torch.tensor([0.75, 0.0], device=device)
+            assert metric.valid
+            assert metric.timestep_cur == timestep
+            assert result.shape == source.shape
+            assert result.dtype == source.dtype
+            assert torch.equal(result, expected)
+            assert max_index.item() == 0
+
+        metric = stability(
+            torch.ones(1),
+            {'polarity': 'bipolar', 'threshold': 0.05},
+        ).to(device)
+        metric(torch.ones(1, device=device))
+        assert torch.equal(
+            metric.analyze()[0],
+            torch.zeros(1, device=device),
+        )
+
+
 def test_reset():
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
@@ -64,26 +99,53 @@ def test_reset():
         enc.reset()
         stab.reset()
         assert not stab.valid
+        assert stab.timestep_cur == 0
+        assert stab.accuracy.timestep_cur == 0
+        assert stab.cycle_to_stable.abs().sum() == 0
         second, _, _ = run_stability(val, device, timestep, modules)
         assert torch.equal(first, second), 'reset re-run diverged'
 
 
 def test_performance():
     timestep = 256
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    torch.manual_seed(0)
+    stream = torch.randint(0, 2, (timestep, 1000)).float()
+    source = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
+    cpu_runtime = None
     for device in devices():
-        _, _, modules = run_stability(val, device, timestep)
-        for module in modules:
-            module.reset()
-        result, elapsed, _ = run_stability(val, device, timestep, modules)
+        metric = stability(
+            source,
+            {'polarity': 'bipolar', 'threshold': 0.05},
+        ).to(device)
+        inputs = (stream,)
+
+        def run(target_metric, values):
+            spikes = values[0]
+            for spike in spikes:
+                target_metric(spike)
+
+        device_runtime = benchmark(
+            lambda values: run(metric, values),
+            inputs,
+            device,
+            warmup_runs=1,
+            trials=3,
+            prepare=metric.reset,
+        )
+        metric.analyze()
+        if device == 'cpu':
+            cpu_runtime = device_runtime
+        assert cpu_runtime is not None
         print(
-            f'[{device}] stability mean={result.mean().item():.4f}, '
-            f'time={elapsed * 1000:.1f}ms'
+            f'[{device}] device_runtime={device_runtime * 1e3:.1f}ms, '
+            f'cpu_runtime={cpu_runtime * 1e3:.1f}ms, '
+            f'speedup={cpu_runtime / device_runtime:.2f}x'
         )
 
 
 if __name__ == '__main__':
+    test_known_answer()
     test_fidelity()
     test_reset()
     test_performance()

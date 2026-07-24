@@ -1,6 +1,7 @@
 import torch
 
 from napl.base import napl_base
+from napl.metric._shared import analyze
 from napl.metric.accuracy import accuracy
 from loguru import logger
 
@@ -24,7 +25,7 @@ class stability(napl_base):
         ):
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
-        self.source = source
+        self.register_buffer('source', source)
         self.threshold = config['threshold']
         # inner progressive-error monitor
         self.accuracy = accuracy({'polarity': self.polarity})
@@ -71,22 +72,17 @@ class stability(napl_base):
         assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
         # one property access: stability computes from cycle_to_stable on each read
         stability = self.stability
-        # abs() is reused below; compute once to avoid redundant full-tensor passes.
-        stability_abs = stability.abs()
-        # aminmax: one fused pass for both extremes instead of separate min/max scans.
-        stability_abs_amin, stability_abs_amax = torch.aminmax(stability_abs)
-        self.stability_abs_max = stability_abs_amax
-        self.stability_abs_min = stability_abs_amin
-        self.stability_avg = stability.mean()
-        self.stability_mae = stability_abs.mean()
-        self.stability_rmse = torch.sqrt(stability_abs.pow(2).mean())
+        result = analyze(
+            stability,
+            verbose=verbose,
+            report='Stability',
+            value='stability',
+            timestep=self.timestep_cur,
+        )
+        self.stability_abs_max = result.absolute_max
+        self.stability_abs_min = result.absolute_min
+        self.stability_avg = result.mean
+        self.stability_mae = result.mean_absolute
+        self.stability_rmse = result.root_mean_square
 
-        if verbose:
-            logger.info(f'Stability report for stability instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-            logger.info(f'    Max absolute stability:     <{self.stability_abs_max.item()}>')
-            logger.info(f'    Min absolute stability:     <{self.stability_abs_min.item()}>')
-            logger.info(f'    Mean stability:             <{self.stability_avg.item()}>')
-            logger.info(f'    Mean absolute stability:    <{self.stability_mae.item()}>')
-            logger.info(f'    Root mean square stability: <{self.stability_rmse.item()}>')
-            logger.info(f'')
-        return stability, torch.argmax(stability_abs)
+        return stability, result.max_absolute_index

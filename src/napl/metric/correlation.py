@@ -1,6 +1,7 @@
 import torch
 
 from napl.base import napl_base
+from napl.metric._shared import analyze
 from loguru import logger
 
 
@@ -83,22 +84,17 @@ class correlation(napl_base):
         assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
         # one property access: correlation computes from the accumulated counts on each read
         correlation = self.correlation
-        # abs() is reused below; compute once to avoid redundant full-tensor passes.
-        correlation_abs = correlation.abs()
-        # aminmax: one fused pass for both extremes instead of separate min/max scans.
-        correlation_abs_amin, correlation_abs_amax = torch.aminmax(correlation_abs)
-        self.correlation_abs_max = correlation_abs_amax
-        self.correlation_abs_min = correlation_abs_amin
-        self.correlation_avg = correlation.mean()
-        self.correlation_mae = correlation_abs.mean()
-        self.correlation_rmse = torch.sqrt(correlation_abs.pow(2).mean())
+        result = analyze(
+            correlation,
+            verbose=verbose,
+            report='Correlation',
+            value='correlation',
+            timestep=self.timestep_cur,
+        )
+        self.correlation_abs_max = result.absolute_max
+        self.correlation_abs_min = result.absolute_min
+        self.correlation_avg = result.mean
+        self.correlation_mae = result.mean_absolute
+        self.correlation_rmse = result.root_mean_square
 
-        if verbose:
-            logger.info(f'Correlation report for correlation instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-            logger.info(f'    Max absolute correlation:     <{self.correlation_abs_max.item()}>')
-            logger.info(f'    Min absolute correlation:     <{self.correlation_abs_min.item()}>')
-            logger.info(f'    Mean correlation:             <{self.correlation_avg.item()}>')
-            logger.info(f'    Mean absolute correlation:    <{self.correlation_mae.item()}>')
-            logger.info(f'    Root mean square correlation: <{self.correlation_rmse.item()}>')
-            logger.info(f'')
-        return correlation, torch.argmax(correlation_abs)
+        return correlation, result.max_absolute_index

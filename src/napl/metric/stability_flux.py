@@ -1,6 +1,7 @@
 import torch
 
 from napl.base import napl_base
+from napl.metric._shared import analyze
 from napl.metric.stability import stability
 from loguru import logger
 
@@ -56,22 +57,17 @@ class stability_flux(napl_base):
         assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
         # one property access: flux computes from the two inner monitors on each read
         flux = self.flux
-        # abs() is reused below; compute once to avoid redundant full-tensor passes.
-        flux_abs = flux.abs()
-        # aminmax: one fused pass for both extremes instead of separate min/max scans.
-        flux_abs_amin, flux_abs_amax = torch.aminmax(flux_abs)
-        self.flux_abs_max = flux_abs_amax
-        self.flux_abs_min = flux_abs_amin
-        self.flux_avg = flux.mean()
-        self.flux_mae = flux_abs.mean()
-        self.flux_rmse = torch.sqrt(flux_abs.pow(2).mean())
+        result = analyze(
+            flux,
+            verbose=verbose,
+            report='Flux Stability',
+            value='flux stability',
+            timestep=self.timestep_cur,
+        )
+        self.flux_abs_max = result.absolute_max
+        self.flux_abs_min = result.absolute_min
+        self.flux_avg = result.mean
+        self.flux_mae = result.mean_absolute
+        self.flux_rmse = result.root_mean_square
 
-        if verbose:
-            logger.info(f'Stability flux report for stability_flux instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-            logger.info(f'    Max absolute flux:     <{self.flux_abs_max.item()}>')
-            logger.info(f'    Min absolute flux:     <{self.flux_abs_min.item()}>')
-            logger.info(f'    Mean flux:             <{self.flux_avg.item()}>')
-            logger.info(f'    Mean absolute flux:    <{self.flux_mae.item()}>')
-            logger.info(f'    Root mean square flux: <{self.flux_rmse.item()}>')
-            logger.info(f'')
-        return flux, torch.argmax(flux_abs)
+        return flux, result.max_absolute_index

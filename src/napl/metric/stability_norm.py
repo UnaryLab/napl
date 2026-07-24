@@ -1,6 +1,7 @@
 import torch
 
 from napl.base import napl_base
+from napl.metric._shared import analyze
 from napl.metric.stability import stability
 from loguru import logger
 
@@ -90,7 +91,7 @@ class stability_norm(napl_base):
         ):
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
-        self.source = source
+        self.register_buffer('source', source)
         self.threshold = config['threshold']
         # inner actual-stability monitor
         self.stability = stability(source, {'polarity': self.polarity, 'threshold': self.threshold})
@@ -148,22 +149,17 @@ class stability_norm(napl_base):
         assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
         # one property access: stability_norm computes from the accumulated state on each read
         stability_norm = self.stability_norm
-        # abs() is reused below; compute once to avoid redundant full-tensor passes.
-        stability_norm_abs = stability_norm.abs()
-        # aminmax: one fused pass for both extremes instead of separate min/max scans.
-        stability_norm_abs_amin, stability_norm_abs_amax = torch.aminmax(stability_norm_abs)
-        self.stability_norm_abs_max = stability_norm_abs_amax
-        self.stability_norm_abs_min = stability_norm_abs_amin
-        self.stability_norm_avg = stability_norm.mean()
-        self.stability_norm_mae = stability_norm_abs.mean()
-        self.stability_norm_rmse = torch.sqrt(stability_norm_abs.pow(2).mean())
+        result = analyze(
+            stability_norm,
+            verbose=verbose,
+            report='Normalized stability',
+            value='normalized stability',
+            timestep=self.timestep_cur,
+        )
+        self.stability_norm_abs_max = result.absolute_max
+        self.stability_norm_abs_min = result.absolute_min
+        self.stability_norm_avg = result.mean
+        self.stability_norm_mae = result.mean_absolute
+        self.stability_norm_rmse = result.root_mean_square
 
-        if verbose:
-            logger.info(f'Normalized stability report for stability_norm instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-            logger.info(f'    Max absolute normalized stability:     <{self.stability_norm_abs_max.item()}>')
-            logger.info(f'    Min absolute normalized stability:     <{self.stability_norm_abs_min.item()}>')
-            logger.info(f'    Mean normalized stability:             <{self.stability_norm_avg.item()}>')
-            logger.info(f'    Mean absolute normalized stability:    <{self.stability_norm_mae.item()}>')
-            logger.info(f'    Root mean square normalized stability: <{self.stability_norm_rmse.item()}>')
-            logger.info(f'')
-        return stability_norm, torch.argmax(stability_norm_abs)
+        return stability_norm, result.max_absolute_index

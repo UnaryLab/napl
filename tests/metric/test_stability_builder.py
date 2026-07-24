@@ -2,15 +2,14 @@
 Per-device (cpu/cuda/mps) test of the stability builder: the emitted stream
 decodes back to the source value within threshold, its measured stability tracks
 the requested normalized stability, and reset restores the initial stream
-exactly. Timing is absolute (no baseline exists).
+exactly. Performance is compared with the same builder on CPU.
 """
-import time
-
 import torch
 
 from napl.metric import stability
 from napl.metric.stability_builder import stability_builder
-from napl.utils import devices, gen_rand_tensor, sync
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import benchmark, devices
 
 
 def run_stream(builder, timestep):
@@ -75,6 +74,51 @@ def test_fidelity():
 
 
 def test_known_answer():
+    source = torch.tensor([-1.0, 1.0])
+    expected = torch.tensor(
+        [[0, 1], [0, 1], [0, 1], [0, 0]],
+        dtype=torch.int8,
+    )
+
+    for device in devices():
+        builder = stability_builder(
+            source,
+            {
+                'polarity': 'bipolar',
+                'threshold': 0.05,
+                'normstability': 0.5,
+                'timestep': 4,
+                'generator': 'sobol',
+                'dim': 1,
+            },
+        ).to(device)
+        assert not builder.valid
+        result = torch.stack([builder() for _ in range(4)])
+        assert builder.valid
+        assert builder.timestep_cur == 4
+        assert result.shape == expected.shape
+        assert result.dtype == expected.dtype
+        assert torch.equal(result.cpu(), expected)
+
+        boundary = stability_builder(
+            source,
+            {
+                'polarity': 'bipolar',
+                'threshold': 0.05,
+                'normstability': 0.5,
+                'timestep': 1,
+                'generator': 'sobol',
+                'dim': 1,
+            },
+        ).to(device)
+        assert not boundary.valid
+        assert torch.equal(
+            boundary().cpu(),
+            torch.tensor([0, 1], dtype=torch.int8),
+        )
+        assert boundary.valid
+        assert boundary.timestep_cur == 1
+
     timestep = 256
     threshold = 0.05
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
@@ -106,9 +150,17 @@ def test_reset():
         builder, _ = run_decode(val, device, timestep, threshold)
         builder.reset()
         assert not builder.valid
-        first = builder()
+        first = torch.stack([builder() for _ in range(timestep)])
+        assert builder.valid
+        assert builder.timestep_cur == timestep
+        assert first.shape == (timestep, *val.shape)
+        assert first.dtype == builder.stype
         builder.reset()
-        assert torch.equal(first, builder()), 'reset did not restore the stream'
+        assert builder.timestep_cur == 0
+        assert builder.out_cnt_ns.abs().sum() == 0
+        assert builder.out_cnt_st.abs().sum() == 0
+        second = torch.stack([builder() for _ in range(timestep)])
+        assert torch.equal(first, second), 'reset re-run diverged'
 
 
 def test_performance():
@@ -116,23 +168,44 @@ def test_performance():
     threshold = 0.05
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
+    cpu_runtime = None
     for device in devices():
-        builder, _ = run_decode(val, device, timestep, threshold)
-        builder.reset()
-        sync(device)
-        start = time.time()
-        run_stream(builder, timestep)
-        sync(device)
-        elapsed = time.time() - start
+        config = {
+            'polarity': 'bipolar',
+            'threshold': threshold,
+            'normstability': 0.8,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'dim': 1,
+        }
+        builder = stability_builder(val, config).to(device)
+        inputs = (val,)
+
+        def run(target_builder, _):
+            for _ in range(timestep):
+                target_builder()
+
+        device_runtime = benchmark(
+            lambda values: run(builder, values),
+            inputs,
+            device,
+            warmup_runs=1,
+            trials=3,
+            prepare=builder.reset,
+        )
+        if device == 'cpu':
+            cpu_runtime = device_runtime
+        assert cpu_runtime is not None
         print(
-            f'[{device}] {timestep} timesteps in {elapsed * 1e3:.1f} ms '
-            f'({timestep / elapsed:.0f} steps/s)'
+            f'[{device}] device_runtime={device_runtime * 1e3:.1f}ms, '
+            f'cpu_runtime={cpu_runtime * 1e3:.1f}ms, '
+            f'speedup={cpu_runtime / device_runtime:.2f}x'
         )
 
 
 if __name__ == '__main__':
-    test_fidelity()
     test_known_answer()
+    test_fidelity()
     test_reset()
     test_performance()
     print('Test passed.')
