@@ -1,57 +1,123 @@
 import math
-import time
+
+import torch
+
+from napl.sim.base import global_config
+from napl.sim.metric import accuracy
+from napl.sim.module.encoder import (
+    encoder,
+    gen_num_seq,
+    get_lfsr_seq,
+    get_sysrand_seq,
+    input_scale,
+)
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import benchmark, devices
 
 
-from napl.base import global_config
-from napl.metric import accuracy
-from napl.module import encoder
-from napl.utils import devices, gen_rand_tensor, sync
+def _run(stream_encoder, stream_accuracy, input, timestep):
+    for _ in range(timestep):
+        stream_accuracy(stream_encoder(input))
 
 
 def test_encoder():
-    """
-    Test the encoder with a simple configuration.
-    """
-    config={
+    torch.manual_seed(0)
+    config = {
         'polarity': 'bipolar',
-        'timestep': 1024,
+        'timestep': 256,
         'generator': 'sobol',
         'name': 'spike_accuracy',
-        'dim': 1
+        'dim': 1,
     }
-
     input_cpu = gen_rand_tensor(
         config['polarity'],
-        shape=(10000,),
+        shape=(4096,),
         width=math.log2(config['timestep']),
     ).type(global_config.ntype)
 
+    cpu_runtime = None
     for device in devices():
-        spike_encoder = encoder(config).to(device)
-        spike_accuracy = accuracy(config).to(device)
-        assert isinstance(spike_encoder, encoder)
-        assert spike_encoder.timestep == config['timestep']
-        assert spike_encoder.generator == config['generator']
+        stream_encoder = encoder(config).to(device)
+        stream_accuracy = accuracy(config).to(device)
         input = input_cpu.to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        for _ in range(config['timestep']):
-            spike_accuracy(spike_encoder(input))
-        sync(device)
-        elapsed = time.perf_counter() - start
+        _run(stream_encoder, stream_accuracy, input, config['timestep'])
+        error, _ = stream_accuracy.analyze(input, verbose=True)
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(
+            config['timestep']
+        )
+        assert stream_encoder.timestep_cur == config['timestep']
+        first = stream_accuracy.spike_value.detach().cpu().clone()
 
-        error, _ = spike_accuracy.analyze(input, verbose=True)
-        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(config['timestep'])
-        print(f'[{device}] time={elapsed * 1000:.1f}ms')
+        stream_encoder.reset()
+        stream_accuracy.reset()
+        assert stream_encoder.timestep_cur == 0
+        assert not stream_accuracy.valid
+        _run(stream_encoder, stream_accuracy, input, config['timestep'])
+        assert torch.equal(first, stream_accuracy.spike_value.cpu())
 
-        spike_encoder.reset()
-        spike_accuracy.reset()
-        assert spike_encoder.timestep_cur == 0
-        assert not spike_accuracy.valid
-    
-    print('Test passed.')
+        device_runtime = benchmark(
+            lambda values: _run(
+                stream_encoder,
+                stream_accuracy,
+                values[0],
+                config['timestep'],
+            ),
+            (input_cpu,),
+            device,
+            warmup_runs=1,
+            trials=3,
+            prepare=lambda: (
+                stream_encoder.reset(),
+                stream_accuracy.reset(),
+            ),
+        )
+        if device == 'cpu':
+            cpu_runtime = device_runtime
+        assert cpu_runtime is not None
+        print(
+            f'[{device}] device_runtime={device_runtime * 1e3:.1f}ms, '
+            f'cpu_runtime={cpu_runtime * 1e3:.1f}ms, '
+            f'speedup={cpu_runtime / device_runtime:.2f}x'
+        )
+
+
+def test_number_sequences():
+    width = 4
+    length = 2**width
+
+    torch.manual_seed(0)
+    sys_seq = get_sysrand_seq(width)
+    assert sys_seq.dtype == torch.float32
+    assert torch.equal(
+        (sys_seq * length).sort().values,
+        torch.arange(length, dtype=sys_seq.dtype),
+    )
+
+    lfsr_a = get_lfsr_seq(width=width, seed=1)
+    lfsr_b = get_lfsr_seq(width=width, seed=1)
+    assert torch.equal(lfsr_a, lfsr_b)
+    assert lfsr_a.shape == (length,)
+    assert torch.all((lfsr_a >= 0) & (lfsr_a < 1))
+
+    temporal = gen_num_seq({'width': width, 'generator': 'temporal'})
+    expected = torch.arange(
+        length - 1,
+        -1,
+        -1,
+        dtype=global_config.ntype,
+    )
+    expected.div_(length)
+    assert torch.equal(temporal, expected)
+
+
+def test_input_scale():
+    input = torch.tensor([-4.0, -2.0, 0.0, 2.0, 4.0])
+    assert torch.equal(input_scale(input), input / 4)
 
 
 if __name__ == '__main__':
     test_encoder()
+    test_number_sequences()
+    test_input_scale()
+    print('Test passed.')

@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import max_tc
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import max_tc
+from napl.sim.metric import accuracy
 
 
 class napl_max_tc(napl_base):
@@ -15,6 +19,7 @@ class napl_max_tc(napl_base):
         self.encoder1 = encoder(codec_config2)
         self.decoder = decoder(codec_config1)
         self.max_tc = max_tc(max_tc_config)
+        self.accuracy = accuracy({'polarity': codec_config1['polarity']})
 
 
     @napl_sim_timesteps
@@ -24,14 +29,13 @@ class napl_max_tc(napl_base):
         i_spike1 = self.encoder1(input_1)
         o_spike = self.max_tc(i_spike0, i_spike1)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_max_tc():
     """
     Test max_tc with a simple configuration.
     """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
         'polarity': 'bipolar',
@@ -48,25 +52,28 @@ def test_max_tc():
     max_tc_config=codec_config1
 
     # Generate random inputs based on polarity
-    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
+    input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
 
-    # generate the napl_max_tc instance
-    max_tc_inst = napl_max_tc(codec_config1, codec_config2, max_tc_config).to(device)
-    max_tc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+    for device in devices():
+        input_0 = input_0_cpu.to(device)
+        input_1 = input_1_cpu.to(device)
+        max_tc_inst = napl_max_tc(codec_config1, codec_config2, max_tc_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        max_tc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = torch.max(input_0, input_1)
-
-    # report the error
-    report_error(max_tc_inst.decoder.spike_value, r_value)
-
-    assert max_tc_inst.max_tc.timestep_cur == codec_config1['timestep']
-    max_tc_inst.reset()
+        r_value = torch.max(input_0, input_1)
+        max_tc_inst.accuracy.analyze(r_value, verbose=True)
+        assert max_tc_inst.max_tc.timestep_cur == codec_config1['timestep']
+        max_tc_inst.reset()
+        assert max_tc_inst.max_tc.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_max_tc()
-

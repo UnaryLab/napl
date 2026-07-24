@@ -1,7 +1,10 @@
+import time
+
 import torch
 import torch.nn.functional as F
 
-from napl.module import conv_fxp, conv_hub, conv_tlut
+from napl.sim.module import conv_fxp, conv_hub, conv_tlut
+from napl.utils._shared_test import devices, sync
 
 
 def test_conv_binary():
@@ -11,28 +14,46 @@ def test_conv_binary():
     """
     torch.manual_seed(0)
     b, ic, oc, hw, k = 4, 3, 6, 10, 3
-    x = torch.rand(b, ic, hw, hw) * 2 - 1
-    weight = torch.rand(oc, ic, k, k) * 2 - 1
-    bias = torch.rand(oc) * 2 - 1
+    x_cpu = torch.rand(b, ic, hw, hw) * 2 - 1
+    weight_cpu = torch.rand(oc, ic, k, k) * 2 - 1
+    bias_cpu = torch.rand(oc) * 2 - 1
 
-    builders = {
-        'fxp': lambda pad: conv_fxp(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias),
-        'hub': lambda pad: conv_hub(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias),
-        'tlut': lambda pad: conv_tlut(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias),
-    }
-    for pad in [0, 1]:
-        ref = F.conv2d(x, weight, bias, stride=1, padding=pad)
-        for name, build in builders.items():
-            y = build(pad)(x)
-            rmse = (y - ref).pow(2).mean().sqrt().item()
-            print(f'  pad={pad} conv_{name}: rmse={rmse:.4f}')
-            assert y.shape == ref.shape
-            assert rmse < 0.05, (name, pad, rmse)
+    for device in devices():
+        x = x_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        builders = {
+            'fxp': lambda pad: conv_fxp(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias).to(device),
+            'hub': lambda pad: conv_hub(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias).to(device),
+            'tlut': lambda pad: conv_tlut(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias).to(device),
+        }
+        for pad in [0, 1]:
+            sync(device)
+            start = time.perf_counter()
+            ref = F.conv2d(x, weight, bias, stride=1, padding=pad)
+            sync(device)
+            ref_elapsed = time.perf_counter() - start
+            for name, build in builders.items():
+                module = build(pad)
+                sync(device)
+                start = time.perf_counter()
+                y = module(x)
+                sync(device)
+                elapsed = time.perf_counter() - start
+                rmse = (y - ref).pow(2).mean().sqrt().item()
+                print(
+                    f'[{device}] pad={pad} conv_{name}: rmse={rmse:.4f}, '
+                    f'ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+                )
+                assert y.shape == ref.shape
+                assert rmse < 0.05, (device, name, pad, rmse)
 
-    xg = x.clone().requires_grad_(True)
-    m = conv_fxp(ic, oc, k, padding=1, weight_ext=weight, bias_ext=bias)
-    m(xg).sum().backward()
-    assert torch.isfinite(xg.grad).all() and torch.isfinite(m.weight.grad).all()
+        xg = x.clone().requires_grad_(True)
+        m = conv_fxp(
+            ic, oc, k, padding=1, weight_ext=weight, bias_ext=bias
+        ).to(device)
+        m(xg).sum().backward()
+        assert torch.isfinite(xg.grad).all() and torch.isfinite(m.weight.grad).all()
 
     print('Test passed.')
 

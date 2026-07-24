@@ -9,7 +9,7 @@ than trusting this table, since UnarySim reorganizes over time:
 grep -rnoE '^class +[A-Za-z0-9_]+' kernel stream metric   # run inside the clone
 ```
 
-A napl idea (encode -> op -> decode over timesteps, then `report_error`) corresponds to the UnarySim
+A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(reference)`) corresponds to the UnarySim
 `RNG`/`RawScale`/`BinGen`/`BSGen` -> kernel -> `ProgError` pipeline.
 
 ## UnarySim repo layout (verified class lists)
@@ -30,18 +30,20 @@ A napl idea (encode -> op -> decode over timesteps, then `report_error`) corresp
   (the polarity converters and the skewed synchronizer live **here, not in `kernel/`**)
 
 **UnarySim classes not (yet) ported to napl:** *(none of the listed kernels remain unported.)*
-(`FSULinearPC` is ported as `linear_fsu_pc` and `FSUConv2dPC` as `conv_fsu_pc`; see the
+(`FSULinearPC` is ported as `linear_pc` and `FSUConv2dPC` as `conv_pc`; see the
 neural-layers table.)
 
-## Metrics (`napl.metric`  ->  UnarySim `metric/metric.py`)
+## Metrics (`napl.sim.metric`  ->  UnarySim `metric/metric.py`)
 
 | napl | UnarySim class | report method (napl / UnarySim) |
 |------|----------------|---------------------------------|
-| `correlation` | `Correlation` | `report_corr()` / `forward()` (update via `Monitor()`) |
-| `stability`   | `Stability`   | `report_stab()` / `forward()` (update via `Monitor()`) |
-| `accuracy`    | `ProgError`   | `report_error()` / `forward()` (update via `Monitor()`) |
+| `correlation` | `Correlation` | `analyze()` / `forward()` (update via `Monitor()`) |
+| `stability`   | `Stability`   | `analyze()` / `forward()` (update via `Monitor()`) |
+| `accuracy`    | `ProgError`   | `analyze(reference)` / `forward()` (update via `Monitor()`) |
+| `stability_norm`    | `NormStability` | `analyze()` / `forward()` (update via `Monitor()`) |
+| `stability_builder` | `NSbuilder`     | build-then-emit; see class docs |
 
-## Operations / gates (`napl.operation`  ->  UnarySim)
+## Operations / gates (`napl.sim.operation`  ->  UnarySim)
 
 | napl class | UnarySim class | file | notes |
 |------------|----------------|------|-------|
@@ -53,7 +55,7 @@ neural-layers table.)
 | `sqrt_tracejkff` | `FSUSqrt(jk_trace=True, emit=False)` | `kernel/sqrt.py` | one UnarySim class, flag-selected; napl split into 3 modules |
 | `sqrt_traceiscb` | `FSUSqrt(jk_trace=False, emit=False)` | `kernel/sqrt.py` | iscbdiv-based trace |
 | `sqrt_emit` | `FSUSqrt(emit=True)` | `kernel/sqrt.py` | opportunistic bit-inserting |
-| `sign_abs` | `FSUSignAbs` | `kernel/signabs.py` | |
+| `signabs` | `FSUSignAbs` | `kernel/signabs.py` | |
 | `relu_cnt`, `relu_sat` | `FSUReLU` | `kernel/relu.py` | two napl variants of one UnarySim FSU module |
 | `relu_hub` | `HUBReLU` | `kernel/relu.py` | binary-domain |
 | `sigmoid_hard` / `sigmoid_hub` | `FSUHardsigmoid` / `HUBHardsigmoid` | `kernel/sigmoid.py` | |
@@ -63,6 +65,14 @@ neural-layers table.)
 | `sync_skewed` | `SkewedSync` | `stream/shuffle.py` | **not** in `kernel/` |
 | `bi2uni` / `uni2bi` | `Bi2Uni` / `Uni2Bi` | `stream/shuffle.py` | **not** in `kernel/` |
 | `round_ste` / `round_fxp` | `RoundSTE` / `Round` | `kernel/utils.py` | `round.py` also has `_round_ste_fn` (autograd) |
+| `add_gaines` | `GainesAdd` | `kernel/add.py` | |
+| `add_ugemm` | `FSUAdduGEMM` | `kernel/add.py` | |
+| `mul_gaines` | `GainesMul` | `kernel/mul.py` | |
+| `div_gaines` | `GainesDiv` | `kernel/div.py` | |
+| `sqrt_gaines` | `GainesSqrt` | `kernel/sqrt.py` | |
+| `tanh_p1` / `tanh_pn` | `tanhP1` / `tanhPN` | `kernel/tanh.py` | |
+| `exp_n1` / `exp_ng` | `expN1` / `expNG` | `kernel/exp.py` | |
+| `sync_skewed_int` | `SkewedSyncInt` | `stream/shuffle_int.py` | **not** in `kernel/` |
 | `dff` | *(no standalone module)* | - | UnarySim has no DFF kernel; closest is a depth-1 `ShiftReg` delay. Validate as the delay identity |
 | `square_dff` | *(no standalone module)* | - | UnarySim has **no** `FSUSquare`; napl builds square from AND + `dff` (uGEMM). Validate against AND-of-decorrelated-stream math, not an UnarySim class |
 | `min_rc`, `max_rc`, `lt_rc`, `gt_rc` | *(no standalone module)* | - | rate-coded compare, built on `sync_skewed`/`SkewedSync`; UnarySim does not expose these as classes |
@@ -103,18 +113,24 @@ standalone UnarySim class** to diff against. For these, validate against the *ma
   `sync_skewed` (= `SkewedSync`) then a gate; temporal versions are elementwise. No UnarySim classes.
 - `inhibit` - placeholder (empty file).
 
-## Neural layers (`napl.module`  ->  UnarySim `kernel/{linear,conv,rnn}.py`)
+## Neural layers (`napl.sim.module`  ->  UnarySim `kernel/{linear,conv,rnn}.py`)
 
 | napl | UnarySim class | file | notes |
 |------|----------------|------|-------|
-| `linear_fsu` | `FSULinear` | `kernel/linear.py` | |
-| `linear_fsu_pc` | `FSULinearPC` | `kernel/linear.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated encoders vs FSULinearPC's CSG weight indexing, agrees within SC bound |
+| `linear` | `FSULinear` | `kernel/linear.py` | |
+| `linear_pc` | `FSULinearPC` | `kernel/linear.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated encoders vs FSULinearPC's CSG weight indexing, agrees within SC bound |
 | `linear_hub` / `linear_fxp` / `linear_tlut` | `HUBLinear` / `FXPLinear` / `TLUTLinear` | `kernel/linear.py` | |
-| `conv_fsu` | `FSUConv2d` | `kernel/conv.py` | |
-| `conv_fsu_pc` | `FSUConv2dPC` | `kernel/conv.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated weight/bias encoders, groups=1 zero-padding only, agrees within SC bound |
+| `conv` | `FSUConv2d` | `kernel/conv.py` | |
+| `conv_pc` | `FSUConv2dPC` | `kernel/conv.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated weight/bias encoders, groups=1 zero-padding only, agrees within SC bound |
 | `conv_hub` / `conv_fxp` / `conv_tlut` | `HUBConv2d` / `FXPConv2d` / `TLUTConv2d` | `kernel/conv.py` | |
-| `mgu_fsu` | `FSUMGUCell` | `kernel/rnn.py` | |
+| `mgu` | `FSUMGUCell` | `kernel/rnn.py` | |
 | `mgu_hub` / `mgu_hard` / `mgu_hardfxp` | `HUBMGUCell` / `HardMGUCell` / `HardMGUCellFXP` | `kernel/rnn.py` | |
+| `linear_ugemm` | `FSULinearuGEMM` | `kernel/linear.py` | |
+| `linear_gaines1` / `linear_gaines2` / `linear_gaines3` / `linear_gaines4` | `GainesLinear1` / `GainesLinear2` / `GainesLinear3` / `GainesLinear4` | `kernel/linear.py` | |
+| `conv_ugemm` | `FSUConv2duGEMM` | `kernel/conv.py` | |
+| `avgpool2d` | `FSUAvgPool2d` | `kernel/pool.py` | |
+| `mgu_hardnua` / `mgu_hardpt` | `HardMGUCellNUA` / `HardMGUCellPT` | `kernel/rnn.py` | |
+| `gru_hardnuapt` | `HardGRUCellNUAPT` | `kernel/rnn.py` | |
 
 napl's `module/wta.py` is a placeholder (no class yet); UnarySim has no WTA module either.
 
@@ -128,7 +144,7 @@ napl's `module/wta.py` is a placeholder (no class yet); UnarySim has no WTA modu
 | `NN_SC_Weight_Clipper` | `NN_SC_Weight_Clipper` |
 | `pow2_lshift` / `pow2_rshift` | the RAVEN float-shift behavior these shims replace |
 
-## codec (`napl.module`  ->  UnarySim `stream/gen.py`)
+## codec (`napl.sim.module`  ->  UnarySim `stream/gen.py`)
 
 `encoder` / `decoder` / `gen_num_seq` correspond to UnarySim's `RNG` + `RawScale` + `BinGen` +
 `BSGen` bitstream pipeline (note: UnarySim's old `SourceGen` is now `BinGen`). There is no single

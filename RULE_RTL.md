@@ -1,6 +1,6 @@
 # NAPL RTL rules
 
-This file is the canonical design and verification policy for `src/napl/implementation/`, plus its directory layout and commands. Where `src/napl/operation/` is the *functional* Python model, the implementation tree is its *hardware* counterpart: Verilog-2001 implementations of the NAPL stochastic-computing operations, one synthesizable module per concrete operation variant, each verified against the Python model with golden-vector co-simulation. Policy comes first; the layout and flow mechanics follow.
+This file is the canonical design and verification policy for `src/napl/hw/`, plus its directory layout and commands. Where `src/napl/sim/operation/` is the *functional* Python model, the `src/napl/hw/` tree is its *hardware* counterpart: Verilog-2001 implementations of the NAPL stochastic-computing operations, one synthesizable module per concrete operation variant, each verified against the Python model with golden-vector co-simulation. Policy comes first; the layout and flow mechanics follow.
 
 ## Design contract
 
@@ -29,19 +29,19 @@ Golden-vector co-simulation is the source of functional truth. Expected outputs 
 For each RTL-backed change:
 
 1. Run the operation's Python test under the rules in [RULE_TEST.md](RULE_TEST.md).
-2. From `src/napl/implementation/`, run `conda run -n napl make test OP=<op>` and require an exit status of zero and a full-match `PASS`.
+2. From `src/napl/hw/`, run `conda run -n napl make test OP=<op>` and require an exit status of zero and a full-match `PASS`.
 3. For a stateful operation, verify the first post-reset cycle and a reset asserted after state has changed, then replay the same inputs.
 4. Verify the measured cycle latency against `self.hw.pp_delay`, including every supported sizing configuration used by the test.
 5. Report the command, configuration and sizing parameters, vector count, reset cases, observed latency, expected `pp_delay`, and exit status.
 
 ## Directory layout
 
-The tree contains 27 implemented op folders, plus the generic `Makefile` and the shared golden-vector helper `_gen_common.py` (`encode_value`, `pair_streams`, ...). Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_and` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
+The tree contains 26 implemented op folders, plus the generic `Makefile` and the shared golden-vector helper `_gen_common.py` (`encode_value`, `pair_streams`, ...). Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_and` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
 
 Each operation is self-contained in its own folder:
 
 ```
-implementation/
+hw/
 ├── Makefile                  # make test OP=<op>
 ├── _gen_common.py            # shared golden-vector helpers (encode_value, pair_streams, ...)
 └── <op>/                     # one folder per operation, e.g. mul_and/
@@ -66,12 +66,12 @@ make test OP=<op>
 
 This (1) runs `<op>/gen/gen_<op>.py` to emit `<op>/vec/<op>.vec` from the Python model, (2) compiles `<op>/rtl/*.v` + the testbench with `iverilog`, (3) simulates with `vvp` from inside the op folder. The testbench prints `PASS ...` only if every vector matches; the Makefile greps for it, so a mismatch makes `make` exit non-zero.
 
-Compilation pulls in only `<op>/rtl/*.v`, so an op is self-contained. An op that reuses another op's primitive (e.g. `compare` building on `sync_skewed`) gets an explicit dependency list when it is rolled out.
+Compilation pulls in only `<op>/rtl/*.v`, so an op is self-contained. An op that reuses another op's primitive embeds that logic in its own `rtl/` (e.g. `lt_rc` embeds the `sync_skewed` datapath).
 
 ## Flow wiring
 
 How the tree implements the rules above:
 
 - **Variant selection.** Each polarity is its own module (`mul_and_unipolar` = AND, `mul_and_bipolar` = XNOR), so the generator picks a module by string-matching the PyTorch config (`f"{op}_{config['polarity']}"`) with no abbreviation table.
-- **Sizing parameter flow.** `gen/gen_<op>.py` reads the sizing config **once** (mirroring the op's `test_<op>.py` config), builds the Python model from it, generates the vectors from that model, and emits `vec/<op>_params.vh` with one `` `define GEN_<PARAM> <value> `` per sizing field (`depth`, `width`, `scale`, `entry`, ...). `tb/<op>_tb.v` does `` `include "<op>/vec/<op>_params.vh" `` (iverilog resolves the path relative to the compile cwd, `implementation/`) and instantiates the DUT with the override `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the *verified* hardware is always the model's configuration and the sim and the RTL cannot drift.
-- **Reset flow.** The golden-vector generator calls `model.reset()` and the testbench pulses `i_rst_n` low before driving, so the co-sim compares from the **first post-reset cycle**; a reset state that disagrees with the model fails on the opening vectors. `reset()` is the source of truth: read it and reload whatever value it sets (e.g. `shiftreg` reloads the alternating `reg[i] = i % 2` pattern, not all-zeros). Combinational ops are pure `assign`, no clock (e.g. `mul_and_*`); stateful ops (`dff`, `shiftreg`, `add_any`, `div`, `sqrt`, ...) add `i_clk` and `i_rst_n`.
+- **Sizing parameter flow.** `gen/gen_<op>.py` reads the sizing config **once** (mirroring the op's `test_<op>.py` config), builds the Python model from it, generates the vectors from that model, and emits `vec/<op>_params.vh` with one `` `define GEN_<PARAM> <value> `` per sizing field (`depth`, `width`, `scale`, `entry`, ...). `tb/<op>_tb.v` does `` `include "<op>/vec/<op>_params.vh" `` (iverilog resolves the path relative to the compile cwd, `hw/`) and instantiates the DUT with the override `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the *verified* hardware is always the model's configuration and the sim and the RTL cannot drift.
+- **Reset flow.** The golden-vector generator calls `model.reset()` and the testbench pulses `i_rst_n` low before driving, so the co-sim compares from the **first post-reset cycle**; a reset state that disagrees with the model fails on the opening vectors. `reset()` is the source of truth: read it and reload whatever value it sets (e.g. `shiftreg` reloads the alternating `reg[i] = i % 2` pattern, not all-zeros). Combinational ops are pure `assign`, no clock (e.g. `mul_and_*`); stateful ops (`dff`, `shiftreg`, `add_any`, `div_cordiv`, `sqrt_emit`, ...) add `i_clk` and `i_rst_n`.

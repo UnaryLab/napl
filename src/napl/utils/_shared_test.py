@@ -148,7 +148,7 @@ def _codec_config(polarity, timestep, dim):
 
 def _make_pipeline(polarity, timestep, device, input_count,
                    operation_factory):
-    from napl.module import decoder, encoder
+    from napl.sim.module import decoder, encoder
     encoders = [
         encoder(_codec_config(polarity, timestep, dim=index + 1)).to(device)
         for index in range(input_count)

@@ -1,8 +1,10 @@
+import time
+
 import torch
 
-from napl.base import global_config
-from napl.utils import *
-from napl.operation import jkff
+from napl.sim.base import global_config
+from napl.sim.operation import jkff
+from napl.utils._shared_test import devices, sync
 
     
 def test_jkff():
@@ -10,25 +12,35 @@ def test_jkff():
     Test jkff with a simple configuration.
     """
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    first_j = torch.tensor([[0., 0., 1., 1.]]).type(global_config.stype)
+    first_k = torch.tensor([[0., 1., 0., 1.]]).type(global_config.stype)
+    second_j = torch.tensor([[1., 1., 0., 0.]]).type(global_config.stype)
+    second_k = torch.tensor([[1., 0., 1., 0.]]).type(global_config.stype)
 
-    jkff_inst = jkff().to(device)
+    for device in devices():
+        jkff_inst = jkff().to(device)
+        j = first_j.to(device)
+        k = first_k.to(device)
 
-    j = torch.tensor([[0., 0., 1., 1.]]).type(global_config.stype).to(device)
-    k = torch.tensor([[0., 1., 0., 1.]]).type(global_config.stype).to(device)
+        sync(device)
+        start = time.perf_counter()
+        first_result = jkff_inst(j, k).detach().cpu().clone()
+        second_result = jkff_inst(
+            second_j.to(device),
+            second_k.to(device),
+        ).detach().cpu().clone()
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    print(jkff_inst(j,k))
-
-    j = torch.tensor([[1., 1., 0., 0.]]).type(global_config.stype).to(device)
-    k = torch.tensor([[1., 0., 1., 0.]]).type(global_config.stype).to(device)
-
-    print(jkff_inst(j,k))
-
-    jkff_inst.reset()
+        assert torch.equal(first_result, torch.tensor([[0, 0, 1, 1]], dtype=global_config.stype))
+        assert torch.equal(second_result, torch.tensor([[1, 1, 0, 1]], dtype=global_config.stype))
+        assert jkff_inst.timestep_cur == 2
+        jkff_inst.reset()
+        assert jkff_inst.timestep_cur == 0
+        print(f'[{device}] time={elapsed * 1000:.3f}ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_jkff()
-

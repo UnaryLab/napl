@@ -1,29 +1,28 @@
 ---
 name: napl-validate-sim-rtl
 description: >-
-  Validate that a napl kernel's Python functional model and its Verilog RTL produce
+  Validate that a napl kernel's Python model and its Verilog RTL produce
   identical outputs on the same inputs taken from test_<kernel>.py. Use whenever the
-  user wants to confirm a kernel's generated RTL matches the simulator/Python model,
-  check sim-vs-RTL or hardware-vs-model equivalence, verify the Verilog is functionally
+  user wants to confirm a kernel's generated RTL matches the Python model, check
+  sim-vs-RTL or hardware-vs-model equivalence, verify the Verilog is functionally
   correct, run the golden-vector co-simulation against the test's inputs, or asks "does
   the RTL match the kernel", "validate the Verilog for mul_and", "is the shiftreg
-  hardware correct", "check sim against RTL for add_any", even without the word
-  "validate". The bar is bit-exact: the RTL output must equal the Python model output
-  cycle-for-cycle on the streams the test encodes. Sibling to napl-gen-rtl (which generates the
-  RTL this skill checks), napl-validate-unarysim (model vs the UnarySim reference), and the
-  napl-port-unarysim workflow's RTL phase. Validate-only: if a kernel has no RTL
-  yet, report that and point to napl-gen-rtl / napl-port-unarysim rather than generating it here. Every run
-  leaves a durable summary row in reports/napl-validate-sim-rtl-report.md (kernel, RTL module,
-  PASS/FAIL, vectors, regimes, reset checks) so sim-vs-RTL fidelity is tracked over time.
+  hardware correct", "check sim against RTL for add_any". The bar is bit-exact: the RTL
+  output must equal the Python model output
+  cycle-for-cycle on the streams the test encodes. Sibling to napl-gen-rtl,
+  napl-validate-unarysim, and the napl-port-unarysim workflow's RTL phase. Validate-only:
+  if a kernel has no RTL yet, report that and point to napl-gen-rtl / napl-port-unarysim
+  rather than generating it here. Every run leaves a durable summary row in
+  reports/napl-validate-sim-rtl-report.md so sim-vs-RTL fidelity is tracked over time.
 ---
 
 # Validate a napl kernel's Python model against its Verilog RTL
 
-## Why this exists
+## Scope
 
 napl lowers the same kernel two ways: a Python functional simulation that runs over
 timesteps, and a synthesizable Verilog RTL counterpart under
-`src/napl/implementation/<op>/`. They are only faithful if they compute the **same bits**:
+`src/napl/hw/<op>/`. They are only faithful if they compute the **same bits**:
 one Python `forward()` timestep equals one `posedge i_clk`, and the RTL output must equal
 the model output cycle-for-cycle. The repo already has the co-simulation engine for this,
 `make test OP=<op>` (generate golden vectors from the Python model, compile RTL + testbench
@@ -33,6 +32,8 @@ inputs `test_<kernel>.py` uses**, not from whatever ad hoc stream the generator 
 hardcode. So the validation proves the RTL matches the model on the regimes the Python test
 actually exercises (both polarities, the known-answer corners, the reset transient), not on
 an unrelated sweep.
+
+## Handoffs
 
 It distills one rule from each sibling:
 
@@ -45,10 +46,44 @@ It distills one rule from each sibling:
   reproduce the same spike stream); run in a subagent; on a mismatch, locate the diverging
   cycle and say which side is right, do not hand-wave.
 
-The deliverable is a verdict: kernel, RTL module(s) compared, the test-derived regimes used,
-the bit-exact PASS/FAIL per polarity, and an explanation of any divergence.
+- `napl-gen-rtl`: the producer sibling that generates the RTL this skill validates (generate
+  then validate).
+- The `napl-port-unarysim` workflow's RTL phase generates (via napl-gen-rtl) then re-verifies
+  (via this skill) each op's RTL; this skill is its single-kernel counterpart.
 
-## Execution model: always run the validation in a subagent
+## Persona
+
+A skeptical hardware validator who drives the RTL with the exact per-cycle streams the test
+encodes, tests reset from a dirtied mid-stream state and not just power-on, and treats the
+Python model as the reference: when the two differ, the RTL is wrong unless the model is.
+
+## Inputs
+
+- The napl kernel to validate (e.g. `operation.mul_and`, `operation.shiftreg`), plus its
+  `tests/<subpackage>/test_<kernel>.py` and its RTL directory `src/napl/hw/<op>/`.
+- **Validate-only:** if `src/napl/hw/<op>/` does not exist (no RTL yet), STOP and
+  report that the kernel has no RTL to validate, pointing the user to the **napl-port-unarysim**
+  workflow's RTL phase (or napl-gen-rtl) to generate it first. This skill checks an existing
+  implementation; it does not generate RTL.
+- Run through the project env: `conda run -n napl python ...` and
+  `conda run -n napl make test OP=<op>` (a bare `python` is the wrong interpreter). Heredocs
+  piped through `conda run` swallow stdout, so write a `.py` file and run it, never inline a
+  `python - <<EOF`.
+- The co-sim needs the **Icarus Verilog** toolchain (`iverilog`/`vvp`) on PATH. If it is
+  missing, report that the co-sim cannot run rather than guessing a result.
+- Everything lives under `src/napl/hw/<op>/{rtl,tb,gen,vec,build}/`; run `make`
+  from `src/napl/hw/`. `vec/*.vec` and `build/` are generated (gitignored).
+
+## Output contract
+
+A verdict as the **validation summary** block (see Step 5): kernel, RTL module(s) compared,
+the test-derived regimes used, the bit-exact PASS/FAIL per polarity, the reset checks, and an
+explanation of any divergence, plus a durable summary row in
+`reports/napl-validate-sim-rtl-report.md`.
+
+## Workflow
+
+### Step 0 - Always run the validation in a subagent
 
 **Always delegate to one subagent; never run it in the main thread.** It is a multi-step job
 (read the kernel + its test + its RTL, write a test-driven vector generator, run the
@@ -69,29 +104,16 @@ point. When invoked with a kernel target, the main agent only dispatches and rel
 2. Relay the verdict. If the subagent reports FAIL, surface where it diverged (reset state,
    pp_delay alignment, polarity, or a genuine logic bug) rather than presenting a green pass.
 
-**If you ARE that dispatched subagent**, ignore this section and execute Steps 1-5 directly.
+**If you ARE that dispatched subagent**, ignore this section and execute Steps 1-6 directly.
 Validate one kernel per subagent.
-
-## Environment
-
-- Run through the project env: `conda run -n napl python ...` and
-  `conda run -n napl make test OP=<op>` (a bare `python` is the wrong interpreter). Heredocs
-  piped through `conda run` swallow stdout, so write a `.py` file and run it, never inline a
-  `python - <<EOF`.
-- The co-sim needs the **Icarus Verilog** toolchain (`iverilog`/`vvp`) on PATH. If it is
-  missing, report that the co-sim cannot run rather than guessing a result.
-- Everything lives under `src/napl/implementation/<op>/{rtl,tb,gen,vec,build}/`; run `make`
-  from `src/napl/implementation/`. `vec/*.vec` and `build/` are generated (gitignored).
-
-## Workflow
 
 ### Step 1 - Resolve the kernel, its test, and its RTL
 
 Pin down the napl class (e.g. `operation.mul_and`, `operation.shiftreg`), its source under
-`src/napl/operation/`, its `tests/<subpackage>/test_<kernel>.py`, and its RTL directory
-`src/napl/implementation/<op>/`. The op directory and `make test` OP name is the class name.
+`src/napl/sim/operation/`, its `tests/<subpackage>/test_<kernel>.py`, and its RTL directory
+`src/napl/hw/<op>/`. The op directory and `make test` OP name is the class name.
 
-**Validate-only:** if `src/napl/implementation/<op>/` does not exist (no RTL yet), STOP and
+**Validate-only:** if `src/napl/hw/<op>/` does not exist (no RTL yet), STOP and
 report that the kernel has no RTL to validate, pointing the user to the **napl-port-unarysim**
 workflow's RTL phase to generate it first. Do not generate RTL here; that is napl-port-unarysim's
 job, and this skill checks an existing implementation.
@@ -125,7 +147,7 @@ Key points:
   `test_shiftreg.py`'s `shiftreg_config={'depth': 2}`), and from that SAME config emit
   `vec/<op>_params.vh` with one `` `define GEN_<PARAM> <value> `` per sizing field. The testbench
   `` `include "<op>/vec/<op>_params.vh" `` (iverilog resolves it relative to the compile cwd,
-  `implementation/`) and instantiates the DUT with `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the
+  `hw/`) and instantiates the DUT with `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the
   RTL is validated at the test's size, not a stale default. If the existing gen hardcodes a size
   (an old `localparam`/constant mirrored by a "must match" comment), this is exactly the drift to
   fix - replace it with the inherited parameter. (Real example: `shiftreg`'s RTL/gen carried
@@ -158,8 +180,8 @@ Key points:
   whose reset value is not directly observable in the next output, this mid-stream reset is the
   only way the co-sim can surface a wrong reset value at all.
 
-Two live patterns to copy: `implementation/mul_and/gen/gen_mul_and.py` (combinational,
-exhaustive input product) and `implementation/shiftreg/gen/gen_shiftreg.py` +
+Two live patterns to copy: `hw/mul_and/gen/gen_mul_and.py` (combinational,
+exhaustive input product) and `hw/shiftreg/gen/gen_shiftreg.py` +
 `shiftreg_tb.v` (stateful, a single per-cycle spike stream replayed after one reset). Adapt the
 nearer one, swapping its ad hoc input source for the mirrored test encoders.
 
@@ -168,7 +190,7 @@ rewrite.
 
 ### Step 4 - Run the co-simulation
 
-From `src/napl/implementation/`, run the standard engine:
+From `src/napl/hw/`, run the standard engine:
 
 ```bash
 conda run -n napl make test OP=<op>
@@ -239,14 +261,44 @@ Record the outcome of EVERY run, PASS or FAIL (on FAIL, put the diverging cycle 
 silently absent. Pass `--date YYYY-MM-DD` only to backfill; it defaults to today. Confirm the
 recorded row to the user as part of the verdict.
 
-## Bundled resources
+## Rules
+
+- **Identical inputs or it proves nothing.** The RTL must see the SAME per-cycle streams the
+  test encodes; mirror the test's encoder configs, never invent a new random stream.
+- **Vectors come from the model, never a truth table.** The expected column is whatever the
+  napl `forward()` emits on that stream.
+- **Reset from t=0, to the model's actual state, and mid-stream too.** Drive the model from
+  `reset()`; the reset state is not always zero (`shiftreg` reloads `i % 2`). Power-on reset
+  alone is insufficient: also assert reset mid-stream from a dirtied state and require continued
+  match (Step 3).
+- **Bit-serial scalar datapath.** Drive representative scalar streams encoded with the test's
+  config, not the test's wide tensor.
+- **Validate at the test's size, via inheritance.** Build the model with the test's sizing
+  config and have the RTL inherit it (`vec/<op>_params.vh`); a hardcoded RTL size that disagrees
+  with the test is a real finding, not a pass.
+- **One module per polarity, bit-exact bar.** Distinct unipolar/bipolar variants are separate
+  RTL modules; the co-sim matches bit-for-bit or there is a real bug, never "close".
+
+## References
 
 - `scripts/record_sim_rtl.py` - append a uniform summary row to
   `reports/napl-validate-sim-rtl-report.md` (Step 6). Creates the file with a header on first use,
   escapes table-breaking pipes, dedupes identical rows, and keeps the log sorted by kernel then
   date so re-validations of one kernel group together.
+- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
+  the `i_clk`/`i_rst_n` and reset-state contract.
+- `src/napl/hw/mul_and/` - canonical combinational example (gen, tb, rtl).
+- `src/napl/hw/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
+  reset, the `forward()`-equals-`posedge` and `reset()`-equals-`i_rst_n` mapping.
+- `tests/<subpackage>/test_<kernel>.py` - the source of the inputs and regimes to reuse.
+- `.claude/skills/napl-validate-unarysim/SKILL.md` - sibling skill; reuse its mirror-the-encoder
+  pattern for identical inputs.
+- `.claude/skills/napl-gen-rtl/SKILL.md` - the producer sibling that generates the RTL this skill
+  validates (generate then validate).
+- `.claude/workflows/napl-port-unarysim.js` - the batch sweep whose RTL phase generates (via
+  napl-gen-rtl) then re-verifies (via this skill) each op's RTL.
 
-## Gotchas (learned the hard way)
+## Failure modes
 
 - **Identical inputs or it proves nothing.** The whole point is that the RTL sees the SAME
   per-cycle streams the test encodes. Mirror the test's encoder configs; do not invent a new
@@ -276,20 +328,3 @@ recorded row to the user as part of the verdict.
   per-polarity expected column accordingly.
 - **iverilog must be on PATH.** No toolchain means no co-sim; say so rather than reporting a
   result you did not run.
-
-## References
-
-- `RULE_RTL.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
-  the `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/implementation/mul_and/` - canonical combinational example (gen, tb, rtl).
-- `src/napl/implementation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
-  reset, the `forward()`-equals-`posedge` and `reset()`-equals-`i_rst_n` mapping.
-- `tests/<subpackage>/test_<kernel>.py` - the source of the inputs and regimes to reuse.
-- `.claude/skills/napl-validate-unarysim/SKILL.md` - sibling skill; reuse its mirror-the-encoder
-  pattern for identical inputs.
-- `.claude/skills/napl-gen-rtl/SKILL.md` - the producer sibling that generates the RTL this skill
-  validates (generate then validate).
-- `.claude/workflows/napl-port-unarysim.js` - the batch sweep whose RTL phase generates (via
-  napl-gen-rtl) then re-verifies (via this skill) each op's RTL.
-- `scripts/record_sim_rtl.py` and `reports/napl-validate-sim-rtl-report.md` - the recorder and the
-  durable log this skill appends a summary row to on every run (Step 6).

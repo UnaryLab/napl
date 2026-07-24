@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import add_any
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import add_any
+from napl.sim.metric import accuracy
 
 
 class napl_add_any(napl_base):
@@ -13,6 +17,7 @@ class napl_add_any(napl_base):
         # set up encoder, decoder, add_any, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
+        self.accuracy = accuracy({'polarity': codec_config['polarity']})
         self.add_any = add_any(add_any_config)
 
 
@@ -22,6 +27,7 @@ class napl_add_any(napl_base):
         i_spike = self.encoder(input)
         o_spike = self.add_any(i_spike, dim=-1)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_add_any():
@@ -29,8 +35,6 @@ def test_add_any():
     Test add_any with a simple configuration.
     """
     
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
     codec_config={
         'polarity': 'bipolar',
         'timestep': 256,
@@ -43,27 +47,35 @@ def test_add_any():
     }
 
     # Generate random inputs based on polarity
-    input = gen_rand_tensor(codec_config['polarity'], 
-                          shape=(10000, add_any_config['scale']), 
-                          width=math.log2(codec_config['timestep'])
-                          ).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor(
+        codec_config['polarity'],
+        shape=(10000, add_any_config['scale']),
+        width=math.log2(codec_config['timestep']),
+    ).type(global_config.ntype)
 
-    # generate the napl_add_any instance
-    add_any_inst = napl_add_any(codec_config, add_any_config).to(device)
-    add_any_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        add_any_inst = napl_add_any(codec_config, add_any_config).to(device)
 
-    # calculate the reference output
-    r_value = torch.sum(input, dim=-1) / add_any_config['scale']
-    
-    # report the error
-    report_error(add_any_inst.decoder.spike_value, r_value)
+        sync(device)
+        start = time.perf_counter()
+        add_any_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    assert add_any_inst.add_any.timestep_cur == codec_config['timestep']
-    add_any_inst.reset()
+        r_value = torch.sum(input, dim=-1) / add_any_config['scale']
+        error, _ = add_any_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt().item()
+        bound = 2.0 / math.sqrt(codec_config['timestep'])
+        assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
+
+        assert add_any_inst.add_any.timestep_cur == codec_config['timestep']
+        add_any_inst.reset()
+        assert add_any_inst.add_any.timestep_cur == 0
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_add_any()
-

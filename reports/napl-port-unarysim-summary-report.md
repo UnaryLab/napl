@@ -2,34 +2,34 @@
 
 ## Overview
 
-This run covered all phases, all subpackages, and all classes. **GenSim** newly ported **1** UnarySim class into napl (`FSUConv2dPC` -> `module.conv_fsu_pc`) and skipped **9** non-ports (backward-only STE `autograd.Function` helpers and RNG/bitstream codec stages that napl folds into existing classes). **Improve** changed **14** files and left **10** unchanged with no safe speedup; **0** unchanged files were skipped via the improve ledger. The post-Improve sweep gate passed: **48/48** files, `all_pass=true`, no failing tests. **0** classes were force-re-validated. **Validate** ran **44** module validations with **0** disagreements (`agree=false`); the `disagreements_rechecked` list is empty, so nothing was overturned or confirmed on independent re-check. **RTL**: **30** ops generated and verified, **0** dropped, **5** skipped as single-shot binary-domain HUB/FXP ops with no sound gate-level mapping (`sigmoid_hub`, `relu_hub`, `round_fxp`, `tanh_hub`; plus `round_fxp`). **23** `self.hw.pp_delay` values were written in Finalize. The component report records **42** validated-yes and **26** rtl-yes.
+This run covered all phases, all subpackages, and all classes. **GenSim** newly ported **1** UnarySim class into napl (`FSUConv2dPC` -> `module.conv_pc`) and skipped **9** non-ports (backward-only STE `autograd.Function` helpers and RNG/bitstream codec stages that napl folds into existing classes). **Improve** changed **14** files and left **10** unchanged with no safe speedup; **0** unchanged files were skipped via the improve ledger. The post-Improve sweep gate passed: **48/48** files, `all_pass=true`, no failing tests. **0** classes were force-re-validated. **Validate** ran **44** module validations with **0** disagreements (`agree=false`); the `disagreements_rechecked` list is empty, so nothing was overturned or confirmed on independent re-check. **RTL**: **30** ops generated and verified, **0** dropped, **5** skipped as single-shot binary-domain HUB/FXP ops with no sound gate-level mapping (`sigmoid_hub`, `relu_hub`, `round_fxp`, `tanh_hub`; plus `round_fxp`). **23** `self.hw.pp_delay` values were written in Finalize. The component report records **42** validated-yes and **26** rtl-yes.
 
 ## Improve
 
 | file | changed? | tests pass? | what changed |
 |---|---|---|---|
 | operation/uni2bi.py | yes | yes | Single `torch.ge(acc,2)` cast to stype reused for both acc update and return; removes one cast/timestep. CPU ~1.37x, MPS ~1.52x. |
-| operation/compare.py | yes | yes | Hoisted duplicate int8 casts in `min_rc/max_rc/lt_rc/gt_rc`; `min_tc/max_tc` left unchanged. Bit-exact; within timing noise. |
-| operation/sigmoid.py | no | yes | No safe speedup; both classes thin fused wrappers already optimal. |
-| operation/square.py | yes | yes | Cached `_spike_is_int8`; skip 3 redundant casts on int8 fast path; explicit XNOR precedence. CPU ~1.05-1.12x, MPS ~1.05-1.2x. |
+| operation/min_rc.py | yes | yes | Hoisted duplicate int8 casts in `min_rc/max_rc/lt_rc/gt_rc`; `min_tc/max_tc` left unchanged. Bit-exact; within timing noise. |
+| operation/sigmoid_hard.py | no | yes | No safe speedup; both classes thin fused wrappers already optimal. |
+| operation/square_dff.py | yes | yes | Cached `_spike_is_int8`; skip 3 redundant casts on int8 fast path; explicit XNOR precedence. CPU ~1.05-1.12x, MPS ~1.05-1.2x. |
 | operation/shiftreg.py | yes | yes | Replaced stacked circular buffer with `collections.deque` FIFO of row refs; removes per-step clone. CPU ~3x, MPS ~5x. |
-| operation/relu.py | yes | yes | Dropped redundant `int8` cast in `relu_cnt` (int8\|bool yields int8). Bit-exact; flat within noise. |
-| operation/round.py | no | yes | No change; `round_fxp` hot path already minimal, only micro-opts live in shared shims. 1.00x. |
+| operation/relu_cnt.py | yes | yes | Dropped redundant `int8` cast in `relu_cnt` (int8\|bool yields int8). Bit-exact; flat within noise. |
+| operation/round_fxp.py | no | yes | No change; `round_fxp` hot path already minimal, only micro-opts live in shared shims. 1.00x. |
 | operation/jkff.py | no | yes | No change; current `torch.where` select fastest on CPU, no rewrite wins on both devices. |
-| operation/mul.py | yes | yes | `mul_csg`: removed per-timestep long cast, reused `1-in_0_i8`. `mul_and` unchanged. CPU 1.03x, MPS 1.14x. |
+| operation/mul_and.py | yes | yes | `mul_csg`: removed per-timestep long cast, reused `1-in_0_i8`. `mul_and` unchanged. CPU 1.03x, MPS 1.14x. |
 | operation/dff.py | no | yes | No change; already the circular-buffer-of-references idiom, zero steady-state allocations. |
-| operation/div.py | yes | yes | `div_cordiv`: moved temp off `self`, dropped redundant cast. `div_iscb` unchanged. ~1.0x within noise. |
-| operation/sqrt.py | yes | yes | `sqrt_emit`: replaced per-timestep stack+reduce with int8 elementwise sum fed `dim=None`. CPU ~1.1-1.2x, MPS ~1.05-1.2x. |
-| operation/sign_abs.py | no | yes | No change; already vectorized, candidate cast-removal only ~1.06x and drops stype contract. |
-| operation/add.py | yes | yes | `add_any` dim!=None path: in-place `sub_(offset)` on owned sum, removes one full-size alloc/timestep. CPU ~1.1x, MPS ~1.2-1.3x. |
+| operation/div_cordiv.py | yes | yes | `div_cordiv`: moved temp off `self`, dropped redundant cast. `div_iscb` unchanged. ~1.0x within noise. |
+| operation/sqrt_emit.py | yes | yes | `sqrt_emit`: replaced per-timestep stack+reduce with int8 elementwise sum fed `dim=None`. CPU ~1.1-1.2x, MPS ~1.05-1.2x. |
+| operation/signabs.py | no | yes | No change; already vectorized, candidate cast-removal only ~1.06x and drops stype contract. |
+| operation/add_any.py | yes | yes | `add_any` dim!=None path: in-place `sub_(offset)` on owned sum, removes one full-size alloc/timestep. CPU ~1.1x, MPS ~1.2-1.3x. |
 | operation/bi2uni.py | yes | yes | Removed per-timestep cast; shape-guarded in-place `add_`. MPS ~1.25x, CPU flat. |
-| operation/tanh.py | no | yes | No change; `tanh_hard` is passthrough, `tanh_hub` single fused hardtanh. |
-| operation/sync.py | no | yes | No new edits; pre-existing behavior-preserving opts to `sync_skewed` verified (CPU 1.17x, MPS 1.30x vs HEAD). |
+| operation/tanh_hard.py | no | yes | No change; `tanh_hard` is passthrough, `tanh_hub` single fused hardtanh. |
+| operation/sync_skewed.py | no | yes | No new edits; pre-existing behavior-preserving opts to `sync_skewed` verified (CPU 1.17x, MPS 1.30x vs HEAD). |
 | module/rnn.py | yes | yes | `mgu_hardfxp`: deduped redundant `round_fxp` quantizations. CPU ~1.30x, MPS ~1.20x. Other 3 classes unchanged. |
 | module/conv.py | no | yes | No change; hot path dominated by im2col/col2im, casts non-redundant. 1.0x. |
-| module/conv_fsu_pc.py | no | yes | No change; hot path already vectorized, shape-cache prototype gave no speedup and was reverted. |
+| module/conv_pc.py | no | yes | No change; hot path already vectorized, shape-cache prototype gave no speedup and was reverted. |
 | module/encoder.py | yes | yes | Resolved polarity branch once in `__init__`; removed 2 string compares/timestep. CPU ~1.10x, MPS ~1.12x. |
-| module/linear.py | yes | yes | `linear_fsu_pc` bipolar: replaced second matmul with integer identity reusing AND-count. CPU ~1.17x, MPS ~1.07x. |
+| module/linear.py | yes | yes | `linear_pc` bipolar: replaced second matmul with integer identity reusing AND-count. CPU ~1.17x, MPS ~1.07x. |
 | module/decoder.py | yes | yes | Dropped per-timestep cast (add promotes int8 into float32 acc). MPS ~1.9x, CPU flat. |
 | metric/correlation.py | yes | yes | Dropped 2 redundant casts (bool auto-promotes). CPU ~1.10x, MPS ~2.01x. |
 | metric/accuracy.py | yes | yes | Shape-guarded in-place `add_` accumulation; removes alloc for 255/256 timesteps. CPU/MPS ~1.16x. |
@@ -45,7 +45,7 @@ Independent sweep-gate result: **48** files, **48** passed, `all_pass=true`, fai
 | module | UnarySim ref | bit-exact | agreement | CPU | GPU |
 |---|---|---|---|---|---|
 | operation.uni2bi | Uni2Bi | yes (diff 0) | bit-exact, 0 mismatched over T=256 x N=10000, CPU+MPS | 4.92 ms | 20.18 ms |
-| operation.sigmoid_hard | FSUHardsigmoid | yes (diff 0) | bit-exact CPU+MPS; deterministic FSU scaled-add | 8.48 ms | 30.59 ms |
+| operation.sigmoid_hard | FSUHardsigmoid | yes (diff 0) | bit-exact CPU+MPS; deterministic streaming scaled-add | 8.48 ms | 30.59 ms |
 | operation.sigmoid_hub | HUBHardsigmoid | yes (diff 0) | bit-exact CPU+MPS, exact vs Hardsigmoid(x*3) | 0.0050 ms | 0.0067 ms |
 | operation.shiftreg | ShiftReg | yes (diff 0) | bit-exact CPU+MPS; depth-1 within SC bound | 1.13 ms | 8.09 ms |
 | operation.relu_cnt | FSUReLU | yes (diff 0) | bit-exact streams, RMSE vs ReLU=0.0, CPU+MPS | 7.7 ms | 17.4 ms |
@@ -61,7 +61,7 @@ Independent sweep-gate result: **48** files, **48** passed, `all_pass=true`, fai
 | operation.sqrt_tracejkff | FSUSqrt | yes (diff 0) | bit-exact CPU+MPS; RMSE-vs-sqrt identical | 12.9 ms | 42.8 ms |
 | operation.sqrt_traceiscb | FSUSqrt | yes (diff 0) | bit-exact CPU+MPS; RMSE-vs-sqrt identical | 17.2 ms | 46.7 ms |
 | operation.sqrt_emit | FSUSqrt | yes (diff 0) | bit-exact CPU+MPS; RMSE-vs-sqrt 0.026 within bound | 9.3 ms | 33.8 ms |
-| operation.sign_abs | FSUSignAbs | yes (diff 0) | bit-exact both outputs, CPU+MPS | 5.11 ms | 18.14 ms |
+| operation.signabs | FSUSignAbs | yes (diff 0) | bit-exact both outputs, CPU+MPS | 5.11 ms | 18.14 ms |
 | operation.add_any | FSUAdd | yes (diff 0) | bit-exact CPU+MPS; within SC bound | 37.5 ms | 34.8 ms |
 | operation.bi2uni | Bi2Uni | yes (diff 0) | bit-exact vs Bi2Uni(depth=3), CPU+MPS | 3.36 ms | 9.21 ms |
 | operation.tanh_hard | FSUHardtanh | yes (diff 0) | bit-exact; RMSE 0.0 vs analytic | 4.8 ms | 11.8 ms |
@@ -69,16 +69,16 @@ Independent sweep-gate result: **48** files, **48** passed, `all_pass=true`, fai
 | operation.sync_skewed | SkewedSync | yes (diff 0) | bit-exact, CPU+MPS | 13.56 ms | 44.80 ms |
 | module.mgu_hard | HardMGUCell | yes (max\|diff\| 0) | bit-exact CPU+MPS | 0.027 ms | 0.293 ms |
 | module.mgu_hardfxp | HardMGUCellFXP | yes (max\|diff\| 0) | bit-exact CPU+MPS | 0.141 ms | 0.644 ms |
-| module.mgu_fsu | FSUMGUCell | no (internal RNG) | stochastic; within few*SC bound | ~33 ms (via mgu_hub) | n/a (device-mixing) |
+| module.mgu | FSUMGUCell | no (internal RNG) | stochastic; within few*SC bound | ~33 ms (via mgu_hub) | n/a (device-mixing) |
 | module.mgu_hub | HUBMGUCell | no (internal RNG) | stochastic; RMSE within SC bound @width8 | 33.0 ms | n/a (device-mixing) |
 | module.conv_fxp | FXPConv2d | yes (diff 0) | bit-exact; rmse within quant bound | 0.292 ms | 1.069 ms |
 | module.conv_hub | HUBConv2d | yes (diff 0) | bit-exact; rmse within unary-mul bound | 0.370 ms | 1.102 ms |
 | module.conv_tlut | TLUTConv2d | yes (diff 0) | bit-exact; rmse within temporal bound | 0.719 ms | 1.173 ms |
-| module.conv_fsu | FSUConv2d | no (internal RNG) | within SC bound, cross-rmse << bound | 55-60 ms | see notes |
-| module.conv_fsu_pc | FSUConv2dPC | no (independent RNG) | within SC bound; both track F.conv2d | 42.6 ms | 87.9 ms |
+| module.conv | FSUConv2d | no (internal RNG) | within SC bound, cross-rmse << bound | 55-60 ms | see notes |
+| module.conv_pc | FSUConv2dPC | no (independent RNG) | within SC bound; both track F.conv2d | 42.6 ms | 87.9 ms |
 | module.encoder | BSGen | yes (diff 0) | bit-exact across regimes; RMSE 0.0 | 0.81 ms | 7.87 ms |
-| module.linear_fsu | FSULinear | no (independent RNG) | within SC bound; both track analytic | 6.88 ms | 61.08 ms |
-| module.linear_fsu_pc | FSULinearPC | no (independent RNG) | within SC bound; both track inner product | 4.59 ms | 40.94 ms |
+| module.linear | FSULinear | no (independent RNG) | within SC bound; both track analytic | 6.88 ms | 61.08 ms |
+| module.linear_pc | FSULinearPC | no (independent RNG) | within SC bound; both track inner product | 4.59 ms | 40.94 ms |
 | module.linear_fxp | FXPLinear | yes (diff 0) | bit-exact CPU (legacy float-shift restored) | 0.16 ms | 1.04 ms |
 | module.linear_hub | HUBLinear | yes (diff 0) | bit-exact CPU; identical unary map | 0.157 ms | 1.07 ms |
 | module.linear_tlut | TLUTLinear | yes (diff 0) | bit-exact all 3 modes/temporal pairs, CPU | 0.124 ms | 1.21 ms |
@@ -117,7 +117,7 @@ No row had `agree=false`; all 44 validations agreed. The `disagreements_rechecke
 | sqrt_tracejkff | sqrt_tracejkff | verified | PASS | yes | 0 | Two polarity variants (JK-FF trace); 64/64. |
 | sqrt_traceiscb | sqrt_traceiscb | verified | PASS | yes | 0 | Two polarity variants (iscb cordiv); 128/128. |
 | sqrt_emit | sqrt_emit | verified | PASS | yes | 0 | Two polarity variants (nsadd + shiftreg); 64/64. |
-| sign_abs | sign_abs | verified | PASS | yes | 0 | Saturating accumulator, reset acc=MED; 42/42. |
+| signabs | signabs | verified | PASS | yes | 0 | Saturating accumulator, reset acc=MED; 42/42. |
 | add_any | add_any | verified | PASS | yes | 0 | Two polarity variants, 2x-scaled acc; 200/200; fixed signed-compare bug. |
 | bi2uni | bi2uni | verified | PASS | yes | 0 | Mealy machine; 304/304. |
 | tanh_hard | tanh_hard | verified | PASS | yes | 0 | Combinational identity pass-through; 68/68. |
@@ -132,7 +132,7 @@ Skipped ops (status=skipped, recorded so they are not re-attempted): `sigmoid_hu
 
 | napl class | UnarySim source | status | validated |
 |---|---|---|---|
-| module.conv_fsu_pc | FSUConv2dPC | ported | Faithful vs FSUConv2dPC on identical input spike streams (CPU+MPS), both polarities x bias x pad; bit-exact=False as expected (independent weight/bias RNG per side); within-bound agreement (all RMSE << SC bound 0.133 @ T=512). |
+| module.conv_pc | FSUConv2dPC | ported | Faithful vs FSUConv2dPC on identical input spike streams (CPU+MPS), both polarities x bias x pad; bit-exact=False as expected (independent weight/bias RNG per side); within-bound agreement (all RMSE << SC bound 0.133 @ T=512). |
 
 Skipped non-ports (9):
 

@@ -1,66 +1,54 @@
-import torch, math
+import math
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import tanh_hard
-from napl.metric import report_error
+import torch
 
-
-class napl_tanh_hard(napl_base):
-    def __init__(self, codec_config, tanh_hard_config):
-        super().__init__()
-        # set up encoder, decoder, adder, and accuracy
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
-        self.tanh_hard = tanh_hard(tanh_hard_config)
+from napl.sim.base import global_config
+from napl.sim.operation import tanh_hard
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import streaming_suite
 
 
-    @napl_sim_timesteps
-    def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
-        i_spike = self.encoder(input)
-        o_spike = self.tanh_hard(i_spike)
-        self.decoder(o_spike)
+TIMESTEPS = 256
 
-    
+
+def make_operation(polarity, timestep, device):
+    return tanh_hard()
+
+
+def make_values(polarity):
+    return (
+        gen_rand_tensor(
+            polarity, shape=(10000,), width=math.log2(TIMESTEPS)
+        ).type(global_config.ntype),
+    )
+
+
+def analytic_reference(values, polarity):
+    return torch.nn.functional.hardtanh(values[0])
+
+
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = torch.tensor([0.0, 0.5, 1.0])
+    else:
+        values = torch.tensor([-1.0, 0.0, 1.0])
+    return (values,), values, 0.0
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 1.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': TIMESTEPS,
+}
+
+
 def test_tanh_hard():
-    """
-    Test tanh_hard with a simple configuration.
-    """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-    codec_config={
-        'polarity': 'bipolar',
-        'timestep': 256,
-        'generator': 'sobol',
-        'dim': 1,
-    }
-    tanh_hard_config={
-        'polarity': 'bipolar',
-    }
-    
-    # Generate random inputs based on polarity, ensure positive numbers
-    input = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
-    # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
-
-    # generate the napl_tanh_hard instance
-    tanh_hard_inst = napl_tanh_hard(codec_config, tanh_hard_config).to(device)
-    tanh_hard_inst(input, timesteps=codec_config['timestep'])
-
-    # calculate the reference output
-    r_value = torch.nn.Hardtanh()(input)
-
-    # report the error
-    report_error(tanh_hard_inst.decoder.spike_value, r_value)
-
-    assert tanh_hard_inst.tanh_hard.timestep_cur == codec_config['timestep']
-    tanh_hard_inst.reset()
-
-    print('Test passed.')
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':
     test_tanh_hard()
-

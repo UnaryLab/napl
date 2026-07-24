@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from napl.module import conv_hub, linear_hub, conv_fxp, linear_fxp
+from napl.sim.module import conv_hub, linear_hub, conv_fxp, linear_fxp
 
 
 class ConvNetFP(nn.Module):

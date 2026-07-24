@@ -7,10 +7,10 @@ and whether the port was validated faithful against UnarySim.
 
 Example:
     python record_gen_sim.py \
-        --napl module.linear_fsu_pc --unarysim FSULinearPC \
-        --status ported --test tests/module/test_linear_fsu_pc.py \
+        --napl module.linear_pc --unarysim FSULinearPC \
+        --status ported --test tests/module/test_linear_pc.py \
         --validated "bit-exact vs FSULinearPC (CPU+MPS)" \
-        --notes "parallel-counter accumulation variant of FSULinear; streaming FSU kernel"
+        --notes "parallel-counter accumulation variant of FSULinear; streaming kernel"
 """
 import argparse
 import datetime
@@ -39,10 +39,10 @@ def cell(s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", default="reports/napl-gen-sim-report.md")
-    ap.add_argument("--napl", required=True, help="napl target class, exactly <subpackage>.<name>, e.g. module.linear_fsu_pc")
+    ap.add_argument("--napl", required=True, help="napl target class, exactly <subpackage>.<name>, e.g. module.linear_pc")
     ap.add_argument("--unarysim", required=True, help="UnarySim source class, e.g. FSULinearPC")
     ap.add_argument("--status", required=True, help="ported | skipped | failed")
-    ap.add_argument("--test", default="", help="test file created, e.g. tests/module/test_linear_fsu_pc.py")
+    ap.add_argument("--test", default="", help="test file created, e.g. tests/module/test_linear_pc.py")
     ap.add_argument("--validated", default="", help="napl-vs-UnarySim agreement (bit-exact / RMSE vs SC bound), or why not")
     ap.add_argument("--notes", default="", help="paradigm, subpackage, skip reason, or failure cause")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")

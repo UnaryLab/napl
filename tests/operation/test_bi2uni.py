@@ -2,11 +2,12 @@ import math
 import time
 
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import bi2uni
-from napl.metric import analyze_error
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import bi2uni
+from napl.sim.metric import accuracy
 
 
 class napl_bi2uni(napl_base):
@@ -15,6 +16,7 @@ class napl_bi2uni(napl_base):
         # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config1)
         self.decoder = decoder(codec_config2)
+        self.accuracy = accuracy({'polarity': codec_config2['polarity']})
         self.bi2uni = bi2uni(bi2uni_config)
 
 
@@ -24,6 +26,7 @@ class napl_bi2uni(napl_base):
         i_spike = self.encoder(input)
         o_spike = self.bi2uni(i_spike)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_bi2uni():
@@ -65,7 +68,7 @@ def test_bi2uni():
         sync(device)
         elapsed = time.perf_counter() - start
 
-        error, _ = analyze_error(bi2uni_inst.decoder.spike_value, input)
+        error, _ = bi2uni_inst.accuracy.analyze(input, verbose=True)
         rmse = error.pow(2).mean().sqrt().item()
         bound = 2.0 / math.sqrt(codec_config1['timestep'])
         assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'

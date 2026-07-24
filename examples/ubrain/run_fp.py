@@ -16,10 +16,7 @@ import time
 import torch
 
 from model import Cascade_CNN_RNN_FP
-
-
-def devices():
-    return ['cpu'] + (['mps'] if torch.backends.mps.is_available() else [])
+from napl.utils._shared_test import devices
 
 
 def sync(device):

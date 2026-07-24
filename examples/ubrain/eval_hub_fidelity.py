@@ -89,11 +89,7 @@ def main():
         w.writerows(rows)
     print(f'\nsaved sweep to {RESULTS}')
 
-    # MPS sanity check at one width (does the HUB path run on MPS at all?).
-    # Known napl gap: mgu_hub builds its internal mgu_fsu/encoder/accuracy submodules
-    # inside forward() on the default (CPU) device and never moves them to the input's
-    # device, so the HUB MGU step fails on MPS. The conv_hub/linear_hub/relu_hub path
-    # itself runs fine on MPS (see run_fp.py). We catch and report rather than crash.
+    # MPS sanity check at one width: confirms the full HUB path runs on MPS.
     if torch.backends.mps.is_available():
         device = 'mps'
         w_chk = 8
@@ -106,10 +102,7 @@ def main():
                   f'in {dt:.2f}s  [MPS sanity OK]')
         except RuntimeError as e:
             print(f'MPS sanity check FAILED: {e}')
-            print('  -> napl kernel gap: mgu_hub does not place its internally-built '
-                  'submodules on the input device, so the HUB MGU cannot run on MPS. '
-                  'Run the HUB fidelity sweep on CPU. (FP model + conv_hub/linear_hub '
-                  'run fine on MPS; see run_fp.py.)')
+            print('  -> the CPU sweep above is still valid; debug the MPS path separately.')
 
     print('\nFidelity check done. Error should fall as width/cycles grow.')
 

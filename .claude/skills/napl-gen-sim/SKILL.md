@@ -16,17 +16,48 @@ description: >-
 
 # Port a UnarySim class into napl
 
-## Why this exists
+## Scope
 
 napl is a from-scratch port of UnarySim's math into napl's conventions, but the port is not
 complete and UnarySim keeps growing. This skill closes the gap: it finds UnarySim classes with no
 napl counterpart and reimplements them **in napl's style** (not a line-for-line copy), gives each a
 test, and confirms it reproduces the UnarySim original. It is the producer counterpart of
 napl-validate-unarysim (which validates an existing port) and the same generate-then-validate shape
-as napl-gen-rtl/napl-validate-sim-rtl. The deliverable is a new napl class wired into its subpackage,
-a `test_<name>.py`, an updated mapping, and a recorded faithfulness verdict.
+as napl-gen-rtl/napl-validate-sim-rtl.
 
-## Execution model: always run the port in a subagent
+## Handoffs
+
+- `napl-validate-unarysim`: invoked in Step 5 to confirm each port is faithful to the UnarySim
+  original.
+- `coding-discipline`: invoked first in Step 3 as the coding overlay for the reimplementation.
+- `napl-gen-rtl` / `napl-validate-sim-rtl`: sibling generate/validate pair for the RTL side.
+- The `napl-port-unarysim` workflow invokes this skill per gap class with the usual OVERRIDES:
+  do NOT run the Step 6 recorder yourself (the workflow records centrally via a serialized
+  recorder), and return the structured result instead. Standalone, do Step 6 normally.
+
+## Persona
+
+A careful porter who reimplements the math in napl's idiom rather than transcribing UnarySim line
+by line, checks the mapping before declaring a gap, and never calls a port done until it both
+passes its own test and agrees with the upstream original.
+
+## Inputs
+
+- The UnarySim class name(s) to port, or a request to scan for the whole gap.
+- Run through the project env: `conda run -n napl python ...` (a bare `python` is the wrong
+  interpreter). Heredocs piped through `conda run` swallow stdout, so write a `.py` file.
+- The UnarySim source is the **local clone at `/Users/diwu/Projects/UnarySim`** (read-only reference);
+  import it via its parent on the path (`sys.path.insert(0, '/Users/diwu/Projects')`).
+
+## Output contract
+
+- A new napl class wired into its subpackage, a `test_<name>.py`, an updated mapping.md
+  correspondence, a recorded faithfulness verdict, and a durable row in
+  `reports/napl-gen-sim-report.md` (including `skipped`/`failed` runs).
+
+## Workflow
+
+### Step 0 - Always run the port in a subagent
 
 **Always delegate to a subagent; never port in the main thread.** Reading the UnarySim source,
 reimplementing it, writing a test, and validating it is a multi-step job with heavy transient output.
@@ -46,15 +77,6 @@ When invoked, the main agent dispatches and relays:
 
 Relay each port's verdict. **If you ARE the dispatched subagent**, execute the Steps directly (do not
 re-dispatch). Port one class per subagent.
-
-## Environment
-
-- Run through the project env: `conda run -n napl python ...` (a bare `python` is the wrong
-  interpreter). Heredocs piped through `conda run` swallow stdout, so write a `.py` file.
-- The UnarySim source is the **local clone at `/Users/diwu/Projects/UnarySim`** (read-only reference);
-  import it via its parent on the path (`sys.path.insert(0, '/Users/diwu/Projects')`).
-
-## Workflow
 
 ### Step 1 - Scan for the gap (which UnarySim classes napl lacks)
 
@@ -92,33 +114,35 @@ FIRST invoke the **`coding-discipline`** skill and follow it (think before codin
 surgical changes, verifiable criterion). Then write the napl class in the correct subpackage
 (`operation/` for gate-level primitives, `module/` for neural layers, `metric/` for metrics),
 following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling, e.g. port
-`FSULinearPC` next to `linear_fsu` in `module/linear.py`):
+`FSULinearPC` next to `linear` in `module/linear.py`):
 
 - **`napl_base` subclass** taking a single `config` dict; call
   `super().__init__(config, key_list, polarity_required)` to validate required keys. Use napl naming
-  (lowercase, descriptive: `mul_csg`, `linear_fsu`, not `FSUMul`); pick a name consistent with the
-  existing family (a PC variant of `linear_fsu` -> `linear_fsu_pc`).
+  (lowercase, descriptive: `mul_csg`, `linear`, not `FSUMul`); pick a name consistent with the
+  existing family (a PC variant of `linear` -> `linear_pc`).
 - **Dtypes:** spike tensors are `self.stype`, non-spike `self.ntype`. NEVER use `>>`/`<<` on float
   tensors (use `pow2_lshift`/`pow2_rshift` from `utils/utils.py`).
-- **Streaming kernels:** describe ONE timestep in `forward()`, advance state with `self.tick()`, clear
-  with `reset()`; the round-trip is encoder -> op -> decoder run by `@napl_sim_timesteps`. **Binary-
-  domain layers:** whole-tensor `forward()` (no tick), trainable via `torch.autograd.Function` + STE.
+- **Streaming kernels:** describe ONE timestep in `forward()`; every call auto-ticks
+  `timestep_cur` (no manual `self.tick()`), `reset()` clears it; the round-trip is encoder -> op ->
+  decoder run by `@napl_sim_timesteps`. **Binary-domain layers:** whole-tensor `forward()` (they set
+  `streaming = False`, so `timestep_cur` stays 0), trainable via `torch.autograd.Function` + STE.
 - **Adapt, do not transcribe, UnarySim's state idioms.** UnarySim pre-sizes scalar buffers and updates
   in place; napl's idiom is a scalar (`torch.zeros(1)`) accumulator that **broadcasts up to the input
   shape on the first `forward()` via an out-of-place op** (`self.acc.data = self.acc.add(delta)`).
   Follow napl's broadcasting idiom so the class works on vector inputs without pre-sizing.
 - **hw_params:** if it is an `operation` with a gate-level mapping, set
-  `self.hw = hw_params(pp_delay=...)` (`from napl.base import napl_base, hw_params`).
+  `self.hw = hw_params(pp_delay=...)` (`from napl.sim.base import napl_base, hw_params`).
 - **Imports:** import `operation` primitives **lazily inside `__init__`** (the `module`<->`operation`
   import cycle). Wire the new class into its subpackage `__init__.py` (mind import order).
 
 ### Step 4 - Write the test and update the mapping
 
-Add `tests/<subpackage>/test_<name>.py` following the canonical template
-(`tests/operation/test_mul_and.py`): a `napl_<name>` wiring class (encoder(s) -> op -> decoder) for
-streaming ops, run on **every device** (CPU + MPS/CUDA), checking correctness (SC bound for FSU, quant
-bound for binary-domain, known-answer corners) and performance, with an `if __name__ == '__main__'`
-entry point. Add the new correspondence to
+Add `tests/<subpackage>/test_<name>.py` by copying the matching skeleton:
+`tests/template_streaming_kernel.py` for per-timestep kernels, or
+`tests/template_single_shot_trainable.py` for trainable binary-domain kernels. Fill in every TODO
+(see `tests/operation/test_mul_and.py` for streaming wiring), run on **every device** (CPU +
+MPS/CUDA), and check the correctness and performance gates in `RULE_TEST.md`, with an
+`if __name__ == '__main__'` entry point. Add the new correspondence to
 `.claude/skills/napl-validate-unarysim/references/mapping.md` so future validations find it.
 
 ### Step 5 - Validate the port is faithful
@@ -136,45 +160,32 @@ first use, dedupe, sorted by napl class). Record every run, including `skipped`/
 
 ```bash
 conda run -n napl python .claude/skills/napl-gen-sim/scripts/record_gen_sim.py \
-    --napl module.linear_fsu_pc --unarysim FSULinearPC \
-    --status ported --test tests/module/test_linear_fsu_pc.py \
+    --napl module.linear_pc --unarysim FSULinearPC \
+    --status ported --test tests/module/test_linear_pc.py \
     --validated "bit-exact vs FSULinearPC (CPU+MPS)" \
-    --notes "parallel-counter variant of linear_fsu; streaming FSU kernel"
+    --notes "parallel-counter variant of linear; streaming kernel"
 ```
 
 Deliver the verdict: napl class created, UnarySim source, subpackage/paradigm, test, validation
 result, and (if skipped/failed) why. Confirm the recorded row.
 
-## When the napl-port-unarysim workflow calls this skill
-
-A workflow that adds a porting phase would invoke this skill per gap class with the usual OVERRIDES:
-do NOT run the Step 6 recorder yourself (the workflow records centrally via a serialized recorder),
-and return the structured result instead. Standalone, do Step 6 normally.
-
-## Bundled resources
-
-- `scripts/record_gen_sim.py` - append a uniform row to `reports/napl-gen-sim-report.md` (Step 6).
-
-## Gotchas (learned the hard way)
+## Rules
 
 - **Port the math, not the names.** napl names are lowercase and descriptive (`mul_csg`, not
   `FSUMul`); match the existing family's naming so the new class reads like its siblings.
 - **Different names are not missing classes.** Check mapping.md before declaring a gap; most UnarySim
   classes are already ported under a napl name.
 - **Streaming vs single-shot is the first decision.** A per-timestep spike kernel and a whole-tensor
-  binary-domain layer are structured completely differently in napl (`tick()` + `@napl_sim_timesteps`
-  vs autograd `Function`); get the paradigm right before writing code.
+  binary-domain layer are structured completely differently in napl (per-timestep `forward()` +
+  `@napl_sim_timesteps` vs autograd `Function`); get the paradigm right before writing code.
 - **Adopt napl's broadcast idiom.** Do not transcribe UnarySim's pre-sized in-place buffers; use the
   scalar accumulator that broadcasts to input shape on the first call (see Step 3), so the port runs
   on vector inputs.
 - **Float-shift / lazy-import / pow2 conventions** from CLAUDE.md apply to the ported code too.
-- **A port is not done until validated.** Passing a self-written test is necessary but not sufficient;
-  it must also agree with the UnarySim original (Step 5). Otherwise it is `failed`, not `ported`.
-- **Skip honestly.** Backward-only autograd helpers and the RNG/bitstream generators are not new napl
-  classes; record a skip with the reason rather than inventing a class.
 
 ## References
 
+- `scripts/record_gen_sim.py` - append a uniform row to `reports/napl-gen-sim-report.md` (Step 6).
 - `.claude/skills/napl-validate-unarysim/references/experiment-plan.md` - the project's port gap
   analysis: what to port, the test/convention patterns, and what is already done vs deferred. Read it
   first in Step 1.
@@ -184,8 +195,18 @@ and return the structured result instead. Standalone, do Step 6 normally.
   Step 5 to confirm faithfulness.
 - `CLAUDE.md` - napl's conventions (napl_base, config, streaming vs single-shot, dtypes, hw_params,
   the float-shift/lazy-import gotchas) the port must follow.
-- `tests/operation/test_mul_and.py` - the canonical test template for a streaming op.
+- `tests/template_streaming_kernel.py` - the copy-paste skeleton for per-timestep kernels.
+- `tests/template_single_shot_trainable.py` - the copy-paste skeleton for trainable binary-domain kernels.
+- `tests/operation/test_mul_and.py` - the canonical worked example for a streaming operation.
 - `/Users/diwu/Projects/UnarySim` - the local clone (read-only source); its `test/` dir shows the
   canonical wiring per class.
 - `.claude/skills/napl-gen-rtl/SKILL.md` - sibling generator (napl -> Verilog), same generate/validate
   shape.
+
+## Failure modes
+
+- **A port is not done until validated.** Passing a self-written test is necessary but not sufficient;
+  it must also agree with the UnarySim original (Step 5). If it cannot be made faithful, record it as
+  `failed` with the divergence explained, not `ported`.
+- **Skip honestly.** Backward-only autograd helpers and the RNG/bitstream generators are not new napl
+  classes; record a skip with the reason rather than inventing a class.

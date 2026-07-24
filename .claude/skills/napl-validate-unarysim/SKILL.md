@@ -7,7 +7,7 @@ description: >-
   UnarySim, confirm a port is faithful, verify fidelity against the upstream / "the
   original" / "the reference", reproduce UnarySim numbers in napl, or mentions UnarySim
   as the source of truth, even if they don't say "validate" outright (e.g. "does our
-  mul_and match theirs?", "is correlation a faithful port?", "check linear_fsu against
+  mul_and match theirs?", "is correlation a faithful port?", "check linear against
   UnarySim"). It reads the UnarySim source (the local clone, GitHub as fallback), runs both
   implementations on identical inputs, and reports whether the numerical results agree. Sibling
   to napl-opt-sim (speed), napl-gen-rtl (RTL generation), and napl-validate-sim-rtl (sim vs RTL);
@@ -17,20 +17,61 @@ description: >-
 
 # Validate a napl function against its UnarySim reference
 
-## Why this exists
+## Scope
 
 napl is a from-scratch **port** of UnarySim's math into napl's conventions (see this repo's
 `CLAUDE.md` and `references/experiment-plan.md`). UnarySim is the read-only source of truth; there is no
 runtime dependency on it. "Faithful" means the two produce the **same numbers** on the same
 inputs: **bit-exact** (`torch.equal`) for the integer-valued operands typical of unary/stochastic
 computing, or within a stated tolerance / the stochastic-computing bound (~1/√N) when an
-implementation legitimately reorders floating-point work.
+implementation legitimately reorders floating-point work. This skill compares one napl object to its
+UnarySim original by running both, not by reading the code.
 
-The goal of a validation is a clear verdict plus evidence: *which* UnarySim class was compared,
-on *what* inputs, with *what* result, and an explanation of any difference (a real divergence vs.
-a benign reformulation). Do not assert a match from reading the code alone; **run both and compare**.
+## Handoffs
 
-## Execution model: always run the validation in a subagent
+- `napl-opt-sim`: sibling skill (speed) with the same measurement rigor applied to runtime.
+- `napl-gen-rtl` / `napl-validate-sim-rtl`: sibling generate/validate pair for the RTL side.
+- The `napl-port-unarysim` workflow's Validate phase is the batch sweep this skill is the
+  single-kernel counterpart of.
+
+## Persona
+
+A skeptical validator who feeds identical inputs to both implementations, drives napl through the
+exact committed test wiring rather than a re-implementation, and never calls a port faithful from
+reading the code alone: run both, compare the numbers, explain any difference.
+
+## Inputs
+
+- The napl target to validate (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_and`,
+  `napl.sim.module.linear`).
+- Run everything through the project env: `conda run -n napl python ...` (a bare `python` is the
+  wrong interpreter). Per this repo's testing rules, validate on **both CPU and GPU** (the GPU on
+  Apple silicon is MPS: `torch.backends.mps.is_available()`).
+- **Always compare against the local UnarySim clone at `/Users/diwu/Projects/UnarySim`** (this is the
+  canonical reference). Import it as a package by putting its parent on the path:
+
+  ```python
+  import sys; sys.path.insert(0, '/Users/diwu/Projects')
+  from UnarySim.kernel.linear import FSULinear      # or UnarySim.metric.metric, etc.
+  ```
+
+  This resolves the full dependency chain (RNG/BinGen/BSGen, FSUAdd, ...), so even the heavy kernels
+  import directly - no standalone-file/`importlib` trick needed. (A `FutureWarning` about
+  `torch.cuda.amp.autocast` from UnarySim is harmless.) If the clone is ever missing, fall back to the
+  GitHub fetcher in Step 2.
+- Heredocs piped through `conda run` swallow stdout. Write a `.py` file and run it, don't inline a
+  `python - <<EOF`.
+
+## Output contract
+
+A short verdict with these fields: target, UnarySim class compared, inputs/regimes, the
+**bit-exact result** (`torch.equal`) per device, the tolerance/RMSE vs the SC bound when not
+bit-exact, and an explanation of any difference (deterministic-and-exact, stochastic-within-bound,
+or a real divergence), plus a durable row in `reports/napl-validate-unarysim-report.md`.
+
+## Workflow
+
+### Step 0 - Always run the validation in a subagent
 
 **Always delegate the validation to a subagent - never run the harness in the main thread.** A
 validation is a self-contained, multi-step job (read the UnarySim source, write a harness, run it on
@@ -58,32 +99,10 @@ So when this skill is invoked with a target, the main agent's job is **only** to
 follow this skill), ignore this section and just execute Steps 1-5 directly - do not spawn another
 subagent. Run validations sequentially, one subagent each, so each log row is written cleanly.
 
-## Environment
-
-- Run everything through the project env: `conda run -n napl python ...` (a bare `python` is the
-  wrong interpreter). Per this repo's testing rules, validate on **both CPU and GPU** (the GPU on
-  Apple silicon is MPS: `torch.backends.mps.is_available()`).
-- **Always compare against the local UnarySim clone at `/Users/diwu/Projects/UnarySim`** (this is the
-  canonical reference). Import it as a package by putting its parent on the path:
-
-  ```python
-  import sys; sys.path.insert(0, '/Users/diwu/Projects')
-  from UnarySim.kernel.linear import FSULinear      # or UnarySim.metric.metric, etc.
-  ```
-
-  This resolves the full dependency chain (RNG/BinGen/BSGen, FSUAdd, ...), so even the heavy kernels
-  import directly - no standalone-file/`importlib` trick needed. (A `FutureWarning` about
-  `torch.cuda.amp.autocast` from UnarySim is harmless.) If the clone is ever missing, fall back to the
-  GitHub fetcher in Step 2.
-- Heredocs piped through `conda run` swallow stdout. Write a `.py` file and run it, don't inline a
-  `python - <<EOF`.
-
-## Workflow
-
 ### Step 1 - Identify the target and map it to a UnarySim class
 
-Pin down the exact napl object (e.g. `napl.metric.correlation`, `napl.operation.mul_and`,
-`napl.module.linear_fsu`). Then find its UnarySim counterpart:
+Pin down the exact napl object (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_and`,
+`napl.sim.module.linear`). Then find its UnarySim counterpart:
 
 1. Check `references/mapping.md` (bundled) for the napl → UnarySim name + file mapping.
 2. The napl class docstring and `references/experiment-plan.md`'s gap analysis also name the original.
@@ -96,7 +115,7 @@ UnarySim layout (same locally): `kernel/{mul,add,div,sqrt,signabs,relu,sigmoid,t
 
 ### Step 2 - Read the UnarySim reference (local clone)
 
-The reference is the local clone at `/Users/diwu/Projects/UnarySim`; you `import` it (see Environment),
+The reference is the local clone at `/Users/diwu/Projects/UnarySim`; you `import` it (see Inputs),
 you don't fetch it. Before writing the harness, **read the actual class** to get its API - `Read` or
 `rg` the file directly, e.g.:
 
@@ -151,7 +170,7 @@ since it makes future validations trackable too.)
 
 napl has two execution paradigms (see `CLAUDE.md`); the harness differs:
 
-**A. Streaming / FSU op or metric** (per-timestep `forward()` + `tick()`): drive both over N timesteps
+**A. Streaming op or metric** (per-timestep `forward()`; every call auto-ticks `timestep_cur`): drive both over N timesteps
 with the *same* spike stream each step, then compare the decoded value / metric report. The example
 below is `correlation`, whose test inlines its wiring, so it builds the napl side directly; for an op
 that has a `napl_<op>` test class, **import and drive that class** (per the reuse rule above) instead
@@ -161,8 +180,8 @@ of constructing the op inline, and mirror its encoder configs for the UnarySim s
 import sys, torch
 sys.path.insert(0, '/Users/diwu/Projects')          # local UnarySim clone's parent
 from UnarySim.metric.metric import Correlation
-from napl.module import encoder
-from napl.metric import correlation
+from napl.sim.module import encoder
+from napl.sim.metric import correlation
 from napl.utils import gen_rand_tensor
 
 T = 256
@@ -182,7 +201,7 @@ for _ in range(T):
     s = enc(val)
     nap(s, s)                       # same spikes to both
     ref.Monitor(s.type(torch.float), s.type(torch.float))
-out_nap = nap.report_corr()         # napl's report method
+out_nap = nap.analyze()[0]          # napl stats method, returns (value, argmax)
 out_ref = ref.forward()             # UnarySim's report method
 print('equal:', torch.equal(out_nap, out_ref), 'max|diff|:', (out_nap-out_ref).abs().max().item())
 ```
@@ -204,7 +223,7 @@ independent stream), and an edge input (all-zero) when relevant.
 bit-exact flag is the single most informative line of the verdict: it distinguishes a
 **deterministic** port (a fixed function of the same input spikes - metrics, gate ops - which
 should be bit-exact) from a **stochastic** one (a kernel that encodes an operand with its own
-internal RNG - `linear_fsu`, `conv_fsu` weight streams - which will not be bit-exact and is only
+internal RNG - `linear`, `conv` weight streams - which will not be bit-exact and is only
 expected to agree within ~1/√N). Print `bit-exact=<bool>` next to the tolerance/RMSE so the reader
 sees both; never report a tolerance pass while hiding that the outputs are (or aren't) identical.
 
@@ -242,7 +261,7 @@ bundled script (it creates the file with a header on first use and keeps every r
 
 ```bash
 conda run -n napl python .claude/skills/napl-validate-unarysim/scripts/record_validation.py \
-    --module module.linear_fsu --ref FSULinear \
+    --module module.linear --ref FSULinear \
     --bitexact "no (internal weight RNG)" \
     --agreement "RMSE 0.0014 vs SC bound 0.031, CPU+MPS" \
     --cpu "93.2 ms" --gpu "53.4 ms" \
@@ -255,7 +274,28 @@ appending chronologically at the bottom. Pass `--date YYYY-MM-DD` only to backfi
 today. Use `--gpu "n/a (unsupported on MPS)"` if a device genuinely can't run the op. Confirm the
 recorded row to the user as part of the verdict.
 
-## Gotchas (learned the hard way)
+## Rules
+
+- **Identical inputs or it's meaningless.** Generate the inputs once and feed the same tensors to
+  both implementations (Step 3). The #1 failure mode.
+- **Reuse the committed test wiring** for the napl side (import the `napl_<op>` class); do not
+  re-implement it, so the validation exercises exactly the code the test suite runs.
+- **Run both and compare; never assert a match from reading the code alone.**
+- **Always compute and report the bit-exact result** (`torch.equal`, `max|diff|`) for every regime,
+  alongside any tolerance/RMSE (Step 4).
+- Validate on **both CPU and GPU (MPS)**, and synchronize the GPU before stopping any timing clock.
+
+## References
+
+- Local UnarySim clone: **`/Users/diwu/Projects/UnarySim`** (canonical reference; import via parent on
+  `sys.path`). Its `test/` dir has runnable examples of the canonical wiring per kernel.
+- `references/mapping.md` - napl → UnarySim name + file mapping, and the UnarySim repo layout.
+- `scripts/record_validation.py` - append a uniform validation row to `reports/napl-validate-unarysim-report.md` (Step 5).
+- `reports/napl-validate-unarysim-report.md` (in the napl repo) - the running validation log this skill maintains.
+- `scripts/fetch_unarysim.py` - **fallback only** (use when the clone is missing): fetch a UnarySim
+  source file from GitHub by repo path; lists its classes.
+
+## Failure modes
 
 - **Identical inputs or it's meaningless** - see Step 3. The #1 failure mode.
 - **UnarySim scalar accumulators don't broadcast** - metric/stateful modules init buffers as `(1,)`
@@ -269,17 +309,7 @@ recorded row to the user as part of the verdict.
   from the installed-on-path clone resolves the whole chain. (This is why the local clone is canonical;
   the GitHub fetcher only worked for torch-only files like `metric/metric.py`.)
 - **Method-name mapping** - UnarySim metrics: `Monitor()` = accumulate, `forward()` = report. napl:
-  `forward()` = accumulate, `report_corr()`/`report_stab()`/`report_error()` = report. Kernels on both
+  `forward()` = accumulate, `analyze()` = stats (lazy value properties in between). Kernels on both
   sides use `forward()`.
 - **API era** - check the clone's constructor: older UnarySim is positional/`mode=`, newer takes
   `hwcfg`/`swcfg` dicts. Match whatever the local source actually defines.
-
-## References
-
-- Local UnarySim clone: **`/Users/diwu/Projects/UnarySim`** (canonical reference; import via parent on
-  `sys.path`). Its `test/` dir has runnable examples of the canonical wiring per kernel.
-- `references/mapping.md` - napl → UnarySim name + file mapping, and the UnarySim repo layout.
-- `scripts/record_validation.py` - append a uniform validation row to `reports/napl-validate-unarysim-report.md` (Step 5).
-- `reports/napl-validate-unarysim-report.md` (in the napl repo) - the running validation log this skill maintains.
-- `scripts/fetch_unarysim.py` - **fallback only** (use when the clone is missing): fetch a UnarySim
-  source file from GitHub by repo path; lists its classes.

@@ -14,11 +14,11 @@ Upstream source: `UnarySim/app/uSystolic/convnet_mnist/` (branch `stable-v0`).
 The HUB and FXP conv/linear cells are napl's existing single-shot, binary-domain
 kernels, used as-is (nothing in `src/napl/` was modified):
 
-- `napl.module.conv_hub`, `napl.module.linear_hub` -- the uSystolic unary-MAC model.
+- `napl.sim.module.conv_hub`, `napl.sim.module.linear_hub` -- the uSystolic unary-MAC model.
   Input and weight are quantized to sign-magnitude fixed point and each
   `|input| x |weight|` product is read from a precomputed unary-multiplication value
   map. Knob: `cycle` (the unary MAC cycle count).
-- `napl.module.conv_fxp`, `napl.module.linear_fxp` -- the fixed-point model. Input and
+- `napl.sim.module.conv_fxp`, `napl.sim.module.linear_fxp` -- the fixed-point model. Input and
   weight are dynamically scaled to `widthi`/`widthw`-bit fixed point, matmul'd, then
   shifted back. Knob: `bitwidth` (= widthi = widthw).
 
@@ -27,9 +27,9 @@ so they compose with stock torch ops directly, exactly as UnarySim composes them
 
 ## Files
 
-- `mnist_data.py` -- torchvision-free MNIST loader (the napl env has no torchvision).
-  Downloads and parses the raw IDX files from the same S3 mirror torchvision uses,
-  with the standard MNIST normalization (mean 0.1307, std 0.3081).
+- `mnist_data.py` -- MNIST loader with no torchvision dependency. Downloads and
+  parses the raw IDX files from the same S3 mirror torchvision uses, with the
+  standard MNIST normalization (mean 0.1307, std 0.3081).
 - `model.py` -- the convnet in three forms: `ConvNetFP` (nn.Conv2d/nn.Linear),
   `ConvNetHUB` (conv_hub/linear_hub, `cycle` knob), `ConvNetFXP` (conv_fxp/linear_fxp,
   `bitwidth` knob). HUB/FXP load weights from the FP checkpoint; no retraining.
@@ -41,7 +41,7 @@ so they compose with stock torch ops directly, exactly as UnarySim composes them
 
 ## Architecture (matches upstream exactly)
 
-```
+```text
 conv1(1->32, 3x3)  relu
 conv2(32->64, 3x3) relu
 max_pool2d(2)
@@ -79,9 +79,9 @@ silently caps `cycle` at `2**(width-1)`.
   `Fxp-o-res` and an `Fxp-i-res` column. napl's `conv_fxp`/`linear_fxp` have **no
   o-res/i-res split**: they always give input and weight the full `bitwidth`
   (`widthi == widthw == bitwidth`), which is exactly the upstream `keep_res="input"`
-  (i-res) configuration. **This example reproduces only the i-res column.** The
-  `--ores` (output-resolution, where the bitwidth is split between input and weight)
-  configuration is not reproducible without adding the split to the napl kernels.
+  (i-res) configuration. **This example reproduces only the i-res column.** The o-res
+  configuration (output resolution, where the bitwidth is split between input and
+  weight) is not reproducible without adding the split to the napl kernels.
 - **No pooling op:** napl has no pooling primitive, so max-pooling stays stock
   `F.max_pool2d`. This is faithful to the upstream code, where pooling also sits
   unchanged between the HUB/FXP layers (those layers are single-shot binary-domain

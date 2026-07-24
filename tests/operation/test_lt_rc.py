@@ -1,12 +1,14 @@
 import math
 import time
 
+import torch
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import lt_rc
-from napl.metric import analyze_error
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import lt_rc
+from napl.sim.metric import accuracy
 
 
 class napl_lt_rc(napl_base):
@@ -17,6 +19,7 @@ class napl_lt_rc(napl_base):
         self.encoder1 = encoder(codec_config2)
         self.decoder = decoder(codec_config3)
         self.lt_rc = lt_rc(lt_rc_config)
+        self.accuracy = accuracy({'polarity': codec_config3['polarity']})
 
 
     @napl_sim_timesteps
@@ -26,12 +29,14 @@ class napl_lt_rc(napl_base):
         i_spike1 = self.encoder1(input_1)
         o_spike = self.lt_rc(i_spike0, i_spike1)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_lt_rc():
     """
     Test lt_rc with a simple configuration.
     """
+    torch.manual_seed(0)
 
     codec_config1={
         'polarity': 'bipolar',
@@ -69,7 +74,7 @@ def test_lt_rc():
         elapsed = time.perf_counter() - start
 
         r_value = (input_0 < input_1).type(global_config.ntype)
-        error, idx = analyze_error(lt_rc_inst.decoder.spike_value, r_value)
+        error, idx = lt_rc_inst.accuracy.analyze(r_value, verbose=True)
         rmse = error.pow(2).mean().sqrt().item()
         bound = 2.0 / math.sqrt(codec_config1['timestep'])
         assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'

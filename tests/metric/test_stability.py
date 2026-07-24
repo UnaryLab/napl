@@ -6,8 +6,8 @@ on CPU.
 """
 import torch
 
-from napl.metric import stability
-from napl.module import encoder
+from napl.sim.metric import stability
+from napl.sim.module import encoder
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 

@@ -7,7 +7,7 @@ module's CPU/GPU runtime for the validated workload.
 
 Example:
     python record_validation.py \
-        --module module.linear_fsu --ref FSULinear \
+        --module module.linear --ref FSULinear \
         --bitexact "no (internal weight RNG)" \
         --agreement "RMSE 0.0014 vs SC bound 0.031" \
         --cpu "93.2 ms" --gpu "53.4 ms" \
@@ -21,7 +21,7 @@ HEADER = """# napl vs UnarySim validation log
 
 Records produced by the `napl-validate-unarysim` skill - one row per validation run. **Bit-exact**
 means `torch.equal` held (max abs diff 0): deterministic ports (metrics, gate ops) should be exact,
-while RNG-driven streaming kernels (`linear_fsu`, `conv_fsu`) only agree within the
+while RNG-driven streaming kernels (`linear`, `conv`) only agree within the
 stochastic-computing bound ~1/sqrt(N) and are recorded as not bit-exact with their agreement RMSE.
 **Runtimes** are the napl module's wall-clock on CPU vs GPU (MPS) for the noted workload (GPU timed
 with `torch.mps.synchronize()`); they are per-workload, not comparable across rows.
@@ -39,7 +39,7 @@ def cell(s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", default="reports/napl-validate-unarysim-report.md")
-    ap.add_argument("--module", required=True, help="napl module, e.g. module.linear_fsu")
+    ap.add_argument("--module", required=True, help="napl module, e.g. module.linear")
     ap.add_argument("--ref", required=True, help="UnarySim class, e.g. FSULinear")
     ap.add_argument("--bitexact", required=True, help='e.g. "yes (diff 0)" or "no (weight RNG)"')
     ap.add_argument("--agreement", default="exact", help="tolerance/RMSE vs SC bound when not bit-exact")

@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import sqrt_emit
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import sqrt_emit
+from napl.sim.metric import accuracy
 
 
 class napl_sqrt_emit(napl_base):
@@ -14,6 +18,7 @@ class napl_sqrt_emit(napl_base):
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sqrt_emit = sqrt_emit(sqrt_emit_config)
+        self.accuracy = accuracy(codec_config)
 
 
     @napl_sim_timesteps
@@ -22,14 +27,13 @@ class napl_sqrt_emit(napl_base):
         i_spike = self.encoder(input)
         o_spike = self.sqrt_emit(i_spike)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_sqrt_emit():
     """
     Test sqrt_emit with a simple configuration.
     """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
         'polarity': 'unipolar',
@@ -42,25 +46,28 @@ def test_sqrt_emit():
     }
     
     # Generate random inputs based on polarity, ensure positive numbers
-    input = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
     # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_sqrt_emit instance
-    sqrt_emit_inst = napl_sqrt_emit(codec_config, sqrt_emit_config).to(device)
-    sqrt_emit_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        sqrt_emit_inst = napl_sqrt_emit(codec_config, sqrt_emit_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        sqrt_emit_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = torch.sqrt(input)
-
-    # report the error
-    report_error(sqrt_emit_inst.decoder.spike_value, r_value)
-
-    assert sqrt_emit_inst.sqrt_emit.timestep_cur == codec_config['timestep']
-    sqrt_emit_inst.reset()
+        r_value = torch.sqrt(input)
+        sqrt_emit_inst.accuracy.analyze(r_value, verbose=True)
+        assert sqrt_emit_inst.sqrt_emit.timestep_cur == codec_config['timestep']
+        sqrt_emit_inst.reset()
+        assert sqrt_emit_inst.sqrt_emit.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_sqrt_emit()
-

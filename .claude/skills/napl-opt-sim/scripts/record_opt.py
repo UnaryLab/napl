@@ -44,7 +44,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", default="reports/napl-opt-sim-report.md")
     ap.add_argument("--kernel", required=True, help="napl kernel, e.g. operation.add_any")
-    ap.add_argument("--source", default="", help="repo-relative source file, e.g. src/napl/operation/add.py")
+    ap.add_argument("--source", default="", help="repo-relative source file, e.g. src/napl/sim/operation/add_any.py")
     ap.add_argument("--hash", default="", help="`git hash-object <source>` after the run (improve idempotency key)")
     ap.add_argument("--changed", required=True, help="yes or no")
     ap.add_argument("--gate", required=True, help='test-gate result, e.g. "PASS (add_any + sweep 46/46)"')

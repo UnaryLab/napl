@@ -1,13 +1,7 @@
-import torch
-import re
-import sys, os, time
-import pyfiglet, argparse, time
-import numpy as np
-import csv
-import yaml
-import subprocess
+import argparse
 
-from loguru import logger
+import pyfiglet
+
 from napl.utils import bcolors
 
 
@@ -25,11 +19,6 @@ def parse_commandline_args():
 
 def main():
     args = parse_commandline_args()
-    
-    # set up output log
-    logger.remove()
-    output_log = args.run_dir + '/main' + '-' + str(time.time()) + '.log'
-    logger.add(output_log, level=args.log_level)
 
     # set up banner
     ascii_banner = pyfiglet.figlet_format('NAPL')

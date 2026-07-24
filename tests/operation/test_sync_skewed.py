@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import sync_skewed
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import sync_skewed
+from napl.sim.metric import accuracy
 
 
 class napl_sync_skewed(napl_base):
@@ -16,6 +20,8 @@ class napl_sync_skewed(napl_base):
         self.decoder0 = decoder(codec_config1)
         self.decoder1 = decoder(codec_config1)
         self.sync_skewed = sync_skewed(sync_skewed_config)
+        self.accuracy0 = accuracy(codec_config1)
+        self.accuracy1 = accuracy(codec_config1)
 
 
     @napl_sim_timesteps
@@ -26,14 +32,14 @@ class napl_sync_skewed(napl_base):
         o_spike0, o_spike1 = self.sync_skewed(i_spike0, i_spike1)
         self.decoder0(o_spike0)
         self.decoder1(o_spike1)
+        self.accuracy0(o_spike0)
+        self.accuracy1(o_spike1)
 
     
 def test_sync_skewed():
     """
     Test sync_skewed with a simple configuration.
     """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
         'polarity': 'unipolar',
@@ -52,33 +58,35 @@ def test_sync_skewed():
     }
 
     # Generate random inputs based on polarity
-    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
-    input_mask = input_0 < input_1
-    input_0_new = torch.where(input_mask, input_0, input_1)
-    input_1_new = torch.where(~input_mask, input_0, input_1)
+    input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
+    input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
+    input_mask = input_0_cpu < input_1_cpu
+    input_0_new = torch.where(input_mask, input_0_cpu, input_1_cpu)
+    input_1_new = torch.where(~input_mask, input_0_cpu, input_1_cpu)
     # make sure divisor is not 0
     input_1_new = torch.where(input_1_new==0, 1, input_1_new)
-    input_0 = input_0_new
-    input_1 = input_1_new
+    input_0_cpu = input_0_new
+    input_1_cpu = input_1_new
 
-    # generate the napl_sync_skewed instance
-    sync_skewed_inst = napl_sync_skewed(codec_config1, codec_config2, sync_skewed_config).to(device)
-    sync_skewed_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+    for device in devices():
+        input_0 = input_0_cpu.to(device)
+        input_1 = input_1_cpu.to(device)
+        sync_skewed_inst = napl_sync_skewed(codec_config1, codec_config2, sync_skewed_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        sync_skewed_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value0, r_value1 = input_0, input_1
-
-    # report the error
-    report_error(sync_skewed_inst.decoder0.spike_value, r_value0)
-    report_error(sync_skewed_inst.decoder1.spike_value, r_value1)
-
-    assert sync_skewed_inst.sync_skewed.timestep_cur == codec_config1['timestep']
-    sync_skewed_inst.reset()
+        sync_skewed_inst.accuracy0.analyze(input_0, verbose=True)
+        sync_skewed_inst.accuracy1.analyze(input_1, verbose=True)
+        assert sync_skewed_inst.sync_skewed.timestep_cur == codec_config1['timestep']
+        sync_skewed_inst.reset()
+        assert sync_skewed_inst.sync_skewed.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_sync_skewed()
-

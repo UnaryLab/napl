@@ -1,40 +1,60 @@
+import time
+
 import torch
 
-from napl.base import global_config
+from napl.sim.base import global_config
 from napl.utils import gen_rand_tensor
-from napl.module import mgu_hard, mgu_hub
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import mgu_hard, mgu_hub
 
 
 def test_mgu_hub():
     """
-    The hybrid mgu_hub (which runs the streaming mgu_fsu inner cell over 2**width cycles and
+    The hybrid mgu_hub (which runs the streaming mgu inner cell over 2**width cycles and
     decodes with the accuracy metric) reproduces the float mgu_hard within a stochastic-
-    computing bound, validating both mgu_fsu and mgu_hub.
+    computing bound, validating both mgu and mgu_hub.
     """
     ntype = global_config.ntype
     torch.manual_seed(0)
     isz, hsz, b = 6, 4, 3
 
     ref = mgu_hard(isz, hsz, bias=True)
-    Wf, bf, Wn, bn = ref.weight_f.data, ref.bias_f.data, ref.weight_n.data, ref.bias_n.data
-    x = gen_rand_tensor('bipolar', (b, isz), 8).type(ntype)
-    hx = gen_rand_tensor('bipolar', (b, hsz), 8).type(ntype)
+    x_cpu = gen_rand_tensor('bipolar', (b, isz), 8).type(ntype)
+    hx_cpu = gen_rand_tensor('bipolar', (b, hsz), 8).type(ntype)
 
-    y_ref = ref(x, hx)
-    hub = mgu_hub(isz, hsz, bias=True, weight_f=Wf, bias_f=bf, weight_n=Wn, bias_n=bn,
-                  config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol'})
-    y_hub = hub(x, hx)
-    rmse = (y_hub - y_ref).pow(2).mean().sqrt().item()
-    print(f'mgu_hub vs mgu_hard rmse={rmse:.4f}')
+    for device in devices():
+        ref = ref.to(device)
+        x = x_cpu.to(device)
+        hx = hx_cpu.to(device)
+        sync(device)
+        start = time.perf_counter()
+        y_ref = ref(x, hx)
+        sync(device)
+        ref_elapsed = time.perf_counter() - start
+        hub = mgu_hub(
+            isz,
+            hsz,
+            bias=True,
+            weight_f=ref.weight_f.data,
+            bias_f=ref.bias_f.data,
+            weight_n=ref.weight_n.data,
+            bias_n=ref.bias_n.data,
+            config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol'},
+        ).to(device)
+        sync(device)
+        start = time.perf_counter()
+        y_hub = hub(x, hx)
+        sync(device)
+        elapsed = time.perf_counter() - start
+        rmse = (y_hub - y_ref).pow(2).mean().sqrt().item()
+        print(
+            f'[{device}] mgu_hub rmse={rmse:.4f}, '
+            f'hard/hub ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+        )
 
-    assert y_hub.shape == y_ref.shape
-    # the streaming MGU compounds ~7 SC ops (2 linears, sigmoid, 2 muls, add) so its error
-    # envelope is wider than a single kernel: worst-case per-seed rmse ~0.11 at width 8,
-    # tightening with width. Bound set above that envelope, not the seed-0 value.
-    assert rmse < 0.15, rmse
-
-    # hx=None path runs
-    assert hub(x).shape == (b, hsz)
+        assert y_hub.shape == y_ref.shape
+        assert rmse < 0.15, (device, rmse)
+        assert hub(x).shape == (b, hsz)
 
     print('Test passed.')
 

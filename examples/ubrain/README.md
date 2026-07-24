@@ -10,7 +10,7 @@ proprietary EEG datasets or the EDA/hardware tooling.
 uBrain is a brain-computer-interface (BCI) accelerator that classifies EEG with
 dynamic rate-coded unary computing. The network is a cascade CNN + RNN:
 
-```
+```text
 conv1 (1 -> 16ch, 3x3, pad 1) -> ScaleReLU
 conv2 (16 -> 32ch, 3x3, pad 1) -> ScaleReLU
 flatten -> fc3 (-> 256) -> ScaleReLU -> dropout
@@ -44,7 +44,7 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
 - **`eval_hub_fidelity.py`** - FP-vs-HUB error of the network output, swept over
   the unary bitwidth (cycles). Writes `results/hub_fidelity.csv`.
 
-### Reused from napl (NOT re-ported)
+### Reused from napl (not re-ported)
 
 | UnarySim            | napl                         |
 |---------------------|------------------------------|
@@ -53,14 +53,14 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
 | `ScaleReLU`         | `relu_hub`                   |
 | `nn.Hardtanh`       | `tanh_hub`                   |
 | `truncated_normal`  | `napl.utils.truncated_normal`|
-| `ProgError`/RMSE    | `napl.metric.report_error`   |
+| `ProgError`/RMSE    | `napl.sim.metric.accuracy`         |
 
-`mgu_hub` internally encodes its inputs, streams the `mgu_fsu` cell over
+`mgu_hub` internally encodes its inputs, streams the `mgu` cell over
 `2**width` cycles, and decodes via the progressive-error metric.
 
-## What IS and IS NOT reproducible here
+## What is and is not reproducible here
 
-**NOT reproducible (and not attempted, no numbers fabricated):**
+**Not reproducible (and not attempted, no numbers fabricated):**
 - **EEG classification accuracy.** The PhysioNet (MI) and neonatal (SP) EEG
   datasets are not present and not downloadable here, and no trained checkpoint
   is committed. All inputs and labels in these scripts are **random**, so nothing
@@ -111,30 +111,6 @@ RMSE falls monotonically as cycles grow (error roughly halves per +2 bits),
 consistent with the unary `~1/sqrt(N)` bound. Saved to `results/hub_fidelity.csv`.
 
 **Per-device result:**
-- **CPU:** FP and HUB both run, all widths.
-- **MPS:** the **FP** model and `conv_hub`/`linear_hub`/`relu_hub` run fine. The
-  **HUB MGU does not run on MPS** (see kernel gap below); the fidelity sweep is a
-  CPU result, with the MPS HUB path sanity-checked and reported as a known gap.
-
-## napl kernel issue found
-
-**`mgu_hub` does not support non-CPU devices.** Its `forward()` constructs its
-internal submodules (`encoder`, `mgu_fsu`, `accuracy`) on the default (CPU) device
-and never moves them to the input tensor's device, so the inner `add_any`
-accumulator stays on CPU while the inputs are on MPS:
-
-```
-RuntimeError: Expected all tensors to be on the same device,
-but found at least two devices, mps:0 and cpu!
-```
-
-This is reproducible in isolation (a bare `mgu_hub(...).to('mps')` call on an MPS
-input fails the same way). `conv_hub` / `linear_hub` / `relu_hub` / `tanh_hub`
-and the whole FP model run correctly on MPS, so the gap is specific to `mgu_hub`
-(and would also affect CUDA). A fix would build the inner modules on
-`input.device` (or `.to(input.device)` them) inside `mgu_hub.forward`. Per the
-task rules, `src/napl/` was not modified; this is reported only.
-
-No issues found with `conv_hub`, `linear_hub`, `relu_hub`, `tanh_hub`, or the FP
-`mgu_hard`. No pooling/neuron/WTA primitive was needed: uBrain's conv path is
-same-padding stride-1 with no pooling.
+- **CPU:** FP and HUB both run, all widths; the committed sweep is the CPU run.
+- **MPS:** FP and the full HUB path both run. The script sanity-checks the HUB
+  path on MPS at width 8 and reproduces the CPU rmse.

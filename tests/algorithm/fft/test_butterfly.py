@@ -1,77 +1,92 @@
-import torch, math
+import math
 
-from napl.base import global_config
-from napl.utils import *
-from napl.algorithm.fft.butterfly import butterfly_spike, butterfly_binary
-from napl.metric.accuracy import report_error
+import torch
+
+from napl.sim.algorithm.fft.butterfly import (
+    butterfly_binary,
+    butterfly_spike,
+)
+from napl.sim.base import global_config
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import benchmark, devices
 
 
 def test_butterfly_spike():
-    """
-    Test the bfu_1_add forward method with random inputs.
-    """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
+    torch.manual_seed(0)
+    timestep = 256
     codec_config = {
         'polarity': 'bipolar',
-        'timestep': 256,
+        'timestep': timestep,
         'generator': 'sobol',
     }
-    width = math.log2(codec_config['timestep'])
+    width = math.log2(timestep)
     mul_config = {
         'polarity': 'bipolar',
-        'timestep': 256,
+        'timestep': timestep,
         'generator': 'sobol',
     }
     add_config = {
         'polarity': 'bipolar',
         'scale': 3,
-        'width' : width+1,
+        'width': width + 1,
     }
-    acc_config = codec_config
+    inputs_cpu = tuple(
+        gen_rand_tensor(
+            codec_config['polarity'],
+            shape=(512, 1),
+            width=width,
+        ).type(global_config.ntype)
+        for _ in range(6)
+    )
 
-    batch_size = 1024
+    cpu_runtime = None
+    for device in devices():
+        inputs = tuple(value.to(device) for value in inputs_cpu)
+        reference_values = butterfly_binary().to(device)(*inputs)
+        operation = butterfly_spike(
+            codec_config,
+            mul_config,
+            add_config,
+            codec_config,
+        ).to(device)
 
-    # Generate random input tensors
-    x0r = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x0i = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x1r = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    x1i = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    wr  = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
-    wi  = gen_rand_tensor(codec_config['polarity'], shape=(batch_size, 1), width=width).type(global_config.ntype).to(device)
+        first = operation(*inputs, timesteps=timestep)
+        first = tuple(value.detach().clone() for value in first)
+        reference = torch.cat(reference_values, dim=0) / add_config['scale']
+        error, _ = operation.accuracy_y.analyze(reference, verbose=True)
+        assert error.pow(2).mean().sqrt() < 0.2
+        assert operation.timestep_cur == 1
 
-    # Instantiate reference butterfly unit
-    butterfly_binary_unit = butterfly_binary()
-    # y0r_ref, y0i_ref, y1r_ref, y1i_ref, wr_x1r_ref, wr_x1i_ref, wi_x1r_ref, wi_x1i_ref = butterfly_binary_unit(x0r, x0i, x1r, x1i, wr, wi)
-    y0r_ref, y0i_ref, y1r_ref, y1i_ref = butterfly_binary_unit(x0r, x0i, x1r, x1i, wr, wi)
+        operation.reset()
+        assert operation.timestep_cur == 0
+        assert operation._stack_cache is None
+        assert operation.encoder_x.timestep_cur == 0
+        assert operation.decoder_y.timestep_cur == 0
+        assert operation.accuracy_y.timestep_cur == 0
+        replay = operation(*inputs, timesteps=timestep)
+        assert all(
+            torch.equal(before, after)
+            for before, after in zip(first, replay)
+        )
 
-    # Instantiate the butterfly unit
-    butterfly_spike_unit = butterfly_spike(codec_config, mul_config, add_config, acc_config).to(device)
-
-    # Run forward pass
-    y0r_value, y0i_value, y1r_value, y1i_value = butterfly_spike_unit(x0r, x0i, x1r, x1i, wr, wi, timesteps=codec_config['timestep'])
-
-    report_error(y0r_value, y0r_ref / add_config['scale'])
-    report_error(y0i_value, y0i_ref / add_config['scale'])
-    report_error(y1r_value, y1r_ref / add_config['scale'])
-    report_error(y1i_value, y1i_ref / add_config['scale'])
-
-
-    # Reset and see whether results are the same
-    butterfly_spike_unit.reset()
-
-    # Run forward pass
-    y0r_value, y0i_value, y1r_value, y1i_value = butterfly_spike_unit(x0r, x0i, x1r, x1i, wr, wi, timesteps=codec_config['timestep'])
-
-    report_error(y0r_value, y0r_ref / add_config['scale'])
-    report_error(y0i_value, y0i_ref / add_config['scale'])
-    report_error(y1r_value, y1r_ref / add_config['scale'])
-    report_error(y1i_value, y1i_ref / add_config['scale'])
-
-    print('Test passed.')
+        device_runtime = benchmark(
+            lambda values: operation(*values, timesteps=timestep),
+            inputs_cpu,
+            device,
+            warmup_runs=1,
+            trials=3,
+            prepare=operation.reset,
+        )
+        if device == 'cpu':
+            cpu_runtime = device_runtime
+        assert cpu_runtime is not None
+        print(
+            f'[{device}] device_runtime={device_runtime * 1e3:.1f}ms, '
+            f'cpu_runtime={cpu_runtime * 1e3:.1f}ms, '
+            f'speedup={cpu_runtime / device_runtime:.2f}x'
+        )
 
 
 if __name__ == '__main__':
     test_butterfly_spike()
-
+    print('Test passed.')

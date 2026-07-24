@@ -1,13 +1,13 @@
 """
-Evaluate the trained MLP3 in napl's fully-streaming-unary (FSU) spike domain and reproduce
+Evaluate the trained MLP3 in napl's streaming spike domain and reproduce
 the UnarySim per-cycle (progressive-precision) accuracy curve.
 
 Pipeline (a batch of flattened 32x32 MNIST images, all bipolar in [-1, 1]):
 
-    encode input -> linear_fsu_pc(fc1) -> relu+clamp -> linear_fsu_pc(fc2) -> relu+clamp -> linear_fsu_pc(fc3)
+    encode input -> linear_pc(fc1) -> relu+clamp -> linear_pc(fc2) -> relu+clamp -> linear_pc(fc3)
 
-Each linear layer is streamed for T = 2**bitwidth cycles. The kernel used is `linear_fsu_pc`
-(the parallel-counter FSU linear, UnarySim's FSULinearPC): every cycle it returns the binary
+Each linear layer is streamed for T = 2**bitwidth cycles. The kernel used is `linear_pc`
+(the parallel-counter streaming linear, UnarySim's FSULinearPC): every cycle it returns the binary
 inner-product count of the input spikes against freshly Sobol-encoded weight spikes, on a
 distinct RNG dimension from the input so the operand streams are decorrelated. Accumulating
 the count over k cycles and forming 2*(count/k) - entry recovers the bipolar inner product
@@ -17,7 +17,7 @@ clamp) matches the trained clamp-eval model.
 The layers are streamed sequentially: layer L is run to convergence (all T cycles), its
 activation is read out, then layer L+1 is streamed. This keeps every layer's input stream
 stationary (a re-encoded fixed value), which is what gives the high per-cycle fidelity; the
-napl per-timestep `linear_fsu` (scaled saturating adder) instead crushes a fan-in-1024 inner
+napl per-timestep `linear` (scaled saturating adder) instead crushes a fan-in-1024 inner
 product into a near-zero range that the downstream ReLU cannot resolve (see the README note).
 The reported per-cycle curve is the final layer's running prediction accuracy at each cycle
 count, which is the progressive-precision readout: it rises from chance toward the
@@ -42,8 +42,8 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from napl.module import encoder
-from napl.module.linear import linear_fsu_pc
+from napl.sim.module import encoder
+from napl.sim.module.linear import linear_pc
 
 from model import MLP3_clamp_eval
 
@@ -88,21 +88,21 @@ def fp_accuracy(model, images, labels):
 
 def stream_layer(value_in, weight, bias, in_dim, w_dim, timestep, device, record_cycles=False):
     """
-    Stream one FSU linear layer for `timestep` cycles. Returns the converged bipolar inner
+    Stream one linear layer for `timestep` cycles. Returns the converged bipolar inner
     product (W x + b). If record_cycles, also returns the list of per-cycle running values
     (the progressive-precision estimates), used to build the final-layer accuracy curve.
     """
     out_features, in_features = weight.shape
     entry = in_features + 1   # +1 for bias
     enc = encoder({'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': in_dim}).to(device)
-    fc = linear_fsu_pc(weight.clone(), bias.clone(),
+    fc = linear_pc(weight.clone(), bias.clone(),
                        {'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': w_dim}).to(device)
 
     acc = torch.zeros(value_in.size(0), out_features, device=device)
     cycle_vals = [] if record_cycles else None
     for k in range(1, timestep + 1):
         acc = acc + fc(enc(value_in))
-        # bipolar inner product from the running count: 2*mean - entry (per linear_fsu_pc)
+        # bipolar inner product from the running count: 2*mean - entry (per linear_pc)
         v = 2.0 * (acc / k) - entry
         if record_cycles:
             cycle_vals.append(v.clone())
@@ -112,7 +112,7 @@ def stream_layer(value_in, weight, bias, in_dim, w_dim, timestep, device, record
 
 def run_unary(model, images, labels, timestep, device, sync):
     """
-    Layer-sequential FSU streaming of MLP3. Returns the per-cycle accuracy array read from
+    Layer-sequential streaming of MLP3. Returns the per-cycle accuracy array read from
     the final (fc3) layer's progressive-precision prediction.
     """
     image_value = images.view(-1, model.in_size).clamp(-1, 1).to(device)

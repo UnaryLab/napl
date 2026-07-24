@@ -4,21 +4,20 @@ description: >-
   Optimize a napl kernel/op/module's functional simulation for speed and report the
   measured CPU and GPU speedup, gated on its test_<kernel>.py still passing. Use
   whenever the user wants a napl op/kernel/layer to run faster ("speed up mul_and",
-  "make conv_fsu faster on GPU", "optimize add_any", "why is sqrt_emit slow", "profile
-  and accelerate linear_fsu"), wants a before/after speedup number for a kernel on CPU
-  and/or MPS/CUDA, or asks to accelerate the napl simulation without changing results,
-  even if they don't say the word "optimize". Behavior-preserving only: the kernel's
-  numerical outputs must not change, and the speedup is reported against the kernel's
-  own pre-optimization runtime on identical inputs. Sibling to napl-validate-unarysim
-  (correctness vs the upstream reference) and the napl-port-unarysim workflow (the batch
-  sweep this is the single-kernel, interactive version of). Every run leaves a durable
+  "make conv faster on GPU", "optimize add_any", "why is sqrt_emit slow", "profile
+  and accelerate linear"), wants a before/after speedup number on CPU and/or
+  MPS/CUDA, or asks to accelerate the napl simulation without changing results, even
+  without the word "optimize". Behavior-preserving only: numerical outputs must not
+  change, and the speedup is measured against the kernel's own pre-optimization runtime
+  on identical inputs. Sibling to napl-validate-unarysim and the napl-port-unarysim
+  workflow (the batch version of this single-kernel skill). Every run leaves a durable
   result row in reports/napl-opt-sim-report.md (kernel, changed?, test gate, CPU/GPU
-  before-after speedup) so optimization history is tracked over time.
+  before-after speedup).
 ---
 
 # Optimize a napl kernel and report its CPU/GPU speedup
 
-## Why this exists
+## Scope
 
 napl is a functional simulator of spike processing; the same `forward()` runs over many
 timesteps on CPU and GPU, so per-op throughput is the bottleneck for any real workload.
@@ -35,10 +34,44 @@ rigor, distilled into one rule each:
   before and after runs; time on **both CPU and GPU**; **synchronize the GPU before
   stopping the clock** (async execution otherwise times the launch, not the compute).
 
-The deliverable is a verdict: what changed, the test-gate result, and a per-device
-speedup table (baseline ms, optimized ms, ratio) measured on identical inputs.
+## Handoffs
 
-## Execution model: always run the optimization in a subagent
+- `coding-discipline`: invoked first in Step 3 as the coding overlay for the edit (think
+  before coding, simplicity first, surgical changes, verifiable success criteria).
+- `napl-validate-unarysim`: sibling skill with the same measurement rigor, applied to
+  correctness-vs-UnarySim instead of speed. Reuse its test-wiring import pattern.
+- `napl-gen-rtl`: sibling on the RTL side (lowers a napl kernel to Verilog).
+- The `napl-port-unarysim` workflow's Improve phase is the batch sweep this skill is the
+  interactive, single-kernel version of.
+
+## Persona
+
+A careful optimizer who baselines before and after on identical inputs, never lets a
+speedup change a numerical result, gates every edit on the kernel's committed test, and
+reports honestly, including a regression on one device or a no-change (~1.0x) outcome.
+
+## Inputs
+
+- The napl kernel/op/module target to speed up (e.g. `operation.mul_and`,
+  `module.conv`, `operation.add_any`).
+- Run everything through the project env: `conda run -n napl python ...` (a bare `python`
+  is the wrong interpreter). Heredocs piped through `conda run` swallow stdout, so write a
+  `.py` file and run it, never inline a `python - <<EOF`.
+- Time on **every available device**, not just one. Build the list with the bundled helper
+  `bench.device_list()` (`['cpu']` + `cuda` if present + `mps` if present). The committed
+  tests use the `device = 'cuda' if torch.cuda.is_available() else 'cpu'` idiom, which
+  **silently skips MPS on a Mac**, so do not copy that; the harness here must cover MPS.
+
+## Output contract
+
+A verdict: what changed, the test-gate result, and a per-device speedup table (baseline
+ms, optimized ms, ratio) measured on identical inputs, plus a durable row in
+`reports/napl-opt-sim-report.md` (kernel, changed?, test gate, CPU/GPU before-after
+speedup).
+
+## Workflow
+
+### Step 0 - Always run the optimization in a subagent
 
 **Always delegate the optimize-and-time job to one subagent; never run it in the main
 thread.** It is a self-contained, multi-step job (read the kernel + its test, baseline
@@ -62,24 +95,12 @@ agent's job is only to dispatch and relay:
    should revert) rather than presenting an unsafe speedup.
 
 **If you ARE that dispatched subagent** (you were handed a specific kernel and told to
-follow this skill), ignore this section and execute Steps 1-5 directly. Optimize one
+follow this skill), ignore this section and execute Steps 1-6 directly. Optimize one
 kernel per subagent.
-
-## Environment
-
-- Run everything through the project env: `conda run -n napl python ...` (a bare `python`
-  is the wrong interpreter). Heredocs piped through `conda run` swallow stdout, so write a
-  `.py` file and run it, never inline a `python - <<EOF`.
-- Time on **every available device**, not just one. Build the list with the bundled helper
-  `bench.device_list()` (`['cpu']` + `cuda` if present + `mps` if present). The committed
-  tests use the `device = 'cuda' if torch.cuda.is_available() else 'cpu'` idiom, which
-  **silently skips MPS on a Mac**, so do not copy that; the harness here must cover MPS.
-
-## Workflow
 
 ### Step 1 - Resolve the kernel and its test
 
-Pin down the exact napl class (e.g. `operation.mul_and`, `module.conv_fsu`,
+Pin down the exact napl class (e.g. `operation.mul_and`, `module.conv`,
 `operation.add_any`) and its source file under `src/napl/`. Its workload and correctness
 gate both come from `tests/<subpackage>/test_<kernel>.py` (e.g.
 `tests/operation/test_mul_and.py`). Read that test: it defines the canonical wiring
@@ -117,21 +138,9 @@ an elementwise spike-product reduction with a `matmul`, hoist invariants out of 
 timestep loop, avoid `torch.roll`-style full-buffer reallocation (see the circular-buffer
 idiom in `shiftreg`/`dff`).
 
-Hard constraints (a violation is a bug, not a speedup):
-- **Numerical outputs MUST NOT change.** Bit-exactness is the target for integer-valued
-  spike ops; only a legitimate float-reduction reorder may shift results within tolerance,
-  and the test gate (Step 4) is what decides whether that is acceptable.
-- Follow `CLAUDE.md` conventions: spike/non-spike dtypes (`self.stype`/`self.ntype`);
-  **never use `>>`/`<<` on float tensors** (use `pow2_lshift`/`pow2_rshift` from
-  `utils/utils.py`); keep the lazy `operation` imports inside `__init__` that break the
-  `module`<->`operation` import cycle.
-- **Preserve broadcast ability.** If the module sizes a running accumulator/buffer as a scalar
-  (`torch.zeros(1)`) and grows it to the input shape on the first `forward()` via an out-of-place
-  op, do NOT convert that to in-place: in-place cannot expand the destination and breaks the
-  `(1,)` -> `(N,)` first-call broadcast. See the in-place broadcast gotcha for the safe
-  shape-guarded pattern.
-- If there is no safe speedup, change nothing and say so (report ~1.0x). Do not force a
-  risky edit.
+The hard constraints that keep the edit behavior-preserving (a violation is a bug, not a
+speedup) are in **Rules** below; if there is no safe speedup, change nothing and say so
+(report ~1.0x).
 
 ### Step 4 - Gate on the test (correctness)
 
@@ -147,7 +156,7 @@ The test embeds the fidelity criterion (SC ~1/sqrt(N) for streaming kernels, the
 bound for binary-domain, bit-exact where it holds) plus its known-answer checks, so a pass
 is the correctness contract. If it fails, the optimization is invalid: **revert** and
 either try a different approach or report that no safe speedup was found. Note the MPS
-caveat from Environment: if the test's own device idiom skips MPS, also exercise the
+caveat from Inputs: if the test's own device idiom skips MPS, also exercise the
 kernel on MPS via the Step 2 harness so the optimization is proven there too.
 
 **Shared primitives need a downstream gate.** Many ops compose others (e.g. `add_any` is
@@ -159,12 +168,13 @@ has dependents, also run their tests, or just run the whole independent sweep th
 napl-port-unarysim Improve phase does (it exists for exactly this cross-file breakage):
 
 ```bash
-conda run -n napl python tests/sweep_test.py   # then check tests/sweep_test.log for tracebacks
+conda run -n napl python tests/sweep_test.py   # exits non-zero and lists the failing files; log goes to tests/sweep_test.log
 ```
 
-The sweep does not check exit codes, so judge pass/fail yourself: one "Test passed" per
-"Running:" line and no Python tracebacks / AssertionErrors in `tests/sweep_test.log`. A
-downstream failure invalidates the optimization just as the kernel's own test would.
+The sweep prints one `Running: <path>` per test file, exits zero when all pass, and on any
+failure exits non-zero and prints each failing file; read `tests/sweep_test.log` for the
+tracebacks. A downstream failure invalidates the optimization just as the kernel's own test
+would.
 
 ### Step 5 - Re-time and report the speedup
 
@@ -201,7 +211,7 @@ napl-port-unarysim workflow reads, so a later sweep skips a file whose hash is u
 ```bash
 conda run -n napl python .claude/skills/napl-opt-sim/scripts/record_opt.py \
     --kernel operation.add_any \
-    --source src/napl/operation/add.py --hash "$(git hash-object src/napl/operation/add.py)" \
+    --source src/napl/sim/operation/add_any.py --hash "$(git hash-object src/napl/sim/operation/add_any.py)" \
     --changed yes \
     --gate "PASS (add_any + downstream sweep 46/46)" \
     --cpu "51.6->52.0 ms (1.00x)" \
@@ -214,7 +224,26 @@ known-near-optimal kernel is visible in the log rather than silently re-attempte
 `--date YYYY-MM-DD` only to backfill; it defaults to today. Confirm the recorded row to the user
 as part of the verdict.
 
-## Bundled resources
+## Rules
+
+Hard constraints on the Step 3 edit; a violation is a bug, not a speedup:
+
+- **Numerical outputs MUST NOT change.** Bit-exactness is the target for integer-valued
+  spike ops; only a legitimate float-reduction reorder may shift results within tolerance,
+  and the test gate (Step 4) is what decides whether that is acceptable.
+- Follow `CLAUDE.md` conventions: spike/non-spike dtypes (`self.stype`/`self.ntype`);
+  **never use `>>`/`<<` on float tensors** (use `pow2_lshift`/`pow2_rshift` from
+  `utils/utils.py`); keep the lazy `operation` imports inside `__init__` that break the
+  `module`<->`operation` import cycle.
+- **Preserve broadcast ability.** If the module sizes a running accumulator/buffer as a scalar
+  (`torch.zeros(1)`) and grows it to the input shape on the first `forward()` via an out-of-place
+  op, do NOT convert that to in-place: in-place cannot expand the destination and breaks the
+  `(1,)` -> `(N,)` first-call broadcast. See the in-place broadcast failure mode for the safe
+  shape-guarded pattern.
+- If there is no safe speedup, change nothing and say so (report ~1.0x). Do not force a
+  risky edit.
+
+## References
 
 - `scripts/bench.py`: `device_list()`, `sync(device)`, and `time_ms(fn, device, warmup,
   iters)`. The GPU-sync-correct timing primitives; import them rather than re-deriving the
@@ -222,8 +251,16 @@ as part of the verdict.
 - `scripts/record_opt.py`: append a uniform result row to `reports/napl-opt-sim-report.md`
   (Step 6). Creates the file with a header on first use, escapes table-breaking pipes, dedupes,
   and keeps the log sorted by kernel then date so re-runs of one kernel group together.
+- `tests/<subpackage>/test_<kernel>.py`: the workload wiring and the correctness gate.
+- `.claude/skills/napl-validate-unarysim/SKILL.md`: sibling skill with the same measurement
+  rigor, applied to correctness-vs-UnarySim instead of speed. Reuse its test-wiring import
+  pattern.
+- `.claude/workflows/napl-port-unarysim.js`: the batch sweep whose Improve phase this skill is
+  the interactive, single-kernel version of.
+- `CLAUDE.md`: the project's testing rules (both devices, sync before timing, identical
+  inputs) and the dtype/shift/import conventions the edit must respect.
 
-## Gotchas (learned the hard way)
+## Failure modes
 
 - **Identical inputs, before and after.** Generate inputs once under a fixed seed; the
   before and after timing runs must consume the same tensors, or the speedup (and any
@@ -271,21 +308,8 @@ as part of the verdict.
 - **In-place breaks autograd.** The trainable binary-domain kernels (`*_hub`/`*_fxp`/
   `*_tlut`/`*_hard`, via `torch.autograd.Function` + STE) cannot have their forward
   intermediates mutated in place without corrupting the backward graph. In-place is a
-  streaming-FSU-only consideration, and even there only under the dtype/aliasing rules
+  streaming-only consideration, and even there only under the dtype/aliasing rules
   above.
 - **Stateful/import gotchas** carry over from CLAUDE.md: float bit-shift shims, the lazy
   `operation` imports, the decorrelated conv pad stream. Speeding up the hot path must not
   disturb these.
-
-## References
-
-- `tests/<subpackage>/test_<kernel>.py`: the workload wiring and the correctness gate.
-- `.claude/skills/napl-validate-unarysim/SKILL.md`: sibling skill with the same measurement
-  rigor, applied to correctness-vs-UnarySim instead of speed. Reuse its test-wiring import
-  pattern.
-- `.claude/workflows/napl-port-unarysim.js`: the batch sweep whose Improve phase this skill is
-  the interactive, single-kernel version of.
-- `CLAUDE.md`: the project's testing rules (both devices, sync before timing, identical
-  inputs) and the dtype/shift/import conventions the edit must respect.
-- `scripts/record_opt.py` and `reports/napl-opt-sim-report.md`: the recorder and the durable
-  log this skill appends a result row to on every run (Step 6).

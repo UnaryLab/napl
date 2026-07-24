@@ -3,9 +3,9 @@ import torch
 sys.path.insert(0, '/Users/diwu/Projects')
 
 from UnarySim.kernel.add import FSUAdd
-from napl.base import global_config
-from napl.module import encoder, decoder
-from napl.operation import add_any
+from napl.sim.base import global_config
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import add_any
 from napl.utils import gen_rand_tensor
 
 # load the committed test wiring

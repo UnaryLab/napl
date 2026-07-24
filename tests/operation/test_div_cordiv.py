@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import div_cordiv
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import div_cordiv
+from napl.sim.metric import accuracy
 
 
 class napl_div_cordiv(napl_base):
@@ -14,6 +18,7 @@ class napl_div_cordiv(napl_base):
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder = decoder(codec_config1)
+        self.accuracy = accuracy({'polarity': codec_config1['polarity']})
         self.div_cordiv = div_cordiv(div_cordiv_config)
 
 
@@ -24,14 +29,13 @@ class napl_div_cordiv(napl_base):
         i_spike1 = self.encoder1(input_1)
         o_spike = self.div_cordiv(i_spike0, i_spike1)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_div_cordiv():
     """
     Test div_cordiv with a simple configuration.
     """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config1={
         'polarity': 'unipolar',
@@ -52,8 +56,8 @@ def test_div_cordiv():
 
     # Generate random inputs based on polarity
     # using the same dim for two codec configs to ensure we have correlated spikes to div_cordiv
-    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype).to(device)
-    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype).to(device)
+    input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
+    input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
     input_mask = input_0 < input_1
     input_0_new = torch.where(input_mask, input_0, input_1)
     input_1_new = torch.where(~input_mask, input_0, input_1)
@@ -62,22 +66,29 @@ def test_div_cordiv():
     input_0 = input_0_new
     input_1 = input_1_new
 
-    # generate the napl_div_cordiv instance
-    div_cordiv_inst = napl_div_cordiv(codec_config1, codec_config2, div_cordiv_config).to(device)
-    div_cordiv_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+    for device in devices():
+        dividend = input_0.to(device)
+        divisor = input_1.to(device)
+        div_cordiv_inst = napl_div_cordiv(codec_config1, codec_config2, div_cordiv_config).to(device)
 
-    # calculate the reference output
-    r_value = input_0 / input_1
+        sync(device)
+        start = time.perf_counter()
+        div_cordiv_inst(dividend, divisor, timesteps=codec_config1['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # report the error
-    report_error(div_cordiv_inst.decoder.spike_value, r_value)
+        r_value = dividend / divisor
+        error, _ = div_cordiv_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt().item()
+        assert rmse < 0.2, f'[{device}] rmse={rmse:.4f}'
 
-    assert div_cordiv_inst.div_cordiv.timestep_cur == codec_config1['timestep']
-    div_cordiv_inst.reset()
+        assert div_cordiv_inst.div_cordiv.timestep_cur == codec_config1['timestep']
+        div_cordiv_inst.reset()
+        assert div_cordiv_inst.div_cordiv.timestep_cur == 0
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
     
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_div_cordiv()
-

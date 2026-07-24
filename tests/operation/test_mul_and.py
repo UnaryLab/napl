@@ -1,74 +1,64 @@
 import math
-import time
+
+import torch
+
+from napl.sim.base import global_config
+from napl.sim.operation import mul_and
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import streaming_suite
 
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import mul_and
-from napl.metric import analyze_error
+TIMESTEPS = 256
 
 
-class napl_mul_and(napl_base):
-    def __init__(self, codec_config1, codec_config2, mul_and_config):
-        super().__init__()
-        # set up encoder, decoder, adder, and accuracy
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder = decoder(codec_config1)
-        self.mul_and = mul_and(mul_and_config)
+def make_operation(polarity, timestep, device):
+    return mul_and({'polarity': polarity})
 
 
-    @napl_sim_timesteps
-    def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
-        i_spike0 = self.encoder0(input_0)
-        i_spike1 = self.encoder1(input_1)
-        o_spike = self.mul_and(i_spike0, i_spike1)
-        self.decoder(o_spike)
+def make_values(polarity):
+    return (
+        gen_rand_tensor(
+            polarity, shape=(10000,), width=math.log2(TIMESTEPS)
+        ).type(global_config.ntype),
+        gen_rand_tensor(
+            polarity, shape=(10000,), width=math.log2(TIMESTEPS)
+        ).type(global_config.ntype),
+    )
 
-    
+
+def analytic_reference(values, polarity):
+    return values[0] * values[1]
+
+
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = (
+            torch.tensor([0.0, 0.0, 1.0, 1.0]),
+            torch.tensor([0.0, 1.0, 0.0, 1.0]),
+        )
+        expected = torch.tensor([0.0, 0.0, 0.0, 1.0])
+    else:
+        values = (
+            torch.tensor([-1.0, -1.0, 1.0, 1.0]),
+            torch.tensor([-1.0, 1.0, -1.0, 1.0]),
+        )
+        expected = torch.tensor([1.0, -1.0, -1.0, 1.0])
+    return values, expected, 0.0
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': TIMESTEPS,
+}
+
+
 def test_mul_and():
-    """
-    Test mul_and with a simple configuration.
-    """
-
-    codec_config1={
-        'polarity': 'bipolar',
-        'timestep': 256,
-        'generator': 'sobol',
-        'dim': 1,
-    }
-    codec_config2={
-        'polarity': 'bipolar',
-        'timestep': 256,
-        'generator': 'sobol',
-        'dim': 2,
-    }
-    mul_and_config=codec_config1
-
-    # Generate random inputs based on polarity
-    input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
-    input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
-
-    for device in devices():
-        input_0 = input_0_cpu.to(device)
-        input_1 = input_1_cpu.to(device)
-        mul_and_inst = napl_mul_and(codec_config1, codec_config2, mul_and_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        mul_and_inst(input_0, input_1, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
-
-        r_value = input_0 * input_1
-        analyze_error(mul_and_inst.decoder.spike_value, r_value)
-        assert mul_and_inst.mul_and.timestep_cur == codec_config1['timestep']
-        mul_and_inst.reset()
-        assert mul_and_inst.mul_and.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
-    
-    print('Test passed.')
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

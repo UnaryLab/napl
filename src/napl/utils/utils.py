@@ -8,22 +8,6 @@ from yamlordereddictloader import SafeLoader
 from loguru import logger
 
 
-def devices():
-    dev = ['cpu']
-    if torch.cuda.is_available():
-        dev.append('cuda')
-    if torch.backends.mps.is_available():
-        dev.append('mps')
-    return dev
-
-
-def sync(device):
-    if device == 'cuda':
-        torch.cuda.synchronize()
-    elif device == 'mps':
-        torch.mps.synchronize()
-
-
 class bcolors:
     """
     default color palette

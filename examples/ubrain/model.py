@@ -38,8 +38,8 @@ import torch
 import torch.nn as nn
 
 from napl.utils import truncated_normal
-from napl.module import conv_hub, linear_hub, mgu_hard, mgu_hub
-from napl.operation import relu_hub, tanh_hub
+from napl.sim.module import conv_hub, linear_hub, mgu_hard, mgu_hub
+from napl.sim.operation import relu_hub, tanh_hub
 
 
 def fc3_in_features(input_sz, cnn_chn, cnn_padding):
@@ -187,7 +187,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
         o = x.view(-1, 1, self.input_sz[0], self.input_sz[1])
         o = self.conv1_act(self.conv1(o))
         o = self.conv2_act(self.conv2(o))
-        o = o.view(o.shape[0], -1)
+        o = o.reshape(o.shape[0], -1)  # conv_hub output is non-contiguous; view() would fail
         o = self.fc3_act(self.fc3(o))
         o = self.fc3_drop(o)
         o = o.view(-1, self.rnn_win_sz, self.fc_sz).transpose(0, 1)  # (win, batch, fc_sz)

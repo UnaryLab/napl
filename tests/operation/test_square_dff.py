@@ -2,11 +2,12 @@ import math
 import time
 
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import square_dff
-from napl.metric import analyze_error
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import square_dff
+from napl.sim.metric import accuracy
 
 
 class napl_square_dff(napl_base):
@@ -16,6 +17,7 @@ class napl_square_dff(napl_base):
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.square_dff = square_dff(square_dff_config)
+        self.accuracy = accuracy(codec_config)
 
 
     @napl_sim_timesteps
@@ -24,6 +26,7 @@ class napl_square_dff(napl_base):
         i_spike = self.encoder(input)
         o_spike = self.square_dff(i_spike)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_square_dff():
@@ -56,7 +59,7 @@ def test_square_dff():
         elapsed = time.perf_counter() - start
 
         r_value = input * input
-        analyze_error(square_dff_inst.decoder.spike_value, r_value)
+        square_dff_inst.accuracy.analyze(r_value, verbose=True)
         assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
         square_dff_inst.reset()
         assert square_dff_inst.square_dff.timestep_cur == 0

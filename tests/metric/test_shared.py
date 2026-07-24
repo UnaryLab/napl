@@ -3,14 +3,14 @@ from io import StringIO
 import torch
 from loguru import logger
 
-from napl.metric import (
+from napl.sim.metric import (
     accuracy,
     correlation,
     stability,
     stability_flux,
     stability_norm,
 )
-from napl.metric._shared import analyze
+from napl.sim.metric._shared import analyze
 from napl.utils._shared_test import devices
 
 

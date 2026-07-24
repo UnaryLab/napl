@@ -1,65 +1,64 @@
-import torch, math
+import torch
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import sqrt_tracejkff
-from napl.metric import report_error
+from napl.sim.base import global_config
+from napl.sim.operation import sqrt_tracejkff
+from napl.utils._shared_test import devices, streaming_suite
 
 
-class napl_sqrt_tracejkff(napl_base):
-    def __init__(self, codec_config, sqrt_tracejkff_config):
-        super().__init__()
-        # set up encoder, decoder, adder, and accuracy
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
-        self.sqrt_tracejkff = sqrt_tracejkff(sqrt_tracejkff_config)
+def make_operation(polarity, timestep, device):
+    return sqrt_tracejkff({'polarity': polarity})
 
 
-    @napl_sim_timesteps
-    def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
-        i_spike = self.encoder(input)
-        o_spike = self.sqrt_tracejkff(i_spike)
-        self.decoder(o_spike)
+def make_values(polarity):
+    return (
+        torch.linspace(0, 1, 512, dtype=global_config.ntype),
+    )
 
-    
+
+def analytic_reference(values, polarity):
+    return torch.sqrt(values[0])
+
+
+def known_answer_case(polarity):
+    return (
+        (torch.tensor([1.0]),),
+        torch.tensor([1.0]),
+        0.0,
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 5.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+}
+
+
 def test_sqrt_tracejkff():
-    """
-    Test sqrt_tracejkff with a simple configuration.
-    """
+    streaming_suite(CONFIG)
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    codec_config={
-        'polarity': 'bipolar',
-        'timestep': 256,
-        'generator': 'sobol',
-        'dim': 1, # dim = 4 is good for unipolar
-    }
-    sqrt_tracejkff_config={
-        'polarity': 'bipolar',
-    }
-    
-    # Generate random inputs based on polarity, ensure positive numbers
-    input = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+def test_reset_children():
+    for device in devices():
+        for polarity in CONFIG['polarities']:
+            operation = make_operation(polarity, 1, device).to(device)
+            operation(torch.ones(4, dtype=global_config.stype, device=device))
+            assert operation.jkff.timestep_cur == 1
+            if polarity == 'bipolar':
+                assert operation.bi2uni.timestep_cur == 1
 
-    # generate the napl_sqrt_tracejkff instance
-    sqrt_tracejkff_inst = napl_sqrt_tracejkff(codec_config, sqrt_tracejkff_config).to(device)
-    sqrt_tracejkff_inst(input, timesteps=codec_config['timestep'])
-
-    # calculate the reference output
-    r_value = torch.sqrt(input)
-
-    # report the error
-    report_error(sqrt_tracejkff_inst.decoder.spike_value, r_value)
-
-    assert sqrt_tracejkff_inst.sqrt_tracejkff.timestep_cur == codec_config['timestep']
-    sqrt_tracejkff_inst.reset()
-
-    print('Test passed.')
+            operation.reset()
+            assert operation.timestep_cur == 0
+            assert operation.jkff.timestep_cur == 0
+            assert torch.equal(operation.jkff.q, torch.zeros_like(operation.jkff.q))
+            if polarity == 'bipolar':
+                assert operation.bi2uni.timestep_cur == 0
 
 
 if __name__ == '__main__':
     test_sqrt_tracejkff()
-
+    test_reset_children()
+    print('Test passed.')

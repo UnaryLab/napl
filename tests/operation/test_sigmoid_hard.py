@@ -1,10 +1,14 @@
-import torch, math
+import math
+import time
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import *
-from napl.module import encoder, decoder
-from napl.operation import sigmoid_hard
-from napl.metric import report_error
+import torch
+
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import sigmoid_hard
+from napl.sim.metric import accuracy
 
 
 class napl_sigmoid_hard(napl_base):
@@ -14,6 +18,7 @@ class napl_sigmoid_hard(napl_base):
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sigmoid_hard = sigmoid_hard(sigmoid_hard_config)
+        self.accuracy = accuracy(codec_config)
 
 
     @napl_sim_timesteps
@@ -22,14 +27,13 @@ class napl_sigmoid_hard(napl_base):
         i_spike = self.encoder(input)
         o_spike = self.sigmoid_hard(i_spike)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_sigmoid_hard():
     """
     Test sigmoid_hard with a simple configuration.
     """
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     codec_config={
         'polarity': 'bipolar',
@@ -42,25 +46,28 @@ def test_sigmoid_hard():
     }
     
     # Generate random inputs based on polarity, ensure positive numbers
-    input = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
+    input_cpu = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
     # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
     # generate the napl_sigmoid_hard instance
-    sigmoid_hard_inst = napl_sigmoid_hard(codec_config, sigmoid_hard_config).to(device)
-    sigmoid_hard_inst(input, timesteps=codec_config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        sigmoid_hard_inst = napl_sigmoid_hard(codec_config, sigmoid_hard_config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        sigmoid_hard_inst(input, timesteps=codec_config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    # calculate the reference output
-    r_value = torch.nn.Hardsigmoid()(input * 3)
-
-    # report the error
-    report_error(sigmoid_hard_inst.decoder.spike_value, r_value)
-
-    assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == codec_config['timestep']
-    sigmoid_hard_inst.reset()
+        r_value = torch.nn.Hardsigmoid()(input * 3)
+        sigmoid_hard_inst.accuracy.analyze(r_value, verbose=True)
+        assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == codec_config['timestep']
+        sigmoid_hard_inst.reset()
+        assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == 0
+        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
 
 
 if __name__ == '__main__':
     test_sigmoid_hard()
-

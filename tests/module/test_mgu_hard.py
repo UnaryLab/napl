@@ -1,7 +1,10 @@
+import time
+
 import torch
 import torch.nn.functional as F
 
-from napl.module import mgu_hard, mgu_hardfxp
+from napl.sim.module import mgu_hard, mgu_hardfxp
+from napl.utils._shared_test import devices, sync
 
 
 def _ref_mgu(x, hx, Wf, bf, Wn, bn):
@@ -21,30 +24,52 @@ def test_mgu_hard():
     torch.manual_seed(0)
     isz, hsz, b = 6, 4, 5
     cell = mgu_hard(isz, hsz, bias=True)
-    x = torch.rand(b, isz) * 2 - 1
-    hx = torch.rand(b, hsz) * 2 - 1
+    x_cpu = torch.rand(b, isz) * 2 - 1
+    hx_cpu = torch.rand(b, hsz) * 2 - 1
 
-    y = cell(x, hx)
-    ref = _ref_mgu(x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n)
-    assert y.shape == (b, hsz)
-    assert torch.allclose(y, ref, atol=1e-5)
-    assert cell(x).shape == (b, hsz)   # hx=None default
+    for device in devices():
+        cell = cell.to(device)
+        x = x_cpu.to(device)
+        hx = hx_cpu.to(device)
+        sync(device)
+        start = time.perf_counter()
+        y = cell(x, hx)
+        sync(device)
+        elapsed = time.perf_counter() - start
+        sync(device)
+        start = time.perf_counter()
+        ref = _ref_mgu(
+            x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n
+        )
+        sync(device)
+        ref_elapsed = time.perf_counter() - start
+        assert y.shape == (b, hsz)
+        assert torch.allclose(y, ref, atol=1e-5)
+        assert cell(x).shape == (b, hsz)
 
-    # fxp variant approximates the float cell
-    cfx = mgu_hardfxp(isz, hsz, bias=True, config={'intwidth': 3, 'fracwidth': 6})
-    for a, src in [(cfx.weight_f, cell.weight_f), (cfx.weight_n, cell.weight_n),
-                   (cfx.bias_f, cell.bias_f), (cfx.bias_n, cell.bias_n)]:
-        a.data = src.data.clone()
-    rmse = (cfx(x, hx) - y).pow(2).mean().sqrt().item()
-    print(f'mgu_hardfxp vs mgu_hard rmse={rmse:.4f}')
-    assert rmse < 0.05, rmse
+        cfx = mgu_hardfxp(
+            isz, hsz, bias=True, config={'intwidth': 3, 'fracwidth': 6}
+        ).to(device)
+        for target, source in [
+            (cfx.weight_f, cell.weight_f),
+            (cfx.weight_n, cell.weight_n),
+            (cfx.bias_f, cell.bias_f),
+            (cfx.bias_n, cell.bias_n),
+        ]:
+            target.data = source.data.clone()
+        rmse = (cfx(x, hx) - y).pow(2).mean().sqrt().item()
+        print(
+            f'[{device}] mgu_hardfxp rmse={rmse:.4f}, '
+            f'hard/reference ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+        )
+        assert rmse < 0.05, (device, rmse)
 
-    # gradients flow (incl. STE through round_fxp)
-    for c in [cell, cfx]:
-        xg = x.clone().requires_grad_(True)
-        c(xg, hx).sum().backward()
-        assert torch.isfinite(xg.grad).all()
-        assert torch.isfinite(c.weight_f.grad).all()
+        for module in [cell, cfx]:
+            xg = x.clone().requires_grad_(True)
+            module(xg, hx).sum().backward()
+            assert torch.isfinite(xg.grad).all()
+            assert torch.isfinite(module.weight_f.grad).all()
+            module.zero_grad()
 
     print('Test passed.')
 

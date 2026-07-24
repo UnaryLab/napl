@@ -8,10 +8,10 @@ import math
 
 import torch
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.metric import accuracy
-from napl.module import decoder, encoder
-from napl.operation import mul_csg
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.sim.metric import accuracy
+from napl.sim.module import decoder, encoder
+from napl.sim.operation import mul_csg
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 

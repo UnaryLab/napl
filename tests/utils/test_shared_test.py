@@ -114,7 +114,7 @@ def test_benchmark():
 
 
 def _mul_and_operation(polarity, timestep, device):
-    from napl.operation import mul_and
+    from napl.sim.operation import mul_and
     return mul_and({'polarity': polarity})
 
 
@@ -151,7 +151,7 @@ def test_streaming_suite():
 
 
 def _fxp_pair():
-    from napl.module import linear_fxp
+    from napl.sim.module import linear_fxp
     torch.manual_seed(1)
     in_features, out_features = 8, 4
     reference = torch.nn.Linear(in_features, out_features)

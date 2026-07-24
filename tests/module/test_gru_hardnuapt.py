@@ -1,0 +1,79 @@
+import time
+
+import torch
+import torch.nn.functional as F
+
+# import directly from the module: not yet wired into napl.sim.module.__init__
+from napl.utils._shared_test import devices, sync
+from napl.sim.module.gru_hardnuapt import gru_hardnuapt
+
+
+def _ref_gru_hard(x, hx, w_ih, w_hh, b_ih, b_hh):
+    """Direct hard-activation GRU (PyTorch GRUCell equations), independent implementation."""
+    i_r, i_z, i_n = F.linear(x, w_ih, b_ih).chunk(3, 1)
+    h_r, h_z, h_n = F.linear(hx, w_hh, b_hh).chunk(3, 1)
+    rg = F.hardsigmoid((i_r + h_r) * 3)
+    ug = F.hardsigmoid((i_z + h_z) * 3)
+    ng = F.hardtanh(i_n + rg * h_n)
+    return (1 - ug) * ng + ug * hx
+
+
+def test_gru_hardnuapt():
+    """
+    Correctness: hard=True matches the hard-activation GRU equations exactly;
+    hard=False matches nn.GRUCell exactly (same weights). Gradients flow.
+    Performance: timed against nn.GRUCell on every device.
+    """
+    torch.manual_seed(0)
+    isz, hsz, b = 6, 4, 5
+    for device in devices():
+        cell = gru_hardnuapt(isz, hsz, bias=True).to(device)
+        x = (torch.rand(b, isz, device=device) * 2 - 1)
+        hx = (torch.rand(b, hsz, device=device) * 2 - 1)
+
+        # hard=True vs independent reference
+        y = cell(x, hx)
+        ref = _ref_gru_hard(x, hx, cell.weight_ih, cell.weight_hh, cell.bias_ih, cell.bias_hh)
+        assert y.shape == (b, hsz)
+        assert torch.allclose(y, ref, atol=1e-6), device
+        assert cell(x).shape == (b, hsz)  # hx=None default
+
+        # hard=False vs nn.GRUCell with identical weights
+        soft = gru_hardnuapt(isz, hsz, bias=True, config={'hard': False}).to(device)
+        gru = torch.nn.GRUCell(isz, hsz, bias=True).to(device)
+        with torch.no_grad():
+            gru.weight_ih.copy_(soft.weight_ih)
+            gru.weight_hh.copy_(soft.weight_hh)
+            gru.bias_ih.copy_(soft.bias_ih)
+            gru.bias_hh.copy_(soft.bias_hh)
+        assert torch.allclose(soft(x, hx), gru(x, hx), atol=1e-5), device
+
+        # gradients flow
+        xg = x.clone().requires_grad_(True)
+        cell(xg, hx).sum().backward()
+        assert torch.isfinite(xg.grad).all()
+        assert torch.isfinite(cell.weight_ih.grad).all()
+
+        # performance vs nn.GRUCell baseline, identical inputs
+        xb = torch.rand(256, isz, device=device) * 2 - 1
+        hb = torch.rand(256, hsz, device=device) * 2 - 1
+        for _ in range(3):  # warmup
+            cell(xb, hb); gru(xb, hb)
+        sync(device)
+        t0 = time.perf_counter()
+        for _ in range(50):
+            cell(xb, hb)
+        sync(device)
+        t1 = time.perf_counter()
+        for _ in range(50):
+            gru(xb, hb)
+        sync(device)
+        t2 = time.perf_counter()
+        print(f'[{device}] gru_hardnuapt {t1 - t0:.4f}s vs nn.GRUCell {t2 - t1:.4f}s '
+              f'(ratio {(t1 - t0) / max(t2 - t1, 1e-9):.2f}x)')
+
+    print('Test passed.')
+
+
+if __name__ == '__main__':
+    test_gru_hardnuapt()

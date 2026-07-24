@@ -65,9 +65,9 @@ const inScope = (c) =>
 // Helpers (shared so each phase stays consistent)
 // ----------------------------------------------------------------------------
 
-// Path relative to the src/napl root, used for compact agent labels (e.g. operation/mul.py).
+// Path relative to the src/napl root, used for compact agent labels (e.g. operation/mul_and.py).
 const relPath = (f) => f.replace(SRC + '/', '')
-// Path relative to the repo root (e.g. src/napl/operation/mul.py) - the key form used in the
+// Path relative to the repo root (e.g. src/napl/sim/operation/mul_and.py) - the key form used in the
 // improve ledger and in `git hash-object` output, so hashes line up across runs.
 const repoRel = (f) => f.replace(REPO + '/', '')
 
@@ -170,14 +170,14 @@ const IMPROVE_SCHEMA = {
   },
 }
 
-// Independent post-Improve gate: the sweep ignores exit codes, so the agent
-// judges pass/fail from the printed output + log.
+// Independent post-Improve gate: the sweep exits non-zero and lists the failing
+// files, and the agent reports them alongside the printed output + log.
 const SWEEP_SCHEMA = {
   type: 'object',
   required: ['files', 'passed', 'all_pass', 'failing', 'notes'],
   properties: {
     files: { type: 'number', description: 'Number of test files the sweep ran' },
-    passed: { type: 'number', description: 'Number that printed "Test passed"' },
+    passed: { type: 'number', description: 'Number of test files that ran without failing' },
     all_pass: { type: 'boolean' },
     failing: { type: 'array', items: { type: 'string' }, description: 'Test files that errored / did not pass, with a one-line reason' },
     notes: { type: 'string' },
@@ -300,7 +300,7 @@ const GENSIM_SCAN_SCHEMA = {
         properties: {
           unarysim_class: { type: 'string', description: 'UnarySim class name, e.g. FSULinearPC' },
           file: { type: 'string', description: 'UnarySim source file (relative), e.g. kernel/linear.py' },
-          proposed_napl_name: { type: 'string', description: 'napl name in napl style (lowercase), e.g. linear_fsu_pc' },
+          proposed_napl_name: { type: 'string', description: 'napl name in napl style (lowercase), e.g. linear_pc' },
           subpackage: { type: 'string', enum: SUBPACKAGES },
           paradigm: { type: 'string', description: 'streaming | single-shot-binary | metric' },
           skip_reason: { type: 'string', description: 'empty for a real port; else why it is not a standalone napl class (e.g. backward-only autograd helper, RNG/bitstream generator -> codec)' },
@@ -321,8 +321,8 @@ const GENSIM_PORT_SCHEMA = {
     status: { type: 'string', enum: ['ported', 'skipped', 'failed'] },
     test: { type: 'string', description: 'test file created, or empty' },
     validated: { type: 'string', description: 'napl-vs-UnarySim agreement (bit-exact / within bound), or why not' },
-    module_file: { type: 'string', description: 'new module file written (relative to repo, e.g. src/napl/module/linear_fsu_pc.py), or empty if not ported' },
-    class_name: { type: 'string', description: 'the Python class/symbol name to export from the module, e.g. LinearFSUPC' },
+    module_file: { type: 'string', description: 'new module file written (relative to repo, e.g. src/napl/sim/module/linear_pc.py), or empty if not ported' },
+    class_name: { type: 'string', description: 'the Python class/symbol name to export from the module, e.g. linear_pc' },
     notes: { type: 'string' },
   },
 }
@@ -470,7 +470,7 @@ const discovery = await agent(
     `   ${STATUS_CMD}\n` +
     `2. For the set of DISTINCT source files defining the classes you found, compute each file's git blob hash with ` +
     `\`git hash-object <file1> <file2> ...\` (run from ${REPO}; it prints one hash per file in argument order). Return ` +
-    `\`file_hashes\` as a map of REPO-RELATIVE path (e.g. "src/napl/operation/mul.py") -> hash.\n\n` +
+    `\`file_hashes\` as a map of REPO-RELATIVE path (e.g. "src/napl/sim/operation/mul_and.py") -> hash.\n\n` +
     `Then WRITE ${COMPONENTS} (overwrite any existing file): a markdown document titled "# NAPL Components", one ` +
     `\`##\` section per subpackage, each a table with columns: Class | File (repo-relative) | Description | ` +
     `Placeholder? | Autograd helper? | UnarySim counterpart | Validated? | RTL?. Fill Validated? = "yes" iff ` +
@@ -578,16 +578,17 @@ if (wantPhase('improve')) {
     log(`Improve changed ${changedFiles.size} file(s); forcing re-validation of ${revalidated} previously-validated class(es).`)
   }
 
-  // #2 - independent post-Improve gate. The sweep ignores exit codes, so the
-  // agent judges pass/fail from the output + log; per-file Improve agents can
-  // miss cross-file/downstream breakage this catches.
+  // #2 - independent post-Improve gate. The sweep exits non-zero and lists the
+  // failing files; per-file Improve agents can miss cross-file/downstream
+  // breakage this catches.
   sweep = await agent(
     `Run the napl test sweep ONCE as an independent post-Improve gate: from ${REPO} run ` +
-      `\`conda run -n napl python tests/sweep_test.py\`. IMPORTANT: the sweep does NOT check exit codes, so judge ` +
-      `pass/fail yourself - it should print one "Test passed" per "Running:" line, and tests/sweep_test.log must ` +
-      `contain no Python tracebacks / exceptions / AssertionErrors (ignore benign diagnostic lines such as ` +
-      `"largest error"). Report: files (test files run), passed (number that printed "Test passed"), failing (any ` +
-      `test files that errored or did not pass, each with a one-line reason), and all_pass. Do NOT modify any files.`,
+      `\`conda run -n napl python tests/sweep_test.py\`. It prints one "Running: <path>" line per test file, exits ` +
+      `zero when all pass, and on any failure exits non-zero and prints each failing test file; ` +
+      `tests/sweep_test.log holds the tracebacks (ignore benign diagnostic lines such as "largest error"). ` +
+      `Report: files (test files run), passed (number that ran without failing), failing (the test files it ` +
+      `listed as failed, each with a one-line reason from the log), and all_pass (true only if it exited zero). ` +
+      `Do NOT modify any files.`,
     { label: 'gate:test-sweep', phase: 'Improve', schema: SWEEP_SCHEMA },
   )
   if (sweep && !sweep.all_pass) {
@@ -766,7 +767,7 @@ if (wantPhase('rtl')) {
 
   const rtlPrompt = (c) =>
     `Generate Verilog RTL for the napl operation class \`${c.name}\` (defined in ${c.file}). The op directory and ` +
-    `\`make test\` OP name is \`${c.name}\` (i.e. ${SRC}/implementation/${c.name}/).\n\n` +
+    `\`make test\` OP name is \`${c.name}\` (i.e. ${SRC}/hw/${c.name}/).\n\n` +
     `Use the project's \`napl-gen-rtl\` skill (Skill tool): invoke it and execute its Steps DIRECTLY (you are the ` +
     `worker it describes - run its Steps, do NOT dispatch a further subagent). It emits the rtl/tb/gen under the op ` +
     `dir from the Python model, makes \`conda run -n napl make test OP=${c.name}\` PASS bit-exactly, and computes the ` +
@@ -818,7 +819,7 @@ if (wantPhase('rtl')) {
       `Independently re-validate the RTL just generated for op \`${op}\`, using the project's ` +
       `\`napl-validate-sim-rtl\` skill. Invoke the skill (Skill tool) and execute its Steps DIRECTLY (you are the ` +
       `worker - do NOT dispatch a further subagent): make \`gen_${op}.py\` derive its golden vectors from ` +
-      `\`test_${op}.py\`'s inputs, then run \`conda run -n napl make test OP=${op}\` from ${SRC}/implementation and ` +
+      `\`test_${op}.py\`'s inputs, then run \`conda run -n napl make test OP=${op}\` from ${SRC}/hw and ` +
       `require a bit-exact PASS (the skill also checks reset equivalence from t=0). This is stronger than a bare ` +
       `make-test re-run: it validates the RTL against the TEST's input streams, not just whatever vectors the ` +
       `generator emitted.\n\n` +
@@ -906,14 +907,14 @@ if (wantPhase('validate') || wantPhase('rtl')) {
         `value - this is the RTL pipeline delay (skip rows with a missing or non-numeric delay). Look up the class's ` +
         `source file in the map below, open it, and in that class's \`__init__\` - after the napl_base ` +
         `\`super().__init__(...)\` call - set the class's hardware contract so its pp_delay equals <delay>:\n` +
-        `  - The hardware contract is \`self.hw = hw_params(pp_delay=<delay>)\` (hw_params is defined in napl.base; ` +
-        `see operation/mul.py and operation/shiftreg.py for the exact idiom).\n` +
+        `  - The hardware contract is \`self.hw = hw_params(pp_delay=<delay>)\` (hw_params is defined in napl.sim.base; ` +
+        `see operation/mul_and.py and operation/shiftreg.py for the exact idiom).\n` +
         `  - If the class already has a \`self.hw = hw_params(...)\` line, update only its \`pp_delay=\` argument to ` +
         `<delay>, preserving any other arguments (e.g. \`timing=\`).\n` +
         `  - If the class still uses the LEGACY scalar \`self.delay = <n>\`, REPLACE that line with ` +
         `\`self.hw = hw_params(pp_delay=<delay>)\` (this migration supersedes self.delay per CLAUDE.md).\n` +
         `  - If the class has neither, ADD \`self.hw = hw_params(pp_delay=<delay>)\` right after super().__init__.\n` +
-        `  - Ensure the file imports hw_params: the import must read \`from napl.base import napl_base, hw_params\` ` +
+        `  - Ensure the file imports hw_params: the import must read \`from napl.sim.base import napl_base, hw_params\` ` +
         `(add \`hw_params\` to the existing napl_base import if it is missing). Do this once per file.\n` +
         `Change ONLY the hardware-delay assignment (and the import if needed) per class; do not alter any other ` +
         `behavior. Class -> file map (JSON):\n${JSON.stringify(opFileByName, null, 2)}\n\n` +

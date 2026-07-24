@@ -2,11 +2,12 @@ import math
 import time
 
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import mul_csg
-from napl.metric import analyze_error
+from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.utils import gen_rand_tensor
+from napl.utils._shared_test import devices, sync
+from napl.sim.module import encoder, decoder
+from napl.sim.operation import mul_csg
+from napl.sim.metric import accuracy
 
 
 class napl_mul_csg(napl_base):
@@ -16,6 +17,7 @@ class napl_mul_csg(napl_base):
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.mul_csg = mul_csg(mul_csg_config)
+        self.accuracy = accuracy({'polarity': codec_config['polarity']})
 
 
     @napl_sim_timesteps
@@ -24,6 +26,7 @@ class napl_mul_csg(napl_base):
         i_spike = self.encoder(input_0)
         o_spike = self.mul_csg(i_spike, input_1)
         self.decoder(o_spike)
+        self.accuracy(o_spike)
 
     
 def test_mul_csg():
@@ -53,7 +56,7 @@ def test_mul_csg():
         elapsed = time.perf_counter() - start
 
         r_value = input_0 * input_1
-        analyze_error(mul_csg_inst.decoder.spike_value, r_value)
+        mul_csg_inst.accuracy.analyze(r_value, verbose=True)
         assert mul_csg_inst.mul_csg.timestep_cur == codec_config['timestep']
         mul_csg_inst.reset()
         assert mul_csg_inst.mul_csg.timestep_cur == 0

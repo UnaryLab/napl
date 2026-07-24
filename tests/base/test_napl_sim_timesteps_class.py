@@ -1,8 +1,12 @@
+import math
+import time
+
 import torch
 
-from napl.base import napl_base, napl_sim_timesteps
-from napl.module import encoder, decoder
-from napl.metric import report_error
+from napl.sim.base import napl_base, napl_sim_timesteps
+from napl.sim.module import encoder, decoder
+from napl.sim.metric import accuracy
+from napl.utils._shared_test import devices, sync
 
 
 class codec(napl_base):
@@ -10,18 +14,46 @@ class codec(napl_base):
         super().__init__()
         self.encoder = encoder(config)
         self.decoder = decoder(config)
+        self.accuracy = accuracy(config)
 
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        self.tick()
         spike = self.encoder(input)
         self.decoder(spike)
-        # print(f'Timestep {self.timestep_cur} processed.')
-        assert self.timestep_cur == self.encoder.timestep_cur == self.decoder.timestep_cur, \
-            f'Timestep mismatch: {self.timestep_cur}, {self.encoder.timestep_cur}, {self.decoder.timestep_cur}.'
+        self.accuracy(spike)
+        # The composite auto-ticks once per outer __call__; the inner modules
+        # auto-tick once per looped iteration.
+        # print(f'Timestep {self.encoder.timestep_cur} processed.')
+        assert self.encoder.timestep_cur == self.decoder.timestep_cur, \
+            f'Timestep mismatch: {self.encoder.timestep_cur}, {self.decoder.timestep_cur}.'
 
-    
+
+class reset_leaf(napl_base):
+    def __init__(self):
+        super().__init__()
+        self.reset_count = 0
+
+    def _reset(self):
+        self.reset_count += 1
+
+    def forward(self, input):
+        return input
+
+
+class reset_parent(napl_base):
+    def __init__(self):
+        super().__init__()
+        self.child = reset_leaf()
+        self.reset_count = 0
+
+    def _reset(self):
+        self.reset_count += 1
+
+    def forward(self, input):
+        return self.child(input)
+
+
 def test_napl_sim_timesteps_class():
     """
     Test the napl_sime_timesteps decorator with a simple configuration.
@@ -32,18 +64,45 @@ def test_napl_sim_timesteps_class():
         'generator': 'sobol',
     }
 
-    input = torch.tensor([0.1, 0.5, 0.9])
+    input_cpu = torch.tensor([0.1, 0.5, 0.9])
 
-    codec_inst = codec(config)
-    codec_inst(input, timesteps=config['timestep'])
+    for device in devices():
+        input = input_cpu.to(device)
+        codec_inst = codec(config).to(device)
+        sync(device)
+        start = time.perf_counter()
+        codec_inst(input, timesteps=config['timestep'])
+        sync(device)
+        elapsed = time.perf_counter() - start
 
-    report_error(codec_inst.decoder.spike_value, input)
+        error, _ = codec_inst.accuracy.analyze(input, verbose=True)
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(config['timestep'])
+        assert codec_inst.encoder.timestep_cur == config['timestep']
+        assert codec_inst.decoder.timestep_cur == config['timestep']
+        print(f'[{device}] time={elapsed * 1000:.1f}ms')
 
-    codec_inst.reset()
+        codec_inst.reset()
+        assert codec_inst.timestep_cur == 0
+        assert codec_inst.encoder.timestep_cur == 0
+        assert codec_inst.decoder.timestep_cur == 0
+        assert codec_inst.accuracy.timestep_cur == 0
     
     print('Test passed.')
 
 
+def test_reset_lifecycle():
+    module = reset_parent()
+    module(torch.ones(1))
+    assert module.timestep_cur == 1
+    assert module.child.timestep_cur == 1
+
+    module.reset(verbose=True)
+    assert module.timestep_cur == 0
+    assert module.child.timestep_cur == 0
+    assert module.reset_count == 1
+    assert module.child.reset_count == 1
+
+
 if __name__ == '__main__':
     test_napl_sim_timesteps_class()
-
+    test_reset_lifecycle()

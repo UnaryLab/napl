@@ -6,8 +6,8 @@ identical result. Performance is compared with the same metric on CPU.
 """
 import torch
 
-from napl.metric.stability_norm import stability_norm
-from napl.module import encoder
+from napl.sim.metric.stability_norm import stability_norm
+from napl.sim.module import encoder
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 

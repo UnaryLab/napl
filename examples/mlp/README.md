@@ -2,7 +2,7 @@
 
 A runnable napl port of the UnarySim `app/mlp` application. A small 3-layer MLP
 (1024 -> width -> width -> 10) is trained on MNIST in floating point, then run in napl's
-fully-streaming-unary (FSU) spike domain to reproduce the original result: a per-cycle
+streaming spike domain to reproduce the original result: a per-cycle
 (progressive-precision) accuracy curve that rises from chance toward the floating-point
 baseline as more spike bits are streamed.
 
@@ -44,8 +44,8 @@ conda run -n napl python examples/mlp/eval_unary.py --sanity      # tiny both-de
 
 ## What it reuses from napl
 
-- `napl.module.encoder` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
-- `napl.module.linear_fsu_pc` (the parallel-counter FSU linear, UnarySim's `FSULinearPC`) - the
+- `napl.sim.module.encoder` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
+- `napl.sim.module.linear_pc` (the parallel-counter streaming linear, UnarySim's `FSULinearPC`) - the
   per-cycle binary inner-product count of input spikes against freshly Sobol-encoded weight
   spikes on a decorrelated RNG dimension. Accumulating the count over k cycles and forming
   `2*(count/k) - entry` recovers the bipolar `W x + b` with progressively higher precision.
@@ -67,7 +67,7 @@ MPS (this machine has no CUDA). Training runs on MPS; eval runs identically on C
 
 Training (`train_fp.py`):
 
-```
+```text
 epoch 1/3: test acc = 0.9060
 epoch 2/3: test acc = 0.9575
 epoch 3/3: test acc = 0.9596
@@ -77,7 +77,7 @@ final FP test accuracy (clamped/quantized weights): 0.9596
 Unary evaluation (`eval_unary.py`, 512 test images, T = 256, CPU; the committed
 `results/cycle_accuracy_mlp.csv` is this run):
 
-```
+```text
 FP (clamp-eval) accuracy on 512 test images: 0.8770
 per-cycle accuracy: {1: 0.082, 16: 0.951, 64: 0.965, 256: 0.969}
 final-cycle (256) unary accuracy: 0.9688
@@ -91,14 +91,14 @@ the original UnarySim CSVs. CPU and MPS produce bit-identical curves at a fixed 
 
 ## Note on the kernel used
 
-The pure per-timestep streaming kernel `linear_fsu` (scaled saturating adder) was tried first
+The pure per-timestep streaming kernel `linear` (scaled saturating adder) was tried first
 but is not usable for this MLP. Over a fan-in of 1024 its scaled adder divides the inner product
-by `entry` (~1025), crushing the layer output into a near-zero bipolar range (about +-0.03)
+by `entry` (~1025), compressing the layer output into a near-zero bipolar range (about +-0.03)
 that the downstream ReLU cannot resolve; cascading three such layers collapses the network to
 chance. Its non-scaled mode (`scale=1`) is worse: the saturating accumulator drains by only 1
 per fire while being pushed up by up to ~512 per cycle, so its output rate floors around 0.55
 and can never represent negative values (output stuck in [0.09, 0.51], correlation ~0.05 with
-the reference), independent of accumulator width. `linear_fsu_pc` avoids both problems by
+the reference), independent of accumulator width. `linear_pc` avoids both problems by
 returning the raw per-cycle count (no lossy adder), reconstructing `W x + b` at correlation
 ~0.999 over its full range, which is why the example uses it. This is a property of the kernel
 designs (the scaled adder targets `scale = entry`), not a correctness bug.

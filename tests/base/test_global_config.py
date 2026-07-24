@@ -1,6 +1,6 @@
 import os, torch
 
-from napl.base import global_config
+from napl.sim.base import global_config
 
 
 def test_global_config():

@@ -1,66 +1,72 @@
-import math
-import time
+import pytest
+import torch
+
+from napl.sim.base import global_config
+from napl.sim.operation import shiftreg
+from napl.utils._shared_test import devices, streaming_suite
 
 
-from napl.base import global_config, napl_base, napl_sim_timesteps
-from napl.utils import devices, gen_rand_tensor, sync
-from napl.module import encoder, decoder
-from napl.operation import shiftreg
-from napl.metric import analyze_error
+_DEPTH = 2
+_TIMESTEPS = 256
 
 
-class napl_shiftreg(napl_base):
-    def __init__(self, codec_config, shiftreg_config):
-        super().__init__()
-        # set up encoder, decoder, adder, and accuracy
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
-        self.shiftreg = shiftreg(shiftreg_config)
+def make_operation(polarity, timestep, device):
+    return shiftreg({'depth': _DEPTH})
 
 
-    @napl_sim_timesteps
-    def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
-        i_spike = self.encoder(input)
-        o_spike = self.shiftreg(i_spike)
-        self.decoder(o_spike)
+def make_values(polarity):
+    low = -1 if polarity == 'bipolar' else 0
+    return (
+        torch.linspace(low, 1, 512, dtype=global_config.ntype),
+    )
 
-    
+
+def analytic_reference(values, polarity):
+    return values[0]
+
+
+def known_answer_case(polarity):
+    return (
+        (torch.tensor([1.0]),),
+        torch.tensor([1.0]),
+        2 * _DEPTH / _TIMESTEPS,
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 1.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': _TIMESTEPS,
+}
+
+
 def test_shiftreg():
-    """
-    Test shiftreg with a simple configuration.
-    """
+    streaming_suite(CONFIG)
 
-    codec_config={
-        'polarity': 'bipolar',
-        'timestep': 256,
-        'generator': 'sobol',
-    }
-    shiftreg_config={
-        'depth': 2
-    }
-    
-    # Generate random inputs based on polarity
-    input_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
-    # generate the napl_shiftreg instance
+@pytest.mark.parametrize(
+    ('values', 'expected'),
+    [
+        ([1, 1, 1, 0], [0, 1, 1, 1]),
+        ([0, 0, 1, 1], [0, 1, 0, 0]),
+    ],
+)
+def test_mutable_input_delay(values, expected):
     for device in devices():
-        input = input_cpu.to(device)
-        shiftreg_inst = napl_shiftreg(codec_config, shiftreg_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        shiftreg_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
-
-        analyze_error(shiftreg_inst.decoder.spike_value, input)
-        assert shiftreg_inst.shiftreg.timestep_cur == codec_config['timestep']
-        shiftreg_inst.reset()
-        assert shiftreg_inst.shiftreg.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
-    
-    print('Test passed.')
+        operation = shiftreg({'depth': _DEPTH}).to(device)
+        input = torch.zeros(1, dtype=global_config.stype, device=device)
+        outputs = []
+        for value in values:
+            outputs.append(operation(input.fill_(value)).item())
+        assert outputs == expected
 
 
 if __name__ == '__main__':
     test_shiftreg()
+    test_mutable_input_delay([1, 1, 1, 0], [0, 1, 1, 1])
+    test_mutable_input_delay([0, 0, 1, 1], [0, 1, 0, 0])
+    print('Test passed.')

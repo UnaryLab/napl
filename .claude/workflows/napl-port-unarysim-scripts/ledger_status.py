@@ -12,7 +12,7 @@ Output (stdout) is a single JSON object:
       "rtl_verified": ["mul_and", ...],              # napl-gen-rtl-report.md  rows Status=verified
       "rtl_skipped":  ["wta", ...],                  # napl-gen-rtl-report.md  rows Status=skipped
       "rtl_failed":   [...],                          # napl-gen-rtl-report.md  rows Status=failed
-      "improved":     {"src/napl/operation/mul.py": "<git-hash>", ...}  # napl-opt-sim-report.md Source->Hash
+      "improved":     {"src/napl/sim/operation/mul_and.py": "<git-hash>", ...}  # napl-opt-sim-report.md Source->Hash
     }
 
 Missing report files yield empty collections (a fresh project has none).

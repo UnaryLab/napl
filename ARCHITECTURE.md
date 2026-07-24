@@ -10,7 +10,7 @@ NAPL is UnaryLab's framework for programmable spike processing (PSP). It uses on
 number or tensor
       |
       v
-   encoder  ->  one-bit spike stream  ->  operation(s) or FSU layer(s)
+   encoder  ->  one-bit spike stream  ->  operation(s) or streaming layer(s)
                                                      |
                                                      v
                                              decoder or metric
@@ -23,7 +23,7 @@ Rate and temporal encodings differ in how the encoder orders spikes. Longer stre
 
 NAPL also provides single-shot binary-domain kernels. These process a whole tensor in one call and use quantization or hybrid unary-binary arithmetic rather than an explicit per-timestep stream. Both execution paths use PyTorch tensors and can run on supported CPU and GPU devices.
 
-The Python model is the source of functional behavior. A subset of spike operations has a Verilog-2001 counterpart under `src/napl/implementation/`, verified against Python-generated golden vectors.
+The Python model is the source of functional behavior. A subset of spike operations has a Verilog-2001 counterpart under `src/napl/hw/`, verified against Python-generated golden vectors.
 
 ## Execution models
 
@@ -63,26 +63,28 @@ Single-shot execution is used by binary linear and convolution layers, binary re
 
 ### Kernel families
 
-| Family | Representation | Execution | Main location |
+| Family | Representation | Execution | Main classes |
 | --- | --- | --- | --- |
-| FSU | One-bit spike streams | One timestep per call | `module/*_fsu*`, `operation/` |
-| HUB | Binary tensors with hybrid unary-binary arithmetic | One tensor per call | `module/*_hub`, HUB activations |
-| FXP | Quantized fixed-point tensors | One tensor per call | `module/*_fxp`, `round_fxp` |
-| TLUT | Table-based quantized tensors | One tensor per call | `module/*_tlut` |
-| Hard neural cells | Binary tensors with hard nonlinearities | One tensor per call | `module/*_hard*` |
+| Streaming | One-bit spike streams | One timestep per call | unsuffixed `sim/module/` classes (`linear`, `conv`, `mgu`, ...), `sim/operation/` |
+| HUB | Binary tensors with hybrid unary-binary arithmetic | One tensor per call | `linear_hub`, `conv_hub`, `mgu_hub`; HUB activations in `sim/operation/` |
+| FXP | Quantized fixed-point tensors | One tensor per call | `linear_fxp`, `conv_fxp`, `mgu_hardfxp`, `round_fxp` |
+| TLUT | Table-based quantized tensors | One tensor per call | `linear_tlut`, `conv_tlut` |
+| Hard neural cells | Binary tensors with hard nonlinearities | One tensor per call | `mgu_hard*`, `gru_hard*` |
 
 ## Package map
 
+The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/hw/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_and, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_and` also work.
+
 | Path | Responsibility | Main components |
 | --- | --- | --- |
-| `src/napl/base/` | Shared module lifecycle and global contracts | `napl_base`, timestep decorators, `hw_params`, `pvt_corner`, `timing`, global dtype config |
-| `src/napl/module/` | Stream endpoints and neural layers | encoder, decoder, linear, convolution, recurrent, pooling, FSU, HUB, FXP, TLUT, Gaines, and uGEMM variants |
-| `src/napl/operation/` | Reusable spike and binary primitives | arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
-| `src/napl/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder`, `analyze_error` |
-| `src/napl/algorithm/` | Compositions of modules and operations | FFT butterfly |
-| `src/napl/implementation/` | Synthesizable hardware counterparts | per-operation RTL, testbenches, golden-vector generators, shared Makefile |
+| `src/napl/sim/base/` | Shared module lifecycle and global contracts | `napl_base`, timestep decorators, `hw_params`, `pvt_corner`, `timing`, global dtype config |
+| `src/napl/sim/module/` | Stream endpoints and neural layers | encoder, decoder; linear, convolution, recurrent, and pooling layers in streaming, HUB, FXP, TLUT, Gaines, and uGEMM variants |
+| `src/napl/sim/operation/` | Reusable spike and binary primitives | arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
+| `src/napl/sim/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder` |
+| `src/napl/sim/algorithm/` | Compositions of modules and operations | FFT butterfly |
+| `src/napl/hw/` | Synthesizable hardware counterparts | per-operation RTL, testbenches, golden-vector generators, shared Makefile |
 | `src/napl/utils/` | Shared validation and tensor helpers | YAML I/O, config checks, device discovery, random tensors, power-of-two shift shims |
-| `src/napl/structure/` | Biological-neuron abstraction boundary | axon, soma, dendrite, synapse, receptor, column placeholders |
+| `src/napl/sim/structure/` | Biological-neuron abstraction boundary | axon, soma, dendrite, synapse, receptor, column placeholders |
 
 `src/napl/main.py` defines the `napl` command-line entry point. The current command only prints a banner.
 
@@ -90,7 +92,7 @@ Single-shot execution is used by binary linear and convolution layers, binary re
 
 `module/encoder.py` converts values into spikes by comparing their encoded probability against a generated number sequence. `module/decoder.py` counts spikes and exposes a progressive decoded value. The remaining module files build tensor-shaped layers and recurrent cells from PyTorch operations and NAPL primitives.
 
-FSU layers keep computation in the spike domain. Partial-count and uGEMM variants change the internal accumulation method while preserving per-timestep execution. Gaines linears select combinations of Gaines multiplication and addition. HUB, FXP, TLUT, and hard variants operate in the single-shot domain.
+Streaming layers keep computation in the spike domain. Partial-count and uGEMM variants change the internal accumulation method while preserving per-timestep execution. Gaines linears select combinations of Gaines multiplication and addition. HUB, FXP, TLUT, and hard variants operate in the single-shot domain.
 
 ### Operation layer
 
@@ -105,7 +107,7 @@ Each concrete operation owns its Python state and reset behavior. Operations wit
 
 ### Metric layer
 
-Metrics are streaming observers. Each call consumes the current spike state, while lazy properties expose the accumulated result after the observer becomes valid. `accuracy` tracks the progressive decoded value and compares it with a reference. Correlation and stability classes track stream properties. `analyze_error` computes one-shot error statistics from a decoded result.
+Metrics are streaming observers. Each call consumes the current spike state, while lazy properties expose the accumulated result after the observer becomes valid. `accuracy` tracks the progressive decoded value and its `analyze()` method compares it with a reference. Correlation and stability classes track stream properties.
 
 ## Core contracts
 
@@ -118,7 +120,7 @@ NAPL classes accept one `config` dictionary. `napl_base.__init__(config, key_lis
 - `generator`: `sobol`, `lfsr`, `sys`, `rc`, `tc`, `rate`, or `temporal`;
 - `dim`: Sobol dimension for a generated stream.
 
-`src/napl/base/global_config.yaml` is the global dtype source. `spike_type` becomes `self.stype`, and `non_spike_type` becomes `self.ntype`. The current defaults are `torch.int8` for spikes and `torch.float32` for non-spike values.
+`src/napl/sim/base/global_config.yaml` is the global dtype source. `spike_type` becomes `self.stype`, and `non_spike_type` becomes `self.ntype`. The current defaults are `torch.int8` for spikes and `torch.float32` for non-spike values.
 
 ### Polarity and encoding
 
@@ -128,11 +130,11 @@ Unipolar streams represent values in `[0, 1]`. Bipolar streams represent values 
 
 Independent operands must use independent number sequences. With Sobol encoding, assign distinct `dim` values to operands that must be decorrelated. Reusing a Sobol dimension correlates streams and can bias the result even when each input stream has the correct marginal rate.
 
-Padding is also part of this contract. Bipolar zero-padding in `conv_fsu` uses a separate decorrelated rate-0.5 stream because bipolar zero maps to probability 0.5.
+Padding is also part of this contract. Bipolar zero-padding in `conv` uses a separate decorrelated rate-0.5 stream because bipolar zero maps to probability 0.5.
 
 ### State and reset
 
-Streaming state belongs to the module that updates it. A subclass `reset()` must restore `timestep_cur` and every persistent buffer to the same state used at construction. Composite modules reset their child modules through `napl_base.reset()`. Python reset state is also the source of truth for RTL reset behavior.
+Streaming state belongs to the module that updates it. `napl_base.reset()` resets `timestep_cur` and registered child modules before running the subclass `_reset()` hook. A subclass hook therefore restores only its local persistent state to the state used at construction. Python reset state is also the source of truth for RTL reset behavior.
 
 ### Hardware timing
 
@@ -143,11 +145,11 @@ Streaming state belongs to the module that updates it. A subclass `reset()` must
 
 `pp_delay` must match the verified RTL pipeline. It also controls alignment when paths reconverge. Purely combinational operations use `pp_delay = 0` and place their through-delay in `cp_delay`. Registered operations separate internal, input-to-register, and register-to-output timing as defined by `timing`.
 
-`self.hw` supersedes the legacy scalar `self.delay`: every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. `self.delay` remains only on `tanh_hub`, `sigmoid_hub`, and `round_fxp`, single-shot classes with no gate-level RTL counterpart.
+Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Only `tanh_hub`, `sigmoid_hub`, and `round_fxp` carry a scalar `self.delay` instead; they are single-shot classes with no gate-level RTL counterpart.
 
 ## Hardware boundary
 
-`src/napl/implementation/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
+`src/napl/hw/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
 
 Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_RTL.md](RULE_RTL.md) for the mandatory design and verification contract and the folder layout and commands.
 
@@ -159,7 +161,7 @@ Higher-level linear, convolution, recurrent, metric, and algorithm classes do no
 | CLI | `napl` is a banner-only placeholder. |
 | FFT | `butterfly` is implemented; `fft` is a placeholder. |
 | Spike components | `wta` and `inhibit` are placeholders. |
-| Biological structure | Files are placeholders, and `napl.structure` currently imports a missing `minicolumn`. |
-| RTL coverage | Only the concrete operation folders under `src/napl/implementation/` have hardware counterparts. |
+| Biological structure | `napl.sim.structure` files are empty placeholders. |
+| RTL coverage | Only the concrete operation folders under `src/napl/hw/` have hardware counterparts. |
 
 Treat these as package boundaries that are not yet implemented, not as completed interfaces.
