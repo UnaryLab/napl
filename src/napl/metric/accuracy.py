@@ -1,6 +1,7 @@
 import torch
 
 from napl.base import napl_base
+from napl.metric._shared import analyze
 from napl.utils import *
 from loguru import logger
 
@@ -75,50 +76,29 @@ class accuracy(napl_base):
         # every timestep; readers access .spike_value on demand instead.
 
 
-    def analyze(self, reference: torch.Tensor, verbose=False):
+    def analyze(
+        self,
+        reference: torch.Tensor,
+        verbose=False,
+        *,
+        scale_ref=1,
+    ):
         # return the error and index of max abs error
         assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
         # one property access: spike_value computes from spike_count on each read
         spike_value = self.spike_value
-        self.spike_error.data = spike_value.sub(reference)
-        # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.
-        spike_error_abs = self.spike_error.abs()
-        # aminmax: one fused pass for both extremes instead of separate min/max scans.
-        spike_error_abs_amin, spike_error_abs_amax = torch.aminmax(spike_error_abs)
-        self.spike_error_abs_max.data = spike_error_abs_amax
-        self.spike_error_abs_min.data = spike_error_abs_amin
-        self.spike_error_avg.data = self.spike_error.mean()
-        self.spike_error_mae.data = spike_error_abs.mean()
-        self.spike_error_rmse.data = torch.sqrt(spike_error_abs.pow(2).mean())
+        self.spike_error.data = spike_value.sub(reference.div(scale_ref))
+        result = analyze(
+            self.spike_error,
+            verbose=verbose,
+            report='Accuracy',
+            value='error',
+            timestep=self.timestep_cur,
+        )
+        self.spike_error_abs_max.data = result.absolute_max
+        self.spike_error_abs_min.data = result.absolute_min
+        self.spike_error_avg.data = result.mean
+        self.spike_error_mae.data = result.mean_absolute
+        self.spike_error_rmse.data = result.root_mean_square
 
-        if verbose:
-            logger.info(f'Accuracy report for accuracy instance <{self.name}> over <{self.timestep_cur}> timesteps: ')
-            logger.info(f'    Max absolute error:     <{self.spike_error_abs_max.item()}>')
-            logger.info(f'    Min absolute error:     <{self.spike_error_abs_min.item()}>')
-            logger.info(f'    Mean error:             <{self.spike_error_avg.item()}>')
-            logger.info(f'    Mean absolute error:    <{self.spike_error_mae.item()}>')
-            logger.info(f'    Root mean square error: <{self.spike_error_rmse.item()}>')
-            logger.info(f'')
-        return self.spike_error, torch.argmax(spike_error_abs)
-
-
-def analyze_error(spike_value: torch.Tensor, reference: torch.Tensor):
-    # return the error and index of max abs error
-    spike_error = spike_value.sub(reference)
-    # abs() is reused 4x below; compute once to avoid redundant full-tensor passes.
-    spike_error_abs = spike_error.abs()
-    # aminmax: one fused pass for both extremes instead of separate min/max scans.
-    spike_error_abs_min, spike_error_abs_max = torch.aminmax(spike_error_abs)
-    spike_error_avg = spike_error.mean()
-    spike_error_mae = spike_error_abs.mean()
-    spike_error_rmse = torch.sqrt(spike_error_abs.pow(2).mean())
-
-    logger.info(f'Accuracy report: ')
-    logger.info(f'    Max absolute error:     <{spike_error_abs_max.item()}>')
-    logger.info(f'    Min absolute error:     <{spike_error_abs_min.item()}>')
-    logger.info(f'    Mean error:             <{spike_error_avg.item()}>')
-    logger.info(f'    Mean absolute error:    <{spike_error_mae.item()}>')
-    logger.info(f'    Root mean square error: <{spike_error_rmse.item()}>')
-    logger.info(f'')
-    return spike_error, torch.argmax(spike_error_abs)
-
+        return self.spike_error, result.max_absolute_index
