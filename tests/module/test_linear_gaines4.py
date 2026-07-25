@@ -6,8 +6,6 @@ from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, sync
 from napl.sim.module.encoder import encoder
 from napl.sim.module.decoder import decoder
-# import directly from the module (not the package): the class is not wired into
-# module/__init__.py yet.
 from napl.sim.module.linear_gaines4 import linear_gaines4
 from napl.sim.module.linear import linear
 

@@ -67,7 +67,7 @@ class stability(napl_base):
 
     def analyze(self, verbose=False):
         # return the stability and index of max abs stability
-        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: stability computes from cycle_to_stable on each read
         stability = self.stability
         result = analyze(

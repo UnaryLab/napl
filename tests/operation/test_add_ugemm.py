@@ -1,10 +1,11 @@
-import torch, math, time
+import torch
+import math
+import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, sync
 from napl.sim.module import encoder, decoder
-# import directly from the module: not wired into operation/__init__.py yet
 from napl.sim.operation.add_ugemm import add_ugemm
 from napl.sim.metric import accuracy
 

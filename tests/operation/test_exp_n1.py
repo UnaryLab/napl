@@ -1,4 +1,6 @@
-import torch, math, time
+import torch
+import math
+import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor

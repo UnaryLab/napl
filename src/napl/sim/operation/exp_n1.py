@@ -1,4 +1,5 @@
-import torch, math
+import torch
+import math
 
 from napl.sim.base import napl_base, hw_params
 from napl.sim.module.encoder import gen_num_seq

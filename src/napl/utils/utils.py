@@ -1,4 +1,9 @@
-import os, sys, yaml, json, torch, math
+import os
+import sys
+import yaml
+import json
+import torch
+import math
 import numpy as np
 import importlib.util
 
@@ -89,14 +94,14 @@ def strip_list(input_list: list) -> list:
     """
     strip leading and trailing spaces for each list item
     """
-    l = []
+    stripped = []
 
     for e in input_list:
         e = e.strip()
         if e != '' and e != ' ':
-            l.append(e)
+            stripped.append(e)
 
-    return l
+    return stripped
 
 
 def check_type(input, type):

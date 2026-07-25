@@ -1,4 +1,5 @@
-import torch, math
+import torch
+import math
 
 from loguru import logger
 from napl.sim.base import napl_base

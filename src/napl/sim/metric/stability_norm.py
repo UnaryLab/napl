@@ -140,7 +140,7 @@ class stability_norm(napl_base):
 
     def analyze(self, verbose=False):
         # return the normalized stability and index of max abs normalized stability
-        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: stability_norm computes from the accumulated state on each read
         stability_norm = self.stability_norm
         result = analyze(

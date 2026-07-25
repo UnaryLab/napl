@@ -6,7 +6,6 @@ from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
-# import directly from the module: not yet wired into module/__init__.py
 from napl.sim.module.linear_ugemm import linear_ugemm
 
 

@@ -47,7 +47,7 @@ class stability_flux(napl_base):
 
     def analyze(self, verbose=False):
         # return the flux and index of max abs flux
-        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: flux computes from the two inner monitors on each read
         flux = self.flux
         result = analyze(

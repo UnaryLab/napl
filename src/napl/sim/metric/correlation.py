@@ -80,7 +80,7 @@ class correlation(napl_base):
 
     def analyze(self, verbose=False):
         # return the correlation and index of max abs correlation
-        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: correlation computes from the accumulated counts on each read
         correlation = self.correlation
         result = analyze(

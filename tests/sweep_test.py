@@ -11,7 +11,7 @@ log_file = root_dir + '/sweep_test.log'
 def sweep_test():
     failed = []
     with open(log_file, 'w') as f:
-        for dirpath, dirnames, filenames in os.walk(root_dir):
+        for dirpath, _dirnames, filenames in os.walk(root_dir):
             for filename in filenames:
                 if filename.startswith('test_') and filename.endswith('.py'):
                     full_path = os.path.abspath(os.path.join(dirpath, filename))
@@ -29,4 +29,3 @@ if __name__ == '__main__':
         for path in failures:
             print(f'  {path}')
     sys.exit(1 if failures else 0)
-

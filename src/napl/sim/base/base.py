@@ -128,7 +128,7 @@ class napl_base(torch.nn.Module):
 
         # check config
         if polarity_required is True:
-            assert 'polarity' in config, logger.error(f'Missing key <polarity> in the input configuration.')
+            assert 'polarity' in config, logger.error('Missing key <polarity> in the input configuration.')
         check_config(config, key_list)
         self.polarity = check_polarity(config)
         self.name = check_name(config)
@@ -189,7 +189,7 @@ def napl_sim_timesteps(timestep_func):
     @wraps(timestep_func)
     def timesteps_wrapper(self, *args, **kwargs):
         assert 'timesteps' in kwargs, \
-            logger.error(f'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
+            logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
         verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
@@ -210,7 +210,7 @@ def napl_sim_timesteps_func(timestep_func):
     @wraps(timestep_func)
     def timesteps_wrapper(*args, **kwargs):
         assert 'timesteps' in kwargs, \
-            logger.error(f'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
+            logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
         timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
         verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs

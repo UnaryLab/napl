@@ -43,5 +43,5 @@ def analyze(
         logger.info(f'    Mean {value}:             <{result.mean.item()}>')
         logger.info(f'    Mean absolute {value}:    <{result.mean_absolute.item()}>')
         logger.info(f'    Root mean square {value}: <{result.root_mean_square.item()}>')
-        logger.info(f'')
+        logger.info('')
     return result

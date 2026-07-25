@@ -32,7 +32,7 @@ def test_utils():
 
         inp = torch.randn(64, device=device) * 10
         wgt = torch.randn(32, 64, device=device) * 0.1
-        ri, rw, ro = rshift_offset(inp, wgt, 7, 7, 'round', 1, 1)
+        ri, _rw, _ro = rshift_offset(inp, wgt, 7, 7, 'round', 1, 1)
         recon = pow2_lshift(pow2_rshift(inp, ri), ri)
         assert torch.allclose(recon, inp, atol=1e-4)
 

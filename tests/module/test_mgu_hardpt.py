@@ -3,7 +3,6 @@ import time
 import torch
 import torch.nn.functional as F
 
-# import directly from the module: not yet wired into napl.sim.module.__init__
 from napl.utils._shared_test import devices, sync
 from napl.sim.module.mgu_hardpt import mgu_hardpt
 

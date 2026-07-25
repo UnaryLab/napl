@@ -3,7 +3,6 @@ import time
 import torch
 import torch.nn.functional as F
 
-# import directly from the module: not yet wired into napl.sim.module.__init__
 from napl.utils._shared_test import devices, sync
 from napl.sim.module.gru_hardnuapt import gru_hardnuapt
 
@@ -58,7 +57,8 @@ def test_gru_hardnuapt():
         xb = torch.rand(256, isz, device=device) * 2 - 1
         hb = torch.rand(256, hsz, device=device) * 2 - 1
         for _ in range(3):  # warmup
-            cell(xb, hb); gru(xb, hb)
+            cell(xb, hb)
+            gru(xb, hb)
         sync(device)
         t0 = time.perf_counter()
         for _ in range(50):

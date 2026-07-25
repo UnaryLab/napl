@@ -77,7 +77,7 @@ def main():
             opt.step()
             losses.append(loss.item())
         print(f'synthetic train smoke (random labels, 3 steps) loss: '
-              f'{[round(l, 4) for l in losses]}  [NOT a real result]')
+              f'{[round(loss, 4) for loss in losses]}  [NOT a real result]')
 
     print('\nAll devices ran. (Random input/labels -> no classification meaning.)')
 

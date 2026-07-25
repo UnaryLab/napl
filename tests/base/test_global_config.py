@@ -1,4 +1,5 @@
-import os, torch
+import os
+import torch
 
 from napl.sim.base import global_config
 

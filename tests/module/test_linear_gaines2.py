@@ -113,16 +113,20 @@ def test_linear_gaines2_perf():
         spikes = [enc(input_x) for _ in range(timestep)]
         enc.reset()
 
-        sync(device); t0 = time.time()
+        sync(device)
+        t0 = time.time()
         for spike in spikes:
             gaines(spike)
-        sync(device); t_gaines = time.time() - t0
+        sync(device)
+        t_gaines = time.time() - t0
         gaines.reset()
 
-        sync(device); t0 = time.time()
+        sync(device)
+        t0 = time.time()
         for spike in spikes:
             lin(spike)
-        sync(device); t_lin = time.time() - t0
+        sync(device)
+        t_lin = time.time() - t0
         lin.reset()
 
         print(f'[{device}] linear_gaines2 {t_gaines*1e3:.2f} ms vs linear {t_lin*1e3:.2f} ms '

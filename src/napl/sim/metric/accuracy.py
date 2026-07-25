@@ -83,7 +83,7 @@ class accuracy(napl_base):
         scale_ref=1,
     ):
         # return the error and index of max abs error
-        assert self.valid, logger.error(f'Metric is not valid. Please call forward() before analyze().')
+        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: spike_value computes from spike_count on each read
         spike_value = self.spike_value
         self.spike_error.data = spike_value.sub(reference.div(scale_ref))

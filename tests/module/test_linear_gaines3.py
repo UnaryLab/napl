@@ -129,14 +129,16 @@ def test_linear_gaines3():
         lin = linear(weight, None, {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2, 'width': 12}).to(device)
         times = {}
         for name, mod in [('gaines3', gl), ('lin', lin)]:
-            enc.reset(); mod.reset()
+            enc.reset()
+            mod.reset()
             sync(device)
             start = time.time()
             for _ in range(timestep):
                 mod(enc(input_x))
             sync(device)
             times[name] = time.time() - start
-            enc.reset(); mod.reset()
+            enc.reset()
+            mod.reset()
         print(f'{device}: gaines3 {times["gaines3"]:.4f}s vs lin {times["lin"]:.4f}s '
               f'(lin/gaines3 ratio {times["lin"] / times["gaines3"]:.2f}x)')
 
