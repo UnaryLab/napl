@@ -32,7 +32,7 @@ class sync_skewed_int(napl_base):
         # if input 1 is larger than input 2, spikes of input 1 aggregate in the counter and are
         # released as integer digits (possibly > 1) whenever input 2 spikes, so output 1 is an
         # integer digit stream rather than a {0, 1} spike stream.
-        input_2_eq_1 = torch.eq(input_2, 1).type(self.ntype)
+        input_2_eq_1 = torch.eq(input_2, 1)
         # accumulate the incoming input 1 spike; type promotion casts input_1 to ntype inside
         # the add, and broadcasts cnt up to the input shape on the first call
         temp_sum = self.cnt + input_1

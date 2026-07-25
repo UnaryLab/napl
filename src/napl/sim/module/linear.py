@@ -199,13 +199,15 @@ class _linear_fxp_fn(torch.autograd.Function):
     def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, max_abs_i, max_abs_w):
         ctx.save_for_backward(input, weight, bias)
         bot_i, top_i = 1 - max_abs_i, max_abs_i - 1
-        i_round = pow2_rshift(input, rshift_i).round().unsqueeze(1).clamp(bot_i, top_i)   # (batch, 1, in)
+        i_round = pow2_rshift(input, rshift_i)
+        i_round.round_().clamp_(bot_i, top_i)
         bot_w, top_w = 1 - max_abs_w, max_abs_w - 1
-        w_round = pow2_rshift(weight, rshift_w).round().unsqueeze(0).clamp(bot_w, top_w)  # (1, out, in)
-        output = torch.matmul(i_round, w_round.transpose(1, 2))                           # (batch, 1, out)
-        output = pow2_rshift(output, rshift_o).squeeze(1)
+        w_round = pow2_rshift(weight, rshift_w)
+        w_round.round_().clamp_(bot_w, top_w)
+        output = torch.matmul(i_round, w_round.t())
+        output = pow2_rshift(output, rshift_o)
         if bias is not None:
-            output = output + bias.unsqueeze(0).expand_as(output)
+            output = output + bias
         return output
 
     @staticmethod

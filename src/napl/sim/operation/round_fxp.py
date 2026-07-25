@@ -33,7 +33,9 @@ def round_ste(input, fracwidth=0, min_val=None, max_val=None):
         min_val = float('-inf')
     if max_val is None:
         max_val = float('inf')
-    return _round_ste_fn.apply(input.to(torch.float32), fracwidth, min_val, max_val).to(input.dtype)
+    input_float = input if input.dtype == torch.float32 else input.to(torch.float32)
+    output = _round_ste_fn.apply(input_float, fracwidth, min_val, max_val)
+    return output if input.dtype == torch.float32 else output.to(input.dtype)
 
 class round_fxp(napl_base):
     """

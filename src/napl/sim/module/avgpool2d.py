@@ -30,7 +30,8 @@ class avgpool2d(napl_base):
 
     def forward(self, input_spike):
         # input_spike: (batch, channel, H, W) spike tensor for the current timestep
-        delta = self.avgpool2d(input_spike.type(self.ntype))
+        pooled_input = input_spike if input_spike.dtype == self.ntype else input_spike.type(self.ntype)
+        delta = self.avgpool2d(pooled_input)
         if self.accumulator.shape == delta.shape:
             self.accumulator.add_(delta)
         else:

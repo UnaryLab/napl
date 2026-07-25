@@ -34,6 +34,10 @@ def test_decoder():
         assert isinstance(spike_encoder, encoder)
         assert spike_encoder.timestep == config['timestep']
         assert spike_encoder.generator == config['generator']
+        assert torch.equal(
+            spike_decoder.spike_value,
+            torch.zeros_like(spike_decoder.spike_count),
+        )
         input = input_cpu.to(device)
 
         sync(device)
@@ -41,10 +45,11 @@ def test_decoder():
         for _ in range(config['timestep']):
             spike = spike_encoder(input)
             spike_accuracy(spike)
-            spike_decoder(spike)
+            decoder_result = spike_decoder(spike)
         sync(device)
         elapsed = time.perf_counter() - start
 
+        assert decoder_result is None
         error, _ = spike_accuracy.analyze(input, verbose=True)
         spike_accuracy_value = spike_accuracy.spike_value
         spike_decoder_value = spike_decoder.spike_value
@@ -58,6 +63,10 @@ def test_decoder():
         assert spike_encoder.timestep_cur == 0
         assert spike_decoder.timestep_cur == 0
         assert not spike_accuracy.valid
+        assert torch.equal(
+            spike_decoder.spike_value,
+            torch.zeros_like(spike_decoder.spike_count),
+        )
     
     print('Test passed.')
 

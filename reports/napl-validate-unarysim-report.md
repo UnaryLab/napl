@@ -55,3 +55,134 @@ with `torch.mps.synchronize()`); they are per-workload, not comparable across ro
 | 2026-06-13 | operation.tanh_hard | FSUHardtanh | yes (diff 0, CPU and MPS) | bit-exact vs FSUHardtanh; RMSE 0.0000 vs analytic Hardtanh, SC bound 0.0625 | 4.8 ms | 11.8 ms | bipolar streaming, Identity pass-through; shape=(10000,) T=256; known-answer in-range inputs |
 | 2026-06-13 | operation.tanh_hub | HUBHardtanh | yes (diff 0, CPU and MPS) | bit-exact vs HUBHardtanh (Hardtanh[-1,1]) including clip corners | 10.0 ms / 1000 calls (10007-elem) | 12.2 ms / 1000 calls (10007-elem) | single-shot binary-domain; inputs over [-3,3] exercising clip; corners {-2,-1,-0.5,0,0.3,1,2} |
 | 2026-06-13 | operation.uni2bi | Uni2Bi | yes (diff 0) | bit-exact, 0 mismatched spikes over T=256 x N=10000, max\|diff\|=0.0, CPU+MPS | 4.92 ms | 20.18 ms | unipolar->bipolar stream reshaper; N=10000 T=256 width=3; deterministic (no RNG); napl accumulator never hits clamp bounds (0 clamp hits) so differing clamp constants vs UnarySim depth=8 are benign |
+
+## 2026-07-24 comprehensive current-class CPU comparison
+
+Fresh fixed-seed comparison against the current local UnarySim clone at
+`/Users/diwu/Projects/UnarySim`. The run covers every public implementation class under
+`sim/operation`, `sim/module`, and `sim/metric`: 40 operations, 26 modules, and 6 metrics.
+The empty `operation.inhibit` and `module.wta` placeholders have no class to run.
+
+- Correctness: 41 bit-exact, 18 within the stated stochastic bound, 4 differences, and
+  9 current upstream references unavailable.
+- Performance: NAPL was faster in 50 of 63 timed pairs and slower in 13. Speedup is
+  `UnarySim time / NAPL time`, so values below 1 mean NAPL is slower.
+- Workloads: streaming operations use 64 cycles and 4,096 elements; metrics use 64 cycles
+  and 256 elements; streaming layers use 64 cycles on matched small tensors. Single-shot
+  linear/RNN timings cover 200 calls and single-shot conv timings cover 20 calls. Each time
+  is the median of five fresh-module runs on CPU.
+- Inputs, weights, seeds, and spike streams are identical within each pair. The current
+  UnarySim fixed-point/HUB/round code requires its historical float-shift behavior; the
+  comparison supplies a temporary power-of-two shift compatibility shim without changing
+  either repository.
+
+| Class | Correctness | Max abs diff | NAPL CPU ms | UnarySim CPU ms | Speedup |
+|-------|-------------|--------------|-------------|-----------------|---------|
+| metric.accuracy | bit-exact | 0 | 0.172 | 0.171 | 0.99x |
+| metric.correlation | bit-exact | 0 | 0.506 | 0.732 | 1.45x |
+| metric.stability | bit-exact | 0 | 0.723 | 0.836 | 1.16x |
+| metric.stability_builder | bit-exact | 0 | 0.577 | 1.355 | 2.35x |
+| metric.stability_flux | bit-exact | 0 | 1.541 | 1.726 | 1.12x |
+| metric.stability_norm | bit-exact | 0 | 0.932 | 1.163 | 1.25x |
+| module.avgpool2d | bit-exact | 0 | 1.974 | 1.836 | 0.93x |
+| module.conv | within bound (0.25) | 0.046875 | 7.287 | 9.825 | 1.35x |
+| module.conv_fxp | DIFF | 0.78717 | 3.150 | 3.032 | 0.96x |
+| module.conv_hub | DIFF | 0.0507812 | 3.926 | 4.081 | 1.04x |
+| module.conv_pc | within bound (1.125) | 0.5 | 6.759 | 8.930 | 1.32x |
+| module.conv_tlut | upstream unavailable | - | - | - | - |
+| module.conv_ugemm | bit-exact | 0 | 2.480 | 9.192 | 3.71x |
+| module.decoder | bit-exact | 0 | 0.370 | 0.169 | 0.46x |
+| module.encoder | bit-exact | 0 | 0.189 | 0.319 | 1.69x |
+| module.gru_hardnuapt | bit-exact | 0 | 3.809 | 5.015 | 1.32x |
+| module.linear | within bound (0.25) | 0.046875 | 1.336 | 2.600 | 1.95x |
+| module.linear_fxp | bit-exact | 0 | 6.208 | 4.171 | 0.67x |
+| module.linear_gaines1 | within bound (0.25) | 0.0625 | 0.951 | 1.419 | 1.49x |
+| module.linear_gaines2 | bit-exact | 0 | 0.798 | 1.220 | 1.53x |
+| module.linear_gaines3 | within bound (0.25) | 0.109375 | 1.266 | 1.798 | 1.42x |
+| module.linear_gaines4 | within bound (0.25) | 0.09375 | 0.696 | 1.547 | 2.22x |
+| module.linear_hub | DIFF | 0.09375 | 8.117 | 9.492 | 1.17x |
+| module.linear_pc | within bound (0.5) | 0.125 | 0.817 | 1.792 | 2.19x |
+| module.linear_tlut | upstream unavailable | - | - | - | - |
+| module.linear_ugemm | bit-exact | 0 | 1.811 | 2.126 | 1.17x |
+| module.mgu | within bound (0.5) | 0.25 | 6.400 | 11.528 | 1.80x |
+| module.mgu_hard | bit-exact | 0 | 3.036 | 6.593 | 2.17x |
+| module.mgu_hardfxp | bit-exact | 0 | 20.964 | 31.605 | 1.51x |
+| module.mgu_hardnua | bit-exact | 0 | 2.241 | 4.441 | 1.98x |
+| module.mgu_hardpt | bit-exact | 0 | 3.441 | 9.734 | 2.83x |
+| module.mgu_hub | within bound (0.5) | 0.375 | 7.363 | 13.030 | 1.77x |
+| operation.add_any | within bound (0.125) | 0.015625 | 2.575 | 2.482 | 0.96x |
+| operation.add_gaines | bit-exact | 0 | 0.171 | 0.419 | 2.45x |
+| operation.add_ugemm | bit-exact | 0 | 2.246 | 2.423 | 1.08x |
+| operation.bi2uni | DIFF | 0.140625 | 0.567 | 0.550 | 0.97x |
+| operation.dff | bit-exact | 0 | 0.223 | 0.480 | 2.15x |
+| operation.div_cordiv | within bound (0.375) | 0.109375 | 0.949 | 3.893 | 4.10x |
+| operation.div_gaines | bit-exact | 0 | 0.810 | 2.226 | 2.75x |
+| operation.div_iscb | within bound (0.5) | 0.203125 | 5.210 | 9.787 | 1.88x |
+| operation.exp_n1 | bit-exact | 0 | 0.475 | 1.958 | 4.12x |
+| operation.exp_ng | bit-exact | 0 | 0.498 | 0.952 | 1.91x |
+| operation.gt_rc | upstream unavailable | - | - | - | - |
+| operation.jkff | bit-exact | 0 | 0.551 | 1.079 | 1.96x |
+| operation.lt_rc | upstream unavailable | - | - | - | - |
+| operation.max_rc | upstream unavailable | - | - | - | - |
+| operation.max_tc | upstream unavailable | - | - | - | - |
+| operation.min_rc | upstream unavailable | - | - | - | - |
+| operation.min_tc | upstream unavailable | - | - | - | - |
+| operation.mul_and | bit-exact | 0 | 0.218 | 0.224 | 1.03x |
+| operation.mul_csg | within bound (0.25) | 0.015625 | 3.858 | 4.469 | 1.16x |
+| operation.mul_gaines | bit-exact | 0 | 0.218 | 0.226 | 1.03x |
+| operation.relu_cnt | bit-exact | 0 | 0.541 | 0.692 | 1.28x |
+| operation.relu_hub | bit-exact | 0 | 0.297 | 0.274 | 0.92x |
+| operation.relu_sat | within bound (0.25) | 0.09375 | 1.339 | 0.686 | 0.51x |
+| operation.round_fxp | bit-exact | 0 | 6.177 | 5.419 | 0.88x |
+| operation.shiftreg | bit-exact | 0 | 0.137 | 0.558 | 4.08x |
+| operation.sigmoid_hard | within bound (0.125) | 0.015625 | 0.692 | 0.899 | 1.30x |
+| operation.sigmoid_hub | bit-exact | 0 | 0.541 | 1.127 | 2.08x |
+| operation.signabs | bit-exact | 0 | 0.562 | 0.741 | 1.32x |
+| operation.sqrt_emit | within bound (0.375) | 0.125 | 1.805 | 2.379 | 1.32x |
+| operation.sqrt_gaines | bit-exact | 0 | 0.740 | 1.670 | 2.26x |
+| operation.sqrt_traceiscb | within bound (0.375) | 0.1875 | 1.942 | 5.039 | 2.59x |
+| operation.sqrt_tracejkff | within bound (0.375) | 0.171875 | 1.455 | 2.095 | 1.44x |
+| operation.square_dff | upstream unavailable | - | - | - | - |
+| operation.sync_skewed | bit-exact | 0 | 0.804 | 1.656 | 2.06x |
+| operation.sync_skewed_int | bit-exact | 0 | 0.622 | 0.552 | 0.89x |
+| operation.tanh_hard | bit-exact | 0 | 0.075 | 0.028 | 0.37x |
+| operation.tanh_hub | bit-exact | 0 | 0.286 | 0.271 | 0.95x |
+| operation.tanh_p1 | bit-exact | 0 | 1.474 | 2.047 | 1.39x |
+| operation.tanh_pn | bit-exact | 0 | 0.518 | 0.945 | 1.82x |
+| operation.uni2bi | bit-exact | 0 | 0.539 | 0.795 | 1.47x |
+
+### Current differences
+
+| Class | Evidence |
+|-------|----------|
+| `operation.bi2uni` | Decoded max absolute difference 0.140625. Current NAPL uses a bounded accumulator and `>= 1`; current UnarySim uses an unbounded accumulator plus a separate output accumulator and `>`. |
+| `module.linear_hub` | Max absolute difference 0.09375. NAPL rounds scaled magnitudes before the HUB lookup; current UnarySim converts them to integer, which truncates. |
+| `module.conv_hub` | Max absolute difference 0.0507812 from the same round-versus-truncate HUB level conversion. |
+| `module.conv_fxp` | Max absolute difference 0.78717 on a valid input whose weight magnitude rounds below one. NAPL clamps with `2**width`; current UnarySim clamps with `2**(bitwidth-1)`, so this case reaches different quantized weights. |
+
+Current upstream reference gaps: `min_rc`, `max_rc`, `lt_rc`, and `gt_rc` map most closely
+to `FSUCompare`, whose current `forward` references an undefined `input`; UnarySim has no
+standalone temporal comparator for `min_tc`/`max_tc`, no standalone square class for
+`square_dff`, and no `TLUTLinear` or `TLUTConv2d` class in the current clone.
+
+### NAPL slower pairs
+
+| Class | Speedup |
+|-------|---------|
+| `operation.add_any` | 0.96x |
+| `operation.bi2uni` | 0.97x |
+| `operation.relu_sat` | 0.51x |
+| `operation.relu_hub` | 0.92x |
+| `operation.tanh_hub` | 0.95x |
+| `operation.round_fxp` | 0.88x |
+| `operation.sync_skewed_int` | 0.89x |
+| `operation.tanh_hard` | 0.37x |
+| `metric.accuracy` | 0.99x |
+| `module.avgpool2d` | 0.93x |
+| `module.decoder` | 0.46x |
+| `module.linear_fxp` | 0.67x |
+| `module.conv_fxp` | 0.96x |
+
+Verification: `conda run -n napl python tests/sweep_test.py` completed with exit 0 and all
+73 standalone test files passed. `git status --short -- src tests examples` remained empty
+before and after the comparison.

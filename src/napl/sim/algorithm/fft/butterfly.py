@@ -82,7 +82,8 @@ class butterfly_spike(napl_base):
 
         # three-input scaled add + decode, all four lanes at once
         y_spike = self.add_y(torch.cat([y0_sum, y1_sum], 0), entry=3, dim=None)
-        y = self.decoder_y(y_spike)
+        self.decoder_y(y_spike)
+        y = self.decoder_y.spike_value
         self.accuracy_y(y_spike)
 
         return y.narrow(0, 0, b), y.narrow(0, b, b), y.narrow(0, 2 * b, b), y.narrow(0, 3 * b, b)
