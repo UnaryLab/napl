@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import sync_skewed
 from napl.sim.metric import accuracy
@@ -36,7 +36,7 @@ class napl_sync_skewed(napl_base):
         self.accuracy1(o_spike1)
 
     
-def test_sync_skewed():
+def _kernel_specific_checks():
     """
     Test sync_skewed with a simple configuration.
     """
@@ -86,6 +86,43 @@ def test_sync_skewed():
         print(f'[{device}] time: {elapsed * 1000:.1f} ms')
     
     print('Test passed.')
+
+
+def make_operation(_polarity, _timestep, _device):
+    return sync_skewed({'width': 3})
+
+
+def make_values(_polarity):
+    first = torch.linspace(0.0, 0.75, 128)
+    second = torch.linspace(0.25, 1.0, 128)
+    return first, second
+
+
+def analytic_reference(values, _polarity):
+    return values[1]
+
+
+def known_answer_case(_polarity):
+    values = (torch.tensor([0.0, 0.5]), torch.tensor([0.5, 1.0]))
+    return values, values[1], 0.0
+
+
+CONFIG = {
+    'polarities': ['unipolar'],
+    'tolerance_scale': 2.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [1, 3],
+    'apply_operation': lambda operation, spikes: operation(*spikes)[1],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_sync_skewed():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

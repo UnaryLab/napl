@@ -47,6 +47,7 @@ CONFIG = {
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,
     # Optional. Delete unchanged entries.
+    # 'extra_checks': extra_checks,
     # 'warmup_runs': 2,
     # 'trials': 7,
 }

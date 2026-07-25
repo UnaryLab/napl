@@ -5,7 +5,7 @@
 # reset and replay, and performance on every device and polarity. Speedup is
 # the saved CPU runtime divided by each device runtime for the same operation.
 # Use timer only for a separate unpaired elapsed measurement.
-from napl.utils._shared_test import streaming_suite
+from napl.utils._shared_test import count_readout, streaming_suite
 
 
 def make_operation(polarity, timestep, device):
@@ -38,6 +38,12 @@ CONFIG = {
     'known_answer_case': known_answer_case,
     # Optional. Delete unchanged entries.
     # 'apply_operation': lambda operation, spikes: operation(*spikes),
+    # 'input_polarities': lambda polarity: [polarity, polarity],
+    # 'output_polarity': lambda polarity: polarity,
+    # 'encoder_dims': lambda polarity: [1, 2],
+    # 'encoder_generators': lambda polarity: ['sobol', 'sobol'],
+    # 'make_readout': lambda polarity, timestep, device: count_readout(),
+    # 'extra_checks': extra_checks,
     # 'timesteps': 256,
     # 'warmup_runs': 2,
     # 'trials': 7,

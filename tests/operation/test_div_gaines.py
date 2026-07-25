@@ -4,7 +4,7 @@ import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 # direct module import: not wired into napl.sim.operation.__init__ yet
 from napl.sim.operation.div_gaines import div_gaines
@@ -84,7 +84,7 @@ def run_div_gaines(device, polarity, quotient_cpu, divisor_cpu):
     assert div_gaines_inst.div_gaines.idx == 0
 
 
-def test_div_gaines():
+def _kernel_specific_checks():
     """
     Test div_gaines on every available device, both polarities.
     """
@@ -110,6 +110,55 @@ def test_div_gaines():
             run_div_gaines(device, polarity, *cases[polarity])
 
     print('Test passed.')
+
+
+def make_operation(polarity, _timestep, _device):
+    return div_gaines({
+        'polarity': polarity,
+        'depth': 5,
+        'generator': 'sobol',
+        'dim': 3,
+    })
+
+
+def make_values(polarity):
+    quotient = torch.linspace(
+        -0.75 if polarity == 'bipolar' else 0.05, 0.75, 128
+    )
+    divisor = torch.full_like(quotient, 0.75)
+    if polarity == 'bipolar':
+        divisor[::2] = -0.75
+    return quotient * divisor, divisor
+
+
+def analytic_reference(values, _polarity):
+    return values[0] / values[1]
+
+
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = (torch.tensor([0.25]), torch.tensor([0.5]))
+        expected = torch.tensor([0.5])
+    else:
+        values = (torch.tensor([-0.25, 0.25]), torch.tensor([0.5, -0.5]))
+        expected = torch.tensor([-0.5, -0.5])
+    return values, expected, 0.2
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.2,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_div_gaines():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

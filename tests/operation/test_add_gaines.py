@@ -4,7 +4,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
 # direct module import: not yet wired into operation/__init__.py
@@ -45,7 +45,7 @@ class napl_add_gaines_or(napl_base):
         self.accuracy(o_spike)
 
 
-def test_add_gaines():
+def _kernel_specific_checks():
     """
     Gaines addition: the scaled MUX recovers mean(input, dim) within the SC bound for both
     polarities; the non-scaled OR recovers 1 - prod(1 - p) for decorrelated unipolar streams.
@@ -136,7 +136,7 @@ def test_add_gaines():
     print('Test passed.')
 
 
-def test_add_gaines_perf():
+def _kernel_specific_perf():
     """Per device, time add_gaines (scaled MUX) against add_any (the obvious baseline) on identical spikes."""
     iters = 200
     entry = 8
@@ -170,6 +170,87 @@ def test_add_gaines_perf():
     print('Perf test passed.')
 
 
+def _scaled_operation(polarity, _timestep, _device):
+    return add_gaines({
+        'polarity': polarity,
+        'scaled': True,
+        'entry': 8,
+        'generator': 'sobol',
+        'dim': 5,
+    })
+
+
+def _scaled_values(polarity):
+    lo = -0.75 if polarity == 'bipolar' else 0.0
+    return (torch.linspace(lo, 0.75, 64).repeat(8, 1),)
+
+
+def _scaled_reference(values, _polarity):
+    return values[0].mean(dim=0)
+
+
+def _scaled_known_answer(polarity):
+    value = -0.25 if polarity == 'bipolar' else 0.25
+    values = torch.full((8, 8), value)
+    return (values,), values.mean(dim=0), 3.0 / math.sqrt(256)
+
+
+SCALED_CONFIG = {
+    'make_operation': _scaled_operation,
+    'make_values': _scaled_values,
+    'analytic_reference': _scaled_reference,
+    'known_answer_case': _scaled_known_answer,
+    'polarities': ['unipolar', 'bipolar'],
+    'timesteps': 256,
+    'tolerance_scale': 3.0,
+    'apply_operation': lambda operation, spikes: operation(spikes[0], dim=0),
+}
+
+
+def _or_operation(_polarity, _timestep, _device):
+    return add_gaines({'polarity': 'unipolar', 'scaled': False})
+
+
+def _or_values(_polarity):
+    base = torch.linspace(0.0, 0.15, 64)
+    return tuple(base.roll(index * 7) for index in range(4))
+
+
+def _or_reference(values, _polarity):
+    return 1 - torch.prod(1 - torch.stack(values), dim=0)
+
+
+def _or_known_answer(_polarity):
+    values = (
+        torch.tensor([0.0, 0.0, 1.0, 1.0]),
+        torch.tensor([0.0, 1.0, 0.0, 1.0]),
+    )
+    expected = torch.tensor([0.0, 1.0, 1.0, 1.0])
+    return values, expected, 0.0
+
+
+def _all_kernel_specific_checks():
+    _kernel_specific_checks()
+    _kernel_specific_perf()
+
+
+OR_CONFIG = {
+    'make_operation': _or_operation,
+    'make_values': _or_values,
+    'analytic_reference': _or_reference,
+    'known_answer_case': _or_known_answer,
+    'polarities': ['unipolar'],
+    'timesteps': 256,
+    'tolerance_scale': 3.0,
+    'apply_operation': lambda operation, spikes: operation(torch.stack(spikes), dim=0),
+    'extra_checks': _all_kernel_specific_checks,
+}
+
+
+def test_add_gaines():
+    streaming_suite(SCALED_CONFIG)
+    streaming_suite(OR_CONFIG)
+
+
 if __name__ == '__main__':
     test_add_gaines()
-    test_add_gaines_perf()

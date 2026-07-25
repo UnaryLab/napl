@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import div_cordiv
 from napl.sim.metric import accuracy
@@ -32,7 +32,7 @@ class napl_div_cordiv(napl_base):
         self.accuracy(o_spike)
 
     
-def test_div_cordiv():
+def _kernel_specific_checks():
     """
     Test div_cordiv with a simple configuration.
     """
@@ -88,6 +88,42 @@ def test_div_cordiv():
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
     
     print('Test passed.')
+
+
+def make_operation(_polarity, _timestep, _device):
+    return div_cordiv({'depth': 2, 'generator': 'Sobol'})
+
+
+def make_values(_polarity):
+    quotient = torch.linspace(0.1, 0.9, 128)
+    divisor = torch.full_like(quotient, 0.875)
+    return quotient * divisor, divisor
+
+
+def analytic_reference(values, _polarity):
+    return values[0] / values[1]
+
+
+def known_answer_case(_polarity):
+    values = (torch.tensor([0.25]), torch.tensor([0.5]))
+    return values, torch.tensor([0.5]), 0.2
+
+
+CONFIG = {
+    'polarities': ['unipolar'],
+    'tolerance_scale': 3.2,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [1, 1],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_div_cordiv():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

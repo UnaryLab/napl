@@ -3,7 +3,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module.encoder import encoder
 from napl.sim.module.linear_gaines3 import linear_gaines3
 from napl.sim.module.linear import linear
@@ -31,7 +31,7 @@ class napl_linear_gaines3(napl_base):
         self.acc = None
 
 
-def test_linear_gaines3():
+def _kernel_specific_checks():
     """
     The streaming Gaines linear (uMUL + gADD, scaled) recovers (W x + b) / 2**round(log2(entry))
     within the stochastic-computing bound on every device, both polarities, with/without bias.
@@ -141,6 +141,61 @@ def test_linear_gaines3():
             mod.reset()
         print(f'{device}: gaines3 {times["gaines3"]:.4f}s vs lin {times["lin"]:.4f}s '
               f'(lin/gaines3 ratio {times["lin"] / times["gaines3"]:.2f}x)')
+
+
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        row = torch.linspace(0.1, 0.9, 64)
+    else:
+        row = torch.linspace(-0.75, 0.75, 64)
+    return torch.stack((row, row.flip(0)))
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_gaines3(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+        },
+    )
+
+
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.linspace(0.1, 0.9, 64),)
+    return (torch.linspace(-0.75, 0.75, 64),)
+
+
+def analytic_reference(values, polarity):
+    return _suite_weight(polarity) @ values[0] / 64
+
+
+def known_answer_case(polarity):
+    values = torch.ones(64)
+    return (
+        (values,),
+        analytic_reference((values,), polarity),
+        1.6 / (256 ** 0.5),
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 1.6,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [2],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_gaines3():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

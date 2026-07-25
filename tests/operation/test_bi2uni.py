@@ -1,10 +1,11 @@
 import math
 import time
 
+import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import bi2uni
 from napl.sim.metric import accuracy
@@ -29,7 +30,7 @@ class napl_bi2uni(napl_base):
         self.accuracy(o_spike)
 
     
-def test_bi2uni():
+def _kernel_specific_checks():
     """
     Test bi2uni with a simple configuration.
     """
@@ -79,6 +80,41 @@ def test_bi2uni():
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
 
     print('Test passed.')
+
+
+def make_operation(_polarity, _timestep, _device):
+    return bi2uni({'width': 2})
+
+
+def make_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 128),)
+
+
+def analytic_reference(values, _polarity):
+    return values[0]
+
+
+def known_answer_case(_polarity):
+    values = torch.tensor([0.0, 0.5, 1.0])
+    return (values,), values, 2.0 / math.sqrt(256)
+
+
+CONFIG = {
+    'polarities': ['bipolar'],
+    'tolerance_scale': 2.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'input_polarities': ['bipolar'],
+    'output_polarity': 'unipolar',
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_bi2uni():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

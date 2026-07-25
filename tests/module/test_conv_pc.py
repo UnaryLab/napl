@@ -4,7 +4,12 @@ import torch.nn.functional as F
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import (
+    count_readout,
+    devices,
+    streaming_suite,
+    sync,
+)
 from napl.sim.module import encoder
 from napl.sim.module.conv_pc import conv_pc
 from napl.sim.module.conv import conv
@@ -37,7 +42,7 @@ def _pc_value(mean_count, polarity, entry):
     return mean_count
 
 
-def test_conv_pc():
+def _kernel_specific_checks():
     """
     The streaming conv parallel-counter (conv_pc) reproduces (conv2d(x, W) + b)
     within a stochastic-computing bound, for both polarities, on every device. Per-timestep
@@ -128,6 +133,51 @@ def test_conv_pc():
               f'(speedup {t_full/max(t_pc,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    weight = torch.ones(1, 1, 1, 1, dtype=global_config.ntype)
+    return conv_pc(
+        weight, None, stride=1, padding=0,
+        config={
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'dim': 2,
+        },
+    )
+
+
+def make_values(polarity):
+    low = -0.75 if polarity == 'bipolar' else 0.0
+    return (torch.linspace(low, 0.75, 16).reshape(1, 1, 4, 4),)
+
+
+def analytic_reference(values, polarity):
+    result = values[0]
+    return (result + 1) / 2 if polarity == 'bipolar' else result
+
+
+def known_answer_case(_polarity):
+    values = torch.ones(1, 1, 2, 2)
+    return (values,), torch.ones_like(values), 0.0
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'make_readout': lambda _polarity, _timestep, _device: count_readout(),
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_conv_pc():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

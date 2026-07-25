@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import max_rc
 from napl.sim.metric import accuracy
@@ -36,7 +36,7 @@ class napl_max_rc(napl_base):
         self.accuracy1(o_spike1)
 
     
-def test_max_rc():
+def _kernel_specific_checks():
     """
     Test max_rc with a simple configuration.
     """
@@ -86,6 +86,46 @@ def test_max_rc():
         assert max_rc_inst.max_rc.timestep_cur == 0
     
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    return max_rc({
+        'polarity': polarity,
+        'timestep': timestep,
+        'generator': 'sobol',
+        'dim': 1,
+    })
+
+
+def make_values(_polarity):
+    left = torch.linspace(-0.9, 0.9, 128)
+    return left, left.roll(31)
+
+
+def analytic_reference(values, _polarity):
+    return torch.maximum(values[0], values[1])
+
+
+def known_answer_case(_polarity):
+    values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
+    return values, torch.tensor([1.0, 1.0]), 3.0 / math.sqrt(256)
+
+
+CONFIG = {
+    'polarities': ['bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'apply_operation': lambda operation, spikes: operation(*spikes)[0],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_max_rc():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

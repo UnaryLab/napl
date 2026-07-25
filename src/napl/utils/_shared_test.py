@@ -43,6 +43,39 @@ class timer:
         self.seconds = perf_counter() - self._start
 
 
+class count_readout(torch.nn.Module):
+    """Accumulate a numeric per-timestep count and expose its running mean."""
+
+    streaming = True
+
+    def __init__(self):
+        super().__init__()
+        self.timestep_cur = 0
+        self.register_buffer('spike_count', torch.zeros(1))
+
+    def __call__(self, *args, **kwargs):
+        self.timestep_cur += 1
+        return super().__call__(*args, **kwargs)
+
+    def forward(self, value):
+        if self.spike_count.shape == value.shape:
+            self.spike_count.add_(value)
+        else:
+            self.spike_count = self.spike_count.add(value)
+
+    @property
+    def spike_value(self):
+        if self.timestep_cur == 0:
+            return torch.zeros_like(self.spike_count)
+        return self.spike_count / self.timestep_cur
+
+    def reset(self):
+        self.timestep_cur = 0
+        self.spike_count = torch.zeros(
+            1, dtype=self.spike_count.dtype, device=self.spike_count.device
+        )
+
+
 def clone_inputs(
     inputs: Sequence[torch.Tensor], device: Optional[Device] = None
 ) -> InputTuple:
@@ -131,6 +164,12 @@ _STREAMING_REQUIRED = (
 )
 _STREAMING_DEFAULTS = {
     'apply_operation': None,
+    'input_polarities': None,
+    'output_polarity': None,
+    'encoder_dims': None,
+    'encoder_generators': None,
+    'make_readout': None,
+    'extra_checks': None,
     'timesteps': 256,
     'warmup_runs': 2,
     'trials': 7,
@@ -146,15 +185,55 @@ def _codec_config(polarity, timestep, dim):
     }
 
 
-def _make_pipeline(polarity, timestep, device, input_count,
-                   operation_factory):
+def _resolve_streaming_option(option, polarity):
+    if callable(option):
+        return option(polarity)
+    return option
+
+
+def _make_pipeline(polarity, timestep, device, input_count, cfg):
+    input_polarities = _resolve_streaming_option(
+        cfg['input_polarities'], polarity
+    )
+    if input_polarities is None:
+        input_polarities = [polarity] * input_count
+    assert len(input_polarities) == input_count
+
+    encoder_dims = _resolve_streaming_option(cfg['encoder_dims'], polarity)
+    if encoder_dims is None:
+        encoder_dims = list(range(1, input_count + 1))
+    assert len(encoder_dims) == input_count
+
+    encoder_generators = _resolve_streaming_option(
+        cfg['encoder_generators'], polarity
+    )
+    if encoder_generators is None:
+        encoder_generators = ['sobol'] * input_count
+    assert len(encoder_generators) == input_count
+
+    output_polarity = _resolve_streaming_option(
+        cfg['output_polarity'], polarity
+    )
+    if output_polarity is None:
+        output_polarity = polarity
+
     from napl.sim.module import decoder, encoder
-    encoders = [
-        encoder(_codec_config(polarity, timestep, dim=index + 1)).to(device)
-        for index in range(input_count)
-    ]
-    operation = operation_factory(polarity, timestep, device).to(device)
-    dec = decoder(_codec_config(polarity, timestep, dim=1)).to(device)
+    encoders = []
+    for input_polarity, dim, generator in zip(
+        input_polarities, encoder_dims, encoder_generators
+    ):
+        codec_config = _codec_config(input_polarity, timestep, dim=dim)
+        codec_config['generator'] = generator
+        encoders.append(encoder(codec_config).to(device))
+    operation = cfg['make_operation'](polarity, timestep, device).to(device)
+    if cfg['make_readout'] is None:
+        dec = decoder(
+            _codec_config(output_polarity, timestep, dim=1)
+        ).to(device)
+    else:
+        dec = cfg['make_readout'](
+            output_polarity, timestep, device
+        ).to(device)
     assert operation.streaming is True
     return encoders, operation, dec
 
@@ -190,8 +269,7 @@ def _streaming_known_answer(cfg):
         for device in devices():
             values = clone_inputs(values_cpu, device)
             pipeline = _make_pipeline(
-                polarity, cfg['timesteps'], device,
-                len(values), cfg['make_operation'],
+                polarity, cfg['timesteps'], device, len(values), cfg,
             )
             result, _ = _run_pipeline(
                 cfg, pipeline, values, cfg['timesteps'],
@@ -212,8 +290,7 @@ def _streaming_fidelity(cfg):
         for device in devices():
             values = clone_inputs(values_cpu, device)
             pipeline = _make_pipeline(
-                polarity, timesteps, device, len(values),
-                cfg['make_operation'],
+                polarity, timesteps, device, len(values), cfg,
             )
             result, _ = _run_pipeline(
                 cfg, pipeline, values, timesteps,
@@ -238,8 +315,7 @@ def _streaming_reset_replay(cfg):
         for device in devices():
             values = clone_inputs(values_cpu, device)
             pipeline = _make_pipeline(
-                polarity, timesteps, device, len(values),
-                cfg['make_operation'],
+                polarity, timesteps, device, len(values), cfg,
             )
             first_result, first_trace = _run_pipeline(
                 cfg, pipeline, values, timesteps,
@@ -271,8 +347,7 @@ def _streaming_performance(cfg):
         cpu_runtime = None
         for device in devices():
             pipeline = _make_pipeline(
-                polarity, timesteps, device, len(values_cpu),
-                cfg['make_operation'],
+                polarity, timesteps, device, len(values_cpu), cfg,
             )
 
             def run(inputs):
@@ -318,6 +393,8 @@ def streaming_suite(cfg):
     _streaming_fidelity(cfg)
     _streaming_reset_replay(cfg)
     _streaming_performance(cfg)
+    if cfg['extra_checks'] is not None:
+        cfg['extra_checks']()
 
 
 _SINGLE_SHOT_REQUIRED = (
@@ -332,6 +409,7 @@ _SINGLE_SHOT_REQUIRED = (
     'expected_ste_gradients',
 )
 _SINGLE_SHOT_DEFAULTS = {
+    'extra_checks': None,
     'warmup_runs': 2,
     'trials': 7,
 }
@@ -482,3 +560,5 @@ def single_shot_suite(cfg):
     _single_shot_fidelity(cfg)
     _single_shot_gradients(cfg)
     _single_shot_performance(cfg)
+    if cfg['extra_checks'] is not None:
+        cfg['extra_checks']()

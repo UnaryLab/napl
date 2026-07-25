@@ -3,7 +3,12 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import (
+    count_readout,
+    devices,
+    streaming_suite,
+    sync,
+)
 from napl.sim.module import encoder, linear_pc
 from napl.sim.module.linear import linear
 
@@ -36,7 +41,7 @@ def _pc_value(mean_count, polarity, entry):
     return mean_count
 
 
-def test_linear_pc():
+def _kernel_specific_checks():
     """
     The streaming parallel-counter (linear_pc) reproduces (W x + b) within a
     stochastic-computing bound, for both polarities, on every device. Per-timestep the PC
@@ -123,6 +128,63 @@ def test_linear_pc():
               f'(speedup {t_lin/max(t_pc,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        return torch.tensor([
+            [0.25, 0.5, 0.75, 1.0],
+            [1.0, 0.75, 0.5, 0.25],
+        ])
+    return torch.tensor([
+        [-0.75, -0.25, 0.25, 0.75],
+        [0.75, 0.25, -0.25, -0.75],
+    ])
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_pc(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'dim': 2,
+        },
+    )
+
+
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.tensor([0.1, 0.3, 0.5, 0.7]),)
+    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+
+
+def analytic_reference(values, polarity):
+    result = _suite_weight(polarity) @ values[0]
+    return (result + 4) / 2 if polarity == 'bipolar' else result
+
+
+def known_answer_case(polarity):
+    values = torch.ones(4)
+    return (values,), analytic_reference((values,), polarity), 0.0
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 4.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'make_readout': lambda _polarity, _timestep, _device: count_readout(),
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_pc():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

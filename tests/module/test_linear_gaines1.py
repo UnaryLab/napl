@@ -3,7 +3,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
 # imported directly from its module: not yet wired into module/__init__
@@ -33,7 +33,7 @@ def _scaled_ref(s, polarity, entry):
     return (s / w).clamp(0, 1)
 
 
-def test_linear_gaines1():
+def _kernel_specific_checks():
     """
     Streaming Gaines linear (gMUL + gADD) reproduces its analytic target within a
     stochastic-computing bound on every device: scaled mode tracks the scaled inner
@@ -136,6 +136,66 @@ def test_linear_gaines1():
               f'(ratio {t_lin/max(t_gl,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        return torch.tensor([
+            [0.25, 0.5, 0.75, 1.0],
+            [1.0, 0.75, 0.5, 0.25],
+        ])
+    return torch.tensor([
+        [-0.75, -0.25, 0.25, 0.75],
+        [0.75, 0.25, -0.25, -0.75],
+    ])
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_gaines1(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'dim': 2,
+            'scaled': True,
+        },
+    )
+
+
+def make_values(polarity):
+    return (torch.ones(4),)
+
+
+def analytic_reference(values, polarity):
+    return _scaled_ref(
+        _suite_weight(polarity) @ values[0], polarity, 4
+    )
+
+
+def known_answer_case(polarity):
+    values = torch.ones(4)
+    return (
+        (values,),
+        analytic_reference((values,), polarity),
+        3.2 / (256 ** 0.5),
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.2,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_gaines1():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

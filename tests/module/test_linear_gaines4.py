@@ -3,7 +3,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module.encoder import encoder
 from napl.sim.module.decoder import decoder
 from napl.sim.module.linear_gaines4 import linear_gaines4
@@ -32,7 +32,7 @@ class napl_linear_gaines4(napl_base):
         self.decoder.reset()
 
 
-def test_linear_gaines4():
+def _kernel_specific_checks():
     """
     The streaming Gaines linear (linear_gaines4) reproduces (W x + b) / entry in scaled
     mode within a stochastic-computing bound, for both polarities, on every device; in
@@ -155,6 +155,71 @@ def test_linear_gaines4():
               f'(ratio {t_f/max(t_g,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        return torch.tensor([
+            [0.25, 0.5, 0.75, 1.0],
+            [1.0, 0.75, 0.5, 0.25],
+        ])
+    return torch.tensor([
+        [-0.75, -0.25, 0.25, 0.75],
+        [0.75, 0.25, -0.25, -0.75],
+    ])
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_gaines4(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'lfsr',
+            'dim': 2,
+            'seed': 1,
+            'scaled': True,
+        },
+    )
+
+
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.tensor([0.1, 0.3, 0.5, 0.7]),)
+    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+
+
+def analytic_reference(values, polarity):
+    result = _suite_weight(polarity) @ values[0]
+    if polarity == 'bipolar':
+        return (4 + result) / 3 - 1
+    return result / 3
+
+
+def known_answer_case(polarity):
+    values = torch.full((4,), 0.5)
+    return (
+        (values,),
+        analytic_reference((values,), polarity),
+        5.0 / (256 ** 0.5),
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 5.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_generators': ['lfsr'],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_gaines4():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

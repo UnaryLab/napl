@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
 from napl.sim.metric import accuracy
@@ -30,7 +30,7 @@ class napl_add_any(napl_base):
         self.accuracy(o_spike)
 
     
-def test_add_any():
+def _kernel_specific_checks():
     """
     Test add_any with a simple configuration.
     """
@@ -75,6 +75,40 @@ def test_add_any():
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
     
     print('Test passed.')
+
+
+def make_operation(_polarity, _timestep, _device):
+    return add_any({'polarity': 'bipolar', 'scale': 8, 'width': 20})
+
+
+def make_values(_polarity):
+    return (torch.linspace(-0.75, 0.75, 512).reshape(64, 8),)
+
+
+def analytic_reference(values, _polarity):
+    return values[0].mean(dim=-1)
+
+
+def known_answer_case(_polarity):
+    values = torch.full((8, 8), 0.25)
+    return (values,), values.mean(dim=-1), 2.0 / math.sqrt(256)
+
+
+CONFIG = {
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'polarities': ['bipolar'],
+    'timesteps': 256,
+    'tolerance_scale': 2.0,
+    'apply_operation': lambda operation, spikes: operation(spikes[0], dim=-1),
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_add_any():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

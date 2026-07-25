@@ -4,10 +4,10 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.module import linear_tlut
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, single_shot_suite, sync
 
 
-def test_linear_tlut():
+def _kernel_specific_checks():
     """
     Binary-domain temporal-LUT linear matches nn.Linear within the temporal-decomposition
     bound across all three modes (fxpfxp, fxpfp, fpfp) and both temporal operands, with
@@ -69,6 +69,79 @@ def test_linear_tlut():
         assert xg.grad is not None and torch.isfinite(xg.grad).all()
 
     print('Test passed.')
+
+
+class linear_reference(torch.nn.Module):
+    def __init__(self, weight, bias):
+        super().__init__()
+        self.register_buffer('weight', weight.detach().clone())
+        self.register_buffer('bias', bias.detach().clone())
+
+    def forward(self, input):
+        return F.linear(input, self.weight, self.bias)
+
+
+def _make_candidate():
+    weight = torch.tensor([
+        [-0.5, -0.25, 0.25, 0.5],
+        [0.5, 0.25, -0.25, -0.5],
+    ])
+    bias = torch.tensor([0.25, -0.25])
+    candidate = linear_tlut(
+        4, 2, bias=True, weight_ext=weight, bias_ext=bias,
+        config={
+            'temporal': 'i',
+            'formati': 'fxp',
+            'formatw': 'fxp',
+            'widtht': 4,
+            'widthi': 8,
+            'widthw': 8,
+        },
+    )
+    for parameter in candidate.parameters():
+        parameter.requires_grad_(False)
+    return candidate
+
+
+def make_module_pair():
+    candidate = _make_candidate()
+    return candidate, linear_reference(candidate.weight, candidate.bias)
+
+
+def make_inputs():
+    return (torch.linspace(-0.75, 0.75, 32).reshape(8, 4),)
+
+
+def known_answer_case():
+    candidate, reference = make_module_pair()
+    values = torch.tensor([[0.5, 0.25, -0.25, -0.5]])
+    return candidate, (values,), reference(values)
+
+
+def gradient_case():
+    return _make_candidate(), (torch.tensor([[0.5, 0.25, -0.25, -0.5]]),)
+
+
+def expected_ste_gradients(candidate, _inputs, grad_output):
+    return (grad_output @ candidate.weight.detach(),), {}
+
+
+CONFIG = {
+    'quantization_atol': 0.05,
+    'known_answer_atol': 0.05,
+    'gradient_atol': 1e-6,
+    'gradient_rtol': 1e-6,
+    'make_module_pair': make_module_pair,
+    'make_inputs': make_inputs,
+    'known_answer_case': known_answer_case,
+    'gradient_case': gradient_case,
+    'expected_ste_gradients': expected_ste_gradients,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_tlut():
+    single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':

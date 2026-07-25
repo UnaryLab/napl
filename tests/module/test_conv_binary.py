@@ -4,10 +4,10 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.module import conv_fxp, conv_hub, conv_tlut
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, single_shot_suite, sync
 
 
-def test_conv_binary():
+def _kernel_specific_checks():
     """
     Binary-domain conv variants (fxp/hub/tlut) match nn.Conv2d within their quantization
     bounds for padding 0 and 1, and the STE lets gradients flow to input and weight.
@@ -56,6 +56,82 @@ def test_conv_binary():
         assert torch.isfinite(xg.grad).all() and torch.isfinite(m.weight.grad).all()
 
     print('Test passed.')
+
+
+class conv_reference(torch.nn.Module):
+    def __init__(self, weight, bias, padding):
+        super().__init__()
+        self.register_buffer('weight', weight.detach().clone())
+        self.register_buffer('bias', bias.detach().clone())
+        self.padding = padding
+
+    def forward(self, input):
+        return F.conv2d(
+            input, self.weight, self.bias, stride=1, padding=self.padding
+        )
+
+
+def _make_candidate(padding=1):
+    weight = torch.tensor([[[[0.5, -0.25], [0.25, 0.5]]]])
+    bias = torch.tensor([0.25])
+    candidate = conv_fxp(
+        1, 1, 2, padding=padding, weight_ext=weight, bias_ext=bias
+    )
+    for parameter in candidate.parameters():
+        parameter.requires_grad_(False)
+    return candidate
+
+
+def make_module_pair():
+    candidate = _make_candidate()
+    return candidate, conv_reference(
+        candidate.weight, candidate.bias, candidate.padding
+    )
+
+
+def make_inputs():
+    return (torch.linspace(-0.75, 0.75, 25).reshape(1, 1, 5, 5),)
+
+
+def known_answer_case():
+    candidate, reference = make_module_pair()
+    values = torch.ones(1, 1, 3, 3) * 0.5
+    return candidate, (values,), reference(values)
+
+
+def gradient_case():
+    return _make_candidate(), (torch.linspace(-0.5, 0.5, 16).reshape(1, 1, 4, 4),)
+
+
+def expected_ste_gradients(candidate, inputs, grad_output):
+    input_ref = inputs[0].detach().clone().requires_grad_(True)
+    output = F.conv2d(
+        input_ref,
+        candidate.weight.detach(),
+        candidate.bias.detach(),
+        stride=1,
+        padding=candidate.padding,
+    )
+    gradient, = torch.autograd.grad(output, input_ref, grad_output)
+    return (gradient,), {}
+
+
+CONFIG = {
+    'quantization_atol': 0.05,
+    'known_answer_atol': 0.05,
+    'gradient_atol': 1e-6,
+    'gradient_rtol': 1e-6,
+    'make_module_pair': make_module_pair,
+    'make_inputs': make_inputs,
+    'known_answer_case': known_answer_case,
+    'gradient_case': gradient_case,
+    'expected_ste_gradients': expected_ste_gradients,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_conv_binary():
+    single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':

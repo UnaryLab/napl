@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import sigmoid_hard
 from napl.sim.metric import accuracy
@@ -30,7 +30,7 @@ class napl_sigmoid_hard(napl_base):
         self.accuracy(o_spike)
 
     
-def test_sigmoid_hard():
+def _kernel_specific_checks():
     """
     Test sigmoid_hard with a simple configuration.
     """
@@ -67,6 +67,40 @@ def test_sigmoid_hard():
         print(f'[{device}] time: {elapsed * 1000:.1f} ms')
 
     print('Test passed.')
+
+
+def make_operation(polarity, _timestep, _device):
+    return sigmoid_hard({'polarity': polarity})
+
+
+def make_values(_polarity):
+    return (torch.linspace(-1.0, 1.0, 128),)
+
+
+def analytic_reference(values, _polarity):
+    return torch.nn.functional.hardsigmoid(values[0] * 3)
+
+
+def known_answer_case(_polarity):
+    values = torch.tensor([-1.0, 0.0, 1.0])
+    expected = torch.nn.functional.hardsigmoid(values * 3)
+    return (values,), expected, 3.0 / math.sqrt(256)
+
+
+CONFIG = {
+    'polarities': ['bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_sigmoid_hard():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

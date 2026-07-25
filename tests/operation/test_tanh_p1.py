@@ -4,7 +4,7 @@ import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 # direct import: not wired into operation/__init__.py yet
 from napl.sim.operation.tanh_p1 import tanh_p1
@@ -30,7 +30,7 @@ class napl_tanh_p1(napl_base):
         self.accuracy(o_spike)
 
 
-def test_tanh_p1():
+def _kernel_specific_checks():
     """
     Test tanh_p1 (combinational series-expansion tanh(x), unipolar) on every
     available device, checking accuracy against torch.tanh and runtime.
@@ -83,6 +83,45 @@ def test_tanh_p1():
         print(f'[{device}] rmse={rmse:.4f}, {timestep} timesteps x 10000 elems in {elapsed*1000:.1f} ms')
 
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    return tanh_p1({
+        'polarity': polarity,
+        'timestep': timestep,
+        'generator': 'sobol',
+        'dim': 1,
+    })
+
+
+def make_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 128),)
+
+
+def analytic_reference(values, _polarity):
+    return torch.tanh(values[0])
+
+
+def known_answer_case(_polarity):
+    values = torch.tensor([0.0, 0.5, 1.0])
+    return (values,), torch.tanh(values), 0.1
+
+
+CONFIG = {
+    'polarities': ['unipolar'],
+    'tolerance_scale': 1.6,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [5],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_tanh_p1():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

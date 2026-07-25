@@ -3,7 +3,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
 from napl.sim.module.linear_ugemm import linear_ugemm
@@ -30,7 +30,7 @@ class napl_linear_ugemm(napl_base):
         self.linear.reset()
 
 
-def test_linear_ugemm():
+def _kernel_specific_checks():
     """
     The streaming uGEMM linear layer (conditional-spike-generated weight bits + scaled
     unary adder) reproduces (W x + b) / entry within the stochastic-computing bound, for
@@ -112,6 +112,68 @@ def test_linear_ugemm():
               f'(ratio {t_lin/max(t_ug,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        return torch.tensor([
+            [0.25, 0.5, 0.75, 1.0],
+            [1.0, 0.75, 0.5, 0.25],
+        ])
+    return torch.tensor([
+        [-0.75, -0.25, 0.25, 0.75],
+        [0.75, 0.25, -0.25, -0.75],
+    ])
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_ugemm(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'dim': 1,
+            'scale': None,
+            'width': 12,
+        },
+    )
+
+
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.tensor([0.1, 0.3, 0.5, 0.7]),)
+    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+
+
+def analytic_reference(values, polarity):
+    return _suite_weight(polarity) @ values[0] / 4
+
+
+def known_answer_case(polarity):
+    values = torch.ones(4)
+    return (
+        (values,),
+        _suite_weight(polarity) @ values / 4,
+        3.0 / (256 ** 0.5),
+    )
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [2],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_linear_ugemm():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

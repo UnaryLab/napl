@@ -3,7 +3,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder
 from napl.sim.module.linear_gaines2 import linear_gaines2
 from napl.sim.module.linear import linear
@@ -33,7 +33,7 @@ def _decode(mean_spike, polarity):
     return 2 * mean_spike - 1 if polarity == 'bipolar' else mean_spike
 
 
-def test_linear_gaines2():
+def _kernel_specific_checks():
     """
     Gaines linear (gMUL + uADD) vs the analytic reference within the SC bound.
     scaled=True decodes to (Wx+b)/entry; scaled=False tracks clamp(Wx+b, lo, 1)
@@ -93,7 +93,7 @@ def test_linear_gaines2():
         print(f'[{device}] known-answer corner passed.')
 
 
-def test_linear_gaines2_perf():
+def _kernel_specific_perf():
     """Time linear_gaines2 against linear (same fan-in) on identical input spikes."""
     timestep = 256
     in_features, out_features = 16, 8
@@ -133,6 +133,70 @@ def test_linear_gaines2_perf():
               f'({t_lin/max(t_gaines, 1e-9):.2f}x)')
 
 
+def _suite_weight(polarity):
+    if polarity == 'unipolar':
+        return torch.tensor([
+            [0.25, 0.5, 0.75, 1.0],
+            [1.0, 0.75, 0.5, 0.25],
+        ])
+    return torch.tensor([
+        [-0.75, -0.25, 0.25, 0.75],
+        [0.75, 0.25, -0.25, -0.75],
+    ])
+
+
+def make_operation(polarity, timestep, _device):
+    return linear_gaines2(
+        _suite_weight(polarity), None,
+        {
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'scaled': True,
+        },
+    )
+
+
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.tensor([0.1, 0.3, 0.5, 0.7]),)
+    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+
+
+def analytic_reference(values, polarity):
+    return _suite_weight(polarity) @ values[0] / 4
+
+
+def known_answer_case(polarity):
+    values = torch.ones(4)
+    return (
+        (values,),
+        analytic_reference((values,), polarity),
+        2.0 / (256 ** 0.5),
+    )
+
+
+def _all_kernel_specific_checks():
+    _kernel_specific_checks()
+    _kernel_specific_perf()
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 2.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [6],
+    'timesteps': 256,
+    'extra_checks': _all_kernel_specific_checks,
+}
+
+
+def test_linear_gaines2():
+    streaming_suite(CONFIG)
+
+
 if __name__ == '__main__':
     test_linear_gaines2()
-    test_linear_gaines2_perf()

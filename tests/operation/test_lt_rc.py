@@ -5,7 +5,7 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import lt_rc
 from napl.sim.metric import accuracy
@@ -32,7 +32,7 @@ class napl_lt_rc(napl_base):
         self.accuracy(o_spike)
 
     
-def test_lt_rc():
+def _kernel_specific_checks():
     """
     Test lt_rc with a simple configuration.
     """
@@ -86,6 +86,46 @@ def test_lt_rc():
         assert lt_rc_inst.lt_rc.timestep_cur == 0
     
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    return lt_rc({
+        'polarity': polarity,
+        'timestep': timestep,
+        'generator': 'sobol',
+        'dim': 1,
+    })
+
+
+def make_values(_polarity):
+    left = torch.linspace(-0.9, 0.9, 128)
+    return left, left.roll(31)
+
+
+def analytic_reference(values, _polarity):
+    return (values[0] < values[1]).type(global_config.ntype)
+
+
+def known_answer_case(_polarity):
+    values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
+    return values, torch.tensor([1.0, 0.0]), 2.0 / math.sqrt(256)
+
+
+CONFIG = {
+    'polarities': ['bipolar'],
+    'tolerance_scale': 2.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'output_polarity': 'unipolar',
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_lt_rc():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

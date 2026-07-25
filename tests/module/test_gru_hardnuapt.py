@@ -3,7 +3,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, single_shot_suite, sync
 from napl.sim.module.gru_hardnuapt import gru_hardnuapt
 
 
@@ -17,7 +17,7 @@ def _ref_gru_hard(x, hx, w_ih, w_hh, b_ih, b_hh):
     return (1 - ug) * ng + ug * hx
 
 
-def test_gru_hardnuapt():
+def _kernel_specific_checks():
     """
     Correctness: hard=True matches the hard-activation GRU equations exactly;
     hard=False matches nn.GRUCell exactly (same weights). Gradients flow.
@@ -73,6 +73,82 @@ def test_gru_hardnuapt():
               f'(ratio {(t1 - t0) / max(t2 - t1, 1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+class gru_reference(torch.nn.Module):
+    def __init__(self, candidate):
+        super().__init__()
+        for name in ('weight_ih', 'bias_ih', 'weight_hh', 'bias_hh'):
+            self.register_buffer(name, getattr(candidate, name).detach().clone())
+
+    def forward(self, input, hx):
+        return _ref_gru_hard(
+            input, hx,
+            self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh,
+        )
+
+
+def _make_candidate():
+    torch.manual_seed(17)
+    candidate = gru_hardnuapt(6, 4, bias=True)
+    for parameter in candidate.parameters():
+        parameter.requires_grad_(False)
+    return candidate
+
+
+def make_module_pair():
+    candidate = _make_candidate()
+    return candidate, gru_reference(candidate)
+
+
+def make_inputs():
+    return (
+        torch.linspace(-0.75, 0.75, 12).reshape(2, 6),
+        torch.linspace(-0.5, 0.5, 8).reshape(2, 4),
+    )
+
+
+def known_answer_case():
+    candidate, reference = make_module_pair()
+    inputs = make_inputs()
+    return candidate, inputs, reference(*inputs)
+
+
+def gradient_case():
+    return _make_candidate(), make_inputs()
+
+
+def expected_ste_gradients(candidate, inputs, grad_output):
+    refs = tuple(
+        value.detach().clone().requires_grad_(True) for value in inputs
+    )
+    output = _ref_gru_hard(
+        *refs,
+        candidate.weight_ih.detach(),
+        candidate.weight_hh.detach(),
+        candidate.bias_ih.detach(),
+        candidate.bias_hh.detach(),
+    )
+    gradients = torch.autograd.grad(output, refs, grad_output)
+    return gradients, {}
+
+
+CONFIG = {
+    'quantization_atol': 1e-6,
+    'known_answer_atol': 1e-6,
+    'gradient_atol': 1e-6,
+    'gradient_rtol': 1e-6,
+    'make_module_pair': make_module_pair,
+    'make_inputs': make_inputs,
+    'known_answer_case': known_answer_case,
+    'gradient_case': gradient_case,
+    'expected_ste_gradients': expected_ste_gradients,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_gru_hardnuapt():
+    single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':

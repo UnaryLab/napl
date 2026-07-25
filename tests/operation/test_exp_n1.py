@@ -4,7 +4,7 @@ import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation.exp_n1 import exp_n1
 from napl.sim.metric import accuracy
@@ -28,7 +28,7 @@ class napl_exp_n1(napl_base):
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
-def test_exp_n1():
+def _kernel_specific_checks():
     """
     Test exp_n1 (exp(-x), unipolar) on every available device: correctness
     against torch.exp(-x) within the SC bound, plus per-device runtime.
@@ -94,6 +94,45 @@ def test_exp_n1():
               f'torch.exp {elapsed_ref*1e3:.3f} ms (ratio {elapsed/max(elapsed_ref, 1e-9):.0f}x)')
 
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    return exp_n1({
+        'polarity': polarity,
+        'timestep': timestep,
+        'generator': 'sobol',
+        'dim': 1,
+    })
+
+
+def make_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 128),)
+
+
+def analytic_reference(values, _polarity):
+    return torch.exp(-values[0])
+
+
+def known_answer_case(_polarity):
+    values = torch.tensor([0.0, 1.0])
+    return (values,), torch.exp(-values), 1.5 / math.sqrt(256)
+
+
+CONFIG = {
+    'polarities': ['unipolar'],
+    'tolerance_scale': 1.5,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'encoder_dims': [5],
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_exp_n1():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

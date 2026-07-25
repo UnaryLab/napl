@@ -4,7 +4,7 @@ import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 # imported from the module directly: not wired into napl.sim.operation yet
 from napl.sim.operation.exp_ng import exp_ng
@@ -30,7 +30,7 @@ class napl_exp_ng(napl_base):
         self.accuracy(o_spike)
 
 
-def test_exp_ng():
+def _kernel_specific_checks():
     """
     Test exp_ng (FSM exp(-2*gain*x), bipolar in / unipolar out) on every device.
     """
@@ -83,6 +83,41 @@ def test_exp_ng():
         assert exp_ng_inst.exp_ng.timestep_cur == 0
 
         print(f'[{device}] Test passed in {elapsed:.3f} s.')
+
+
+def make_operation(_polarity, _timestep, _device):
+    return exp_ng({'depth': 5, 'gain': 1})
+
+
+def make_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 128),)
+
+
+def analytic_reference(values, _polarity):
+    return torch.exp(-2 * values[0])
+
+
+def known_answer_case(_polarity):
+    values = torch.tensor([0.0, 0.5, 1.0])
+    return (values,), torch.exp(-2 * values), 0.1
+
+
+CONFIG = {
+    'polarities': ['bipolar'],
+    'tolerance_scale': 1.6,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'input_polarities': ['bipolar'],
+    'output_polarity': 'unipolar',
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_exp_ng():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

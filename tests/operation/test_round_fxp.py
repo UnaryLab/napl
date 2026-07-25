@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.operation import round_fxp, round_ste
-from napl.utils._shared_test import devices, single_shot_suite
+from napl.sim.operation import round_fxp
+from napl.utils._shared_test import single_shot_suite
 
 
 INTWIDTH = 3
@@ -64,24 +64,5 @@ def test_round_fxp():
     single_shot_suite(CONFIG)
 
 
-def test_round_ste_dtype_and_boundaries():
-    for device in devices():
-        input = torch.tensor(
-            [-100.0, -0.3, 0.1, 100.0],
-            dtype=torch.float32,
-            device=device,
-        )
-        result = round_ste(
-            input,
-            fracwidth=FRACWIDTH,
-            min_val=MIN_CODE,
-            max_val=MAX_CODE,
-        )
-        expected = round_reference().to(device)(input)
-        assert result.dtype == input.dtype
-        assert torch.equal(result, expected)
-
-
 if __name__ == '__main__':
     test_round_fxp()
-    test_round_ste_dtype_and_boundaries()

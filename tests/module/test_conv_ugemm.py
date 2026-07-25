@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.module.conv_ugemm import conv_ugemm
 from napl.sim.module.conv import conv
@@ -28,7 +28,7 @@ class napl_conv_ugemm(napl_base):
         self.decoder.reset()
 
 
-def test_conv_ugemm():
+def _kernel_specific_checks():
     """
     The streaming uGEMM-CSG conv reproduces (conv2d(x, W) + b) / (in*kh*kw + has_bias)
     within a stochastic-computing bound, for both polarities, on every device.
@@ -124,6 +124,50 @@ def test_conv_ugemm():
               f'(ratio {t_full/max(t_ugemm,1e-9):.2f}x)')
 
     print('Test passed.')
+
+
+def make_operation(polarity, timestep, _device):
+    weight = torch.tensor([[[[0.5]]]], dtype=global_config.ntype)
+    return conv_ugemm(
+        weight, None, stride=1, padding=0,
+        config={
+            'polarity': polarity,
+            'timestep': timestep,
+            'generator': 'sobol',
+            'width': 12,
+        },
+    )
+
+
+def make_values(polarity):
+    low = -0.75 if polarity == 'bipolar' else 0.0
+    return (torch.linspace(low, 0.75, 16).reshape(1, 1, 4, 4),)
+
+
+def analytic_reference(values, _polarity):
+    weight = torch.tensor([[[[0.5]]]], dtype=values[0].dtype)
+    return F.conv2d(values[0], weight)
+
+
+def known_answer_case(_polarity):
+    values = torch.ones(1, 1, 2, 2)
+    return (values,), torch.full_like(values, 0.5), 3.0 / (256 ** 0.5)
+
+
+CONFIG = {
+    'polarities': ['unipolar', 'bipolar'],
+    'tolerance_scale': 3.0,
+    'make_operation': make_operation,
+    'make_values': make_values,
+    'analytic_reference': analytic_reference,
+    'known_answer_case': known_answer_case,
+    'timesteps': 256,
+    'extra_checks': _kernel_specific_checks,
+}
+
+
+def test_conv_ugemm():
+    streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':
