@@ -136,7 +136,11 @@ kernel for CPU and GPU. Common wins in this codebase: vectorize per-timestep Pyt
 into tensor ops, kill redundant `.clone()`/dtype casts/allocations in the hot path, replace
 an elementwise spike-product reduction with a `matmul`, hoist invariants out of the
 timestep loop, avoid `torch.roll`-style full-buffer reallocation (see the circular-buffer
-idiom in `shiftreg`/`dff`).
+idiom in `shiftreg`/`dff`). `decoder` uses the lazy-readout pattern in
+`src/napl/sim/metric/accuracy.py:50-75` and `src/napl/sim/module/decoder.py:30-58`:
+`forward()` accumulates only and the on-demand `spike_value` property computes the readout,
+giving a 2.28x isolated CPU speedup. For another class, if adopting this pattern changes the
+`forward()` return contract, surface it as an explicit API task and never apply it silently.
 
 The hard constraints that keep the edit behavior-preserving (a violation is a bug, not a
 speedup) are in **Rules** below; if there is no safe speedup, change nothing and say so

@@ -126,6 +126,13 @@ following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling
   `timestep_cur` (no manual `self.tick()`), `reset()` clears it; the round-trip is encoder -> op ->
   decoder run by `@napl_sim_timesteps`. **Binary-domain layers:** whole-tensor `forward()` (they set
   `streaming = False`, so `timestep_cur` stays 0), trainable via `torch.autograd.Function` + STE.
+- **Lazy readouts:** apply this pattern only to spike-domain endpoints, meaning sinks whose readout
+  no downstream spike operation consumes. The endpoints are `decoder` and the five metric classes
+  `accuracy`, `correlation`, `stability`, `stability_norm`, and `stability_flux`. Keep their
+  `forward()` methods accumulate-only and expose derived readouts through on-demand properties.
+  Sources such as `encoder` and in-stream spike operations must keep returning their per-timestep
+  spikes. See `src/napl/sim/metric/accuracy.py:50-75` and
+  `src/napl/sim/module/decoder.py:30-58`.
 - **Adapt, do not transcribe, UnarySim's state idioms.** UnarySim pre-sizes scalar buffers and updates
   in place; napl's idiom is a scalar (`torch.zeros(1)`) accumulator that **broadcasts up to the input
   shape on the first `forward()` via an out-of-place op** (`self.acc.data = self.acc.add(delta)`).
