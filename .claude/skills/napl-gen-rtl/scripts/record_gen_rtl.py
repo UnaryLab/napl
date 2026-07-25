@@ -20,7 +20,7 @@ import os
 HEADER = """# napl RTL generation log
 
 Records produced by the `napl-gen-rtl` skill - one row per RTL-generation run. Each row attests
-that Verilog RTL was emitted for an `operation` class under `src/napl/hw/<op>/` and
+that Verilog RTL was emitted for an `operation` class under `src/napl/imp/<op>/` and
 verified against the napl Python model via golden-vector co-simulation (`make test` PASS only on a
 full match). **Status** is `verified` (make test PASSed), `skipped` (no sound gate-level mapping, so
 no RTL), or `failed` (generation/verification did not pass). **pp_delay** is the RTL input-to-output

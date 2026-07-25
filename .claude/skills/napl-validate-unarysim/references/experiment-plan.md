@@ -30,7 +30,7 @@ Each ported item passes a test in `tests/`:
   inverse -> -1.
 
 Validation is **napl-native** (no UnarySim runtime dependency; UnarySim is a read-only
-reference for the math). **Python-only**: the `hw/` RTL tree is untouched.
+reference for the math). **Python-only**: the `imp/` RTL tree is untouched.
 
 ## Gap analysis (UnarySim main -> napl)
 

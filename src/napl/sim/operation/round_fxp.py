@@ -56,7 +56,7 @@ class round_fxp(napl_base):
         self.fracwidth = config['fracwidth']
         self.max_val = 2**(self.intwidth + self.fracwidth) - 1
         self.min_val = 1 - 2**(self.intwidth + self.fracwidth)
-        # RTL latency: the round_fxp clamp (src/napl/hw/round_fxp)
+        # RTL latency: the round_fxp clamp (src/napl/imp/round_fxp)
         # is purely combinational (saturating clamp on the fixed-point code).
         self.delay = 0
 

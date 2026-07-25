@@ -1,6 +1,6 @@
 # NAPL architecture
 
-This document is the canonical description of NAPL's current design and package boundaries. Verification requirements live in [RULE_SIM.md](RULE_SIM.md) and [RULE_HW.md](RULE_HW.md).
+This document is the canonical description of NAPL's current design and package boundaries. Verification requirements live in [RULE_SIM.md](RULE_SIM.md) and [RULE_IMP.md](RULE_IMP.md).
 
 ## Purpose and dataflow
 
@@ -23,7 +23,7 @@ Rate and temporal encodings differ in how the encoder orders spikes. Longer stre
 
 NAPL also provides single-shot binary-domain kernels. These process a whole tensor in one call and use quantization or hybrid unary-binary arithmetic rather than an explicit per-timestep stream. Both execution paths use PyTorch tensors and can run on supported CPU and GPU devices.
 
-The Python model is the source of functional behavior. A subset of spike operations has a Verilog-2001 counterpart under `src/napl/hw/`, verified against Python-generated golden vectors.
+The Python model is the source of functional behavior. A subset of spike operations has a Verilog-2001 counterpart under `src/napl/imp/`, verified against Python-generated golden vectors.
 
 ## Execution models
 
@@ -73,7 +73,7 @@ Single-shot execution is used by binary linear and convolution layers, binary re
 
 ## Package map
 
-The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/hw/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_and, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_and` also work.
+The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/imp/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_and, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_and` also work.
 
 | Path | Responsibility | Main components |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ The Python simulation model lives under `src/napl/sim/` and the hardware tree un
 | `src/napl/sim/operation/` | Reusable spike and binary primitives | arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
 | `src/napl/sim/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder` |
 | `src/napl/sim/algorithm/` | Compositions of modules and operations | FFT butterfly |
-| `src/napl/hw/` | Synthesizable hardware counterparts | per-operation RTL, testbenches, golden-vector generators, shared Makefile |
+| `src/napl/imp/` | Synthesizable hardware counterparts | per-operation RTL, testbenches, golden-vector generators, shared Makefile |
 | `src/napl/utils/` | Shared validation and tensor helpers | YAML I/O, config checks, device discovery, random tensors, power-of-two shift shims |
 | `src/napl/sim/structure/` | Biological-neuron abstraction boundary | axon, soma, dendrite, synapse, receptor, column placeholders |
 
@@ -149,9 +149,9 @@ Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Onl
 
 ## Hardware boundary
 
-`src/napl/hw/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
+`src/napl/imp/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
 
-Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_HW.md](RULE_HW.md) for the mandatory design and verification contract and the folder layout and commands.
+Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory design and verification contract and the folder layout and commands.
 
 ## Incomplete boundaries
 
@@ -162,6 +162,6 @@ Higher-level linear, convolution, recurrent, metric, and algorithm classes do no
 | FFT | `butterfly` is implemented; `fft` is a placeholder. |
 | Spike components | `wta` and `inhibit` are placeholders. |
 | Biological structure | `napl.sim.structure` files are empty placeholders. |
-| RTL coverage | Only the concrete operation folders under `src/napl/hw/` have hardware counterparts. |
+| RTL coverage | Only the concrete operation folders under `src/napl/imp/` have hardware counterparts. |
 
 Treat these as package boundaries that are not yet implemented, not as completed interfaces.

@@ -210,10 +210,13 @@ __marimo__/
 .vscode
 .vscode/*
 # NAPL RTL generated artifacts
-src/napl/hw/*/vec/*.vec
-src/napl/hw/*/vec/*.hex
-src/napl/hw/*/vec/*.vh
+src/napl/imp/*/vec/*.vec
+src/napl/imp/*/vec/*.hex
+src/napl/imp/*/vec/*.vh
 
 # MCP tool state (serena, tokensave)
 .serena/
 .tokensave/
+
+# Agent coordination state
+.peon-tasks.md

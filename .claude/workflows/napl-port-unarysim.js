@@ -767,7 +767,7 @@ if (wantPhase('rtl')) {
 
   const rtlPrompt = (c) =>
     `Generate Verilog RTL for the napl operation class \`${c.name}\` (defined in ${c.file}). The op directory and ` +
-    `\`make test\` OP name is \`${c.name}\` (i.e. ${SRC}/hw/${c.name}/).\n\n` +
+    `\`make test\` OP name is \`${c.name}\` (i.e. ${SRC}/imp/${c.name}/).\n\n` +
     `Use the project's \`napl-gen-rtl\` skill (Skill tool): invoke it and execute its Steps DIRECTLY (you are the ` +
     `worker it describes - run its Steps, do NOT dispatch a further subagent). It emits the rtl/tb/gen under the op ` +
     `dir from the Python model, makes \`conda run -n napl make test OP=${c.name}\` PASS bit-exactly, and computes the ` +
@@ -819,7 +819,7 @@ if (wantPhase('rtl')) {
       `Independently re-validate the RTL just generated for op \`${op}\`, using the project's ` +
       `\`napl-validate-sim-rtl\` skill. Invoke the skill (Skill tool) and execute its Steps DIRECTLY (you are the ` +
       `worker - do NOT dispatch a further subagent): make \`gen_${op}.py\` derive its golden vectors from ` +
-      `\`test_${op}.py\`'s inputs, then run \`conda run -n napl make test OP=${op}\` from ${SRC}/hw and ` +
+      `\`test_${op}.py\`'s inputs, then run \`conda run -n napl make test OP=${op}\` from ${SRC}/imp and ` +
       `require a bit-exact PASS (the skill also checks reset equivalence from t=0). This is stronger than a bare ` +
       `make-test re-run: it validates the RTL against the TEST's input streams, not just whatever vectors the ` +
       `generator emitted.\n\n` +

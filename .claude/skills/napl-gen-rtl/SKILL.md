@@ -7,7 +7,7 @@ description: >-
   "write the Verilog for add_any", "implement shiftreg in hardware", "lower sqrt_emit to
   RTL", "make the hardware for this op"), even without the word "RTL". It emits one module
   per polarity variant plus a testbench and a golden-vector generator under
-  src/napl/hw/<op>/, makes `make test OP=<op>` PASS bit-exactly, and writes the
+  src/napl/imp/<op>/, makes `make test OP=<op>` PASS bit-exactly, and writes the
   RTL pipeline delay back to the class's self.hw.pp_delay. Operation subpackage only: napl
   modules/metrics/layers are not gate-level circuits. Sibling to napl-validate-sim-rtl
   (which validates an existing RTL against the test's inputs) and to the napl-port-unarysim
@@ -20,7 +20,7 @@ description: >-
 ## Scope
 
 napl lowers each gate-level operation to a synthesizable Verilog counterpart under
-`src/napl/hw/<op>/`. This skill produces that RTL for one operation: the module(s),
+`src/napl/imp/<op>/`. This skill produces that RTL for one operation: the module(s),
 a self-checking testbench, and a generator that emits golden vectors **from the napl Python
 model** so the hardware is checked against the actual simulator, not a hand-written truth table.
 It is the single-op, interactive version of the napl-port-unarysim workflow's RTL phase, and the
@@ -55,14 +55,14 @@ forces an unsound gate-level design onto a class that has no natural circuit.
   subpackage only** - napl `module`/`metric`/`algorithm` classes are whole-tensor or statistical,
   not per-timestep gate circuits, so they have no RTL; report that and stop if asked for one.
 - Run through the project env: `conda run -n napl python ...` and
-  `conda run -n napl make test OP=<op>` (from `src/napl/hw/`). A bare `python` is the
+  `conda run -n napl make test OP=<op>` (from `src/napl/imp/`). A bare `python` is the
   wrong interpreter. Heredocs piped through `conda run` swallow stdout, so write a `.py` file.
 - The co-sim needs the **Icarus Verilog** toolchain (`iverilog`/`vvp`) on PATH. If missing, say so
   rather than claiming a result.
 
 ## Output contract
 
-A working op directory under `src/napl/hw/<op>/` where `conda run -n napl make test
+A working op directory under `src/napl/imp/<op>/` where `conda run -n napl make test
 OP=<op>` PASSes bit-exactly, the RTL pipeline delay written back into the class's hardware contract
 (`self.hw.pp_delay`), and a durable row in `reports/napl-gen-rtl-report.md` (class, RTL module(s),
 status, make test result, pp_delay, polarities, and if skipped/failed why).
@@ -94,7 +94,7 @@ Generate one operation per subagent.
 
 Pin down the napl `operation` class (e.g. `mul_and`, `shiftreg`, `add_any`), its source under
 `src/napl/sim/operation/`, and its `tests/operation/test_<op>.py`. The op directory and `make test`
-OP name is the class name: `src/napl/hw/<op>/`. **Operation subpackage only** - napl
+OP name is the class name: `src/napl/imp/<op>/`. **Operation subpackage only** - napl
 `module`/`metric`/`algorithm` classes are whole-tensor or statistical, not per-timestep gate
 circuits, so they have no RTL; report that and stop if asked for one.
 
@@ -114,8 +114,8 @@ model before writing a line), simplicity first (the smallest gate-level circuit 
 `forward()`, no speculative parameters or modes), surgical changes (touch only this op's folder), and
 goal-driven execution with a verifiable success criterion (`make test OP=<op>` PASSes bit-exactly).
 
-Lay the op out self-contained under `src/napl/hw/<op>/{rtl,tb,gen,vec,build}/`,
-following the repo-root `RULE_HW.md` and the auto-injected Verilog rules:
+Lay the op out self-contained under `src/napl/imp/<op>/{rtl,tb,gen,vec,build}/`,
+following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
 
 - **`rtl/*.v`** - one synthesizable module per concrete variant. **Module naming:** the module name
   (and its filename) is *exactly* the op name (which may contain underscores), optionally followed by
@@ -146,18 +146,18 @@ following the repo-root `RULE_HW.md` and the auto-injected Verilog rules:
   low before driving so the co-sim starts from t=0), compares the RTL output to the expected column,
   and prints `PASS ...` ONLY on a full bit-exact match (the Makefile greps for `^PASS`). When the op
   has sizing params, `` `include "<op>/vec/<op>_params.vh" `` at the top (iverilog resolves the path
-  relative to the compile cwd, `hw/`, NOT the tb file - confirmed; `../vec/...` does not
+  relative to the compile cwd, `imp/`, NOT the tb file - confirmed; `../vec/...` does not
   resolve under the fixed Makefile) and instantiate the DUT with the override
   `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the verified hardware is the model's configuration.
 
-Copy the nearest live pattern: `hw/mul_and/` (combinational, no sizing params) or
-`hw/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
+Copy the nearest live pattern: `imp/mul_and/` (combinational, no sizing params) or
+`imp/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
 parameter overridden from `vec/shiftreg_params.vh`). Do NOT edit the shared `Makefile` - it is already
 generic via `OP=` and runs the gen script (which writes the header) before compiling.
 
 ### Step 4 - Verify with the co-simulation
 
-From `src/napl/hw/`, run `conda run -n napl make test OP=<op>`: it runs your generator,
+From `src/napl/imp/`, run `conda run -n napl make test OP=<op>`: it runs your generator,
 compiles `rtl/*.v` + the testbench with `iverilog -g2012 -Wall`, simulates with `vvp`, and PASSes
 only on a full match. Iterate the RTL until it PASSes bit-exactly. **Bit-exact is the bar** - spikes
 are 0/1 and the RTL is a faithful gate-level model, so it matches or there is a real bug.
@@ -198,7 +198,7 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
 - Editing a `.v` file auto-injects the global **Verilog rules** via the `verilog-rules.sh` hook
   (Verilog-2001; clock `i_clk`; active-low `i_rst_n`; `i_`/`o_` port prefixes; `_n` for active-low;
   one module per file with filename == module; Verilator-lint-clean). Follow them.
-- Follow the repo-root `RULE_HW.md` for layout, commands, naming, combinational vs clocked, and the
+- Follow the repo-root `RULE_IMP.md` for layout, commands, naming, combinational vs clocked, and the
   `i_clk`/`i_rst_n` and reset-state contract.
 - **Operation subpackage only.** napl `module`/`metric`/`algorithm` classes have no gate-level RTL;
   report and stop if asked for one.
@@ -210,10 +210,10 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
 - `scripts/record_gen_rtl.py` - append a uniform row to `reports/napl-gen-rtl-report.md` (Step 6).
   Creates the file with a header on first use, escapes table-breaking pipes, dedupes, and sorts by
   class name.
-- `RULE_HW.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
+- `RULE_IMP.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
   `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/hw/mul_and/` - canonical combinational example (rtl, tb, gen).
-- `src/napl/hw/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.
+- `src/napl/imp/mul_and/` - canonical combinational example (rtl, tb, gen).
+- `src/napl/imp/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.
 - `src/napl/sim/base/base.py` - `hw_params` (the `pp_delay` contract); `operation/mul_and.py`,
   `operation/shiftreg.py` show the `self.hw = hw_params(pp_delay=...)` idiom.
 - `.claude/skills/napl-validate-sim-rtl/SKILL.md` - sibling: validates a generated RTL against the
