@@ -82,7 +82,8 @@ The Python simulation model lives under `src/napl/sim/` and the hardware tree un
 | `src/napl/sim/operation/` | Reusable spike and binary primitives | arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
 | `src/napl/sim/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder` |
 | `src/napl/sim/algorithm/` | Compositions of modules and operations | FFT butterfly |
-| `src/napl/imp/` | Synthesizable hardware counterparts | per-operation RTL, testbenches, golden-vector generators, shared Makefile |
+| `src/napl/imp/operation/` | Synthesizable operation counterparts | per-operation RTL, testbenches, and golden-vector generators |
+| `src/napl/imp/` | Hardware build root | shared Makefile |
 | `src/napl/utils/` | Shared validation and tensor helpers | YAML I/O, config checks, device discovery, random tensors, power-of-two shift shims |
 | `src/napl/sim/structure/` | Biological-neuron abstraction boundary | axon, soma, dendrite, synapse, receptor, column placeholders |
 
@@ -149,7 +150,7 @@ Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Onl
 
 ## Hardware boundary
 
-`src/napl/imp/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
+`src/napl/imp/operation/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
 
 Higher-level linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory design and verification contract and the folder layout and commands.
 
@@ -162,6 +163,6 @@ Higher-level linear, convolution, recurrent, metric, and algorithm classes do no
 | FFT | `butterfly` is implemented; `fft` is a placeholder. |
 | Spike components | `wta` and `inhibit` are placeholders. |
 | Biological structure | `napl.sim.structure` files are empty placeholders. |
-| RTL coverage | Only the concrete operation folders under `src/napl/imp/` have hardware counterparts. |
+| RTL coverage | Only the concrete operation folders under `src/napl/imp/operation/` have hardware counterparts. |
 
 Treat these as package boundaries that are not yet implemented, not as completed interfaces.

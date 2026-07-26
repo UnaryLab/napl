@@ -22,7 +22,7 @@ description: >-
 
 napl lowers the same kernel two ways: a Python functional simulation that runs over
 timesteps, and a synthesizable Verilog RTL counterpart under
-`src/napl/imp/<op>/`. They are only faithful if they compute the **same bits**:
+`src/napl/imp/operation/<op>/`. They are only faithful if they compute the **same bits**:
 one Python `forward()` timestep equals one `posedge i_clk`, and the RTL output must equal
 the model output cycle-for-cycle. The repo already has the co-simulation engine for this,
 `make test OP=<op>` (generate golden vectors from the Python model, compile RTL + testbench
@@ -60,8 +60,8 @@ Python model as the reference: when the two differ, the RTL is wrong unless the 
 ## Inputs
 
 - The napl kernel to validate (e.g. `operation.mul_and`, `operation.shiftreg`), plus its
-  `tests/<subpackage>/test_<kernel>.py` and its RTL directory `src/napl/imp/<op>/`.
-- **Validate-only:** if `src/napl/imp/<op>/` does not exist (no RTL yet), STOP and
+  `tests/<subpackage>/test_<kernel>.py` and its RTL directory `src/napl/imp/operation/<op>/`.
+- **Validate-only:** if `src/napl/imp/operation/<op>/` does not exist (no RTL yet), STOP and
   report that the kernel has no RTL to validate, pointing the user to the **napl-port-unarysim**
   workflow's RTL phase (or napl-gen-rtl) to generate it first. This skill checks an existing
   implementation; it does not generate RTL.
@@ -71,7 +71,7 @@ Python model as the reference: when the two differ, the RTL is wrong unless the 
   `python - <<EOF`.
 - The co-sim needs the **Icarus Verilog** toolchain (`iverilog`/`vvp`) on PATH. If it is
   missing, report that the co-sim cannot run rather than guessing a result.
-- Everything lives under `src/napl/imp/<op>/{rtl,tb,gen,vec,build}/`; run `make`
+- Everything lives under `src/napl/imp/operation/<op>/{rtl,tb,gen,vec,build}/`; run `make`
   from `src/napl/imp/`. `vec/*.vec` and `build/` are generated (gitignored).
 
 ## Output contract
@@ -111,9 +111,9 @@ Validate one kernel per subagent.
 
 Pin down the napl class (e.g. `operation.mul_and`, `operation.shiftreg`), its source under
 `src/napl/sim/operation/`, its `tests/<subpackage>/test_<kernel>.py`, and its RTL directory
-`src/napl/imp/<op>/`. The op directory and `make test` OP name is the class name.
+`src/napl/imp/operation/<op>/`. The op directory and `make test` OP name is the class name.
 
-**Validate-only:** if `src/napl/imp/<op>/` does not exist (no RTL yet), STOP and
+**Validate-only:** if `src/napl/imp/operation/<op>/` does not exist (no RTL yet), STOP and
 report that the kernel has no RTL to validate, pointing the user to the **napl-port-unarysim**
 workflow's RTL phase to generate it first. Do not generate RTL here; that is napl-port-unarysim's
 job, and this skill checks an existing implementation.
@@ -180,8 +180,8 @@ Key points:
   whose reset value is not directly observable in the next output, this mid-stream reset is the
   only way the co-sim can surface a wrong reset value at all.
 
-Two live patterns to copy: `imp/mul_and/gen/gen_mul_and.py` (combinational,
-exhaustive input product) and `imp/shiftreg/gen/gen_shiftreg.py` +
+Two live patterns to copy: `imp/operation/mul_and/gen/gen_mul_and.py` (combinational,
+exhaustive input product) and `imp/operation/shiftreg/gen/gen_shiftreg.py` +
 `shiftreg_tb.v` (stateful, a single per-cycle spike stream replayed after one reset). Adapt the
 nearer one, swapping its ad hoc input source for the mirrored test encoders.
 
@@ -287,8 +287,8 @@ recorded row to the user as part of the verdict.
   date so re-validations of one kernel group together.
 - `RULE_IMP.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
   the `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/imp/mul_and/` - canonical combinational example (gen, tb, rtl).
-- `src/napl/imp/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
+- `src/napl/imp/operation/mul_and/` - canonical combinational example (gen, tb, rtl).
+- `src/napl/imp/operation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
   reset, the `forward()`-equals-`posedge` and `reset()`-equals-`i_rst_n` mapping.
 - `tests/<subpackage>/test_<kernel>.py` - the source of the inputs and regimes to reuse.
 - `.claude/skills/napl-validate-unarysim/SKILL.md` - sibling skill; reuse its mirror-the-encoder

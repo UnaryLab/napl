@@ -46,7 +46,7 @@ module mul_csg_bipolar #(
     // index, value = round(num_seq[i] * 2**WIDTH)); loaded by $readmemb so the
     // table tracks WIDTH. Both read ports
     // (seq_idx and seq_idx_inv) index the SAME array. The vvp cwd is
-    // imp/mul_csg/, so the path is relative to that dir.
+    // imp/operation/mul_csg/, so the path is relative to that dir.
     reg  [WIDTH-1:0] num_seq_rom [0:(1<<WIDTH)-1];
     initial $readmemb("vec/mul_csg_rom.hex", num_seq_rom);
 

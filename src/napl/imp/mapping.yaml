@@ -1,0 +1,531 @@
+- rtl_module: add_any_bipolar
+  layer: operation
+  sim_module: sim/operation/add_any.py
+  inputs:
+    input: i_input
+    entry: null
+    dim: null
+  outputs:
+    output: o_out
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['width']"
+    ENTRY: input.size(dim)
+
+- rtl_module: add_any_unipolar
+  layer: operation
+  sim_module: sim/operation/add_any.py
+  inputs:
+    input: i_input
+    entry: null
+    dim: null
+  outputs:
+    output: o_out
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['width']"
+    ENTRY: input.size(dim)
+
+- rtl_module: add_gaines
+  layer: operation
+  sim_module: sim/operation/add_gaines.py
+  inputs:
+    input: i_input
+    dim: null
+  outputs:
+    output: o_out
+  parameters:
+    SCALED: "config['scaled']"
+    ENTRY: "config['entry']"
+    SELECT_WIDTH: "log2(config['entry'])"
+
+- rtl_module: add_ugemm_bipolar
+  layer: operation
+  sim_module: sim/operation/add_ugemm.py
+  inputs:
+    input: i_input
+    dim: null
+  outputs:
+    output: o_out
+  parameters:
+    SCALED: "config['scaled']"
+    ENTRY: input.size(dim)
+    COUNT_WIDTH: ceil(log2(ENTRY + 1))
+    ACC_WIDTH: ceil(log2(2 * ENTRY * len(SEGMENT) + 1)) + 1
+
+- rtl_module: add_ugemm_unipolar
+  layer: operation
+  sim_module: sim/operation/add_ugemm.py
+  inputs:
+    input: i_input
+    dim: null
+  outputs:
+    output: o_out
+  parameters:
+    SCALED: "config['scaled']"
+    ENTRY: input.size(dim)
+    COUNT_WIDTH: ceil(log2(ENTRY + 1))
+    ACC_WIDTH: ceil(log2(2 * ENTRY * len(SEGMENT) + 1)) + 1
+
+- rtl_module: bi2uni
+  layer: operation
+  sim_module: sim/operation/bi2uni.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: dff
+  layer: operation
+  sim_module: sim/operation/dff.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: div_cordiv
+  layer: operation
+  sim_module: sim/operation/div_cordiv.py
+  inputs:
+    dividend: i_dividend
+    divisor: i_divisor
+  outputs:
+    quotient: o_quotient
+  parameters:
+    DEPTH: "config['depth']"
+    WIDTH: "log2(config['depth'])"
+
+- rtl_module: div_gaines_bipolar
+  layer: operation
+  sim_module: sim/operation/div_gaines.py
+  inputs:
+    dividend: i_dividend
+    divisor: i_divisor
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: div_gaines_unipolar
+  layer: operation
+  sim_module: sim/operation/div_gaines.py
+  inputs:
+    dividend: i_dividend
+    divisor: i_divisor
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: div_iscb_bi2uni
+  layer: operation
+  sim_module: sim/operation/bi2uni.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: div_iscb_bipolar
+  layer: operation
+  sim_module: sim/operation/div_iscb.py
+  inputs:
+    dividend: i_dividend
+    divisor: i_divisor
+  outputs:
+    output: o_quotient
+  parameters: {}
+
+- rtl_module: div_iscb_signabs
+  layer: operation
+  sim_module: sim/operation/signabs.py
+  inputs:
+    input: i_input
+  outputs:
+    sign: o_sign
+    abs: o_abs
+  parameters: {}
+
+- rtl_module: div_iscb_uni2bi
+  layer: operation
+  sim_module: sim/operation/uni2bi.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: div_iscb_unipolar
+  layer: operation
+  sim_module: sim/operation/div_iscb.py
+  inputs:
+    dividend: i_dividend
+    divisor: i_divisor
+  outputs:
+    output: o_quotient
+  parameters: {}
+
+- rtl_module: exp_n1
+  layer: operation
+  sim_module: sim/operation/exp_n1.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: exp_ng
+  layer: operation
+  sim_module: sim/operation/exp_ng.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+    GAIN: "config['gain']"
+
+- rtl_module: gt_rc
+  layer: operation
+  sim_module: sim/operation/gt_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: jkff
+  layer: operation
+  sim_module: sim/operation/jkff.py
+  inputs:
+    input_j: i_input_j
+    input_k: i_input_k
+  outputs:
+    self.q: o_q
+  parameters: {}
+
+- rtl_module: lt_rc
+  layer: operation
+  sim_module: sim/operation/lt_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: max_rc
+  layer: operation
+  sim_module: sim/operation/max_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_max
+    self.dff: o_arg
+  parameters: {}
+
+- rtl_module: max_tc
+  layer: operation
+  sim_module: sim/operation/max_tc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: min_rc
+  layer: operation
+  sim_module: sim/operation/min_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_min
+    1 - self.dff: o_argmin
+  parameters: {}
+
+- rtl_module: min_tc
+  layer: operation
+  sim_module: sim/operation/min_tc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: mul_and_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_and.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: mul_and_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_and.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: mul_csg_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_csg.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    path | path_inv: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: mul_csg_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_csg.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    path: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: mul_gaines_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_gaines.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: mul_gaines_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_gaines.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: relu_cnt
+  layer: operation
+  sim_module: sim/operation/relu_cnt.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: relu_sat
+  layer: operation
+  sim_module: sim/operation/relu_sat.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: shiftreg
+  layer: operation
+  sim_module: sim/operation/shiftreg.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: sigmoid_hard
+  layer: operation
+  sim_module: sim/operation/sigmoid_hard.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: signabs
+  layer: operation
+  sim_module: sim/operation/signabs.py
+  inputs:
+    input: i_input
+  outputs:
+    sign: o_sign
+    abs: o_abs
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: sqrt_emit_bipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_emit.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: sqrt_emit_unipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_emit.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: sqrt_gaines_bipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_gaines.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: sqrt_gaines_unipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_gaines.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: sqrt_traceiscb_bipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_traceiscb.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: sqrt_traceiscb_unipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_traceiscb.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: sqrt_tracejkff_bipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_tracejkff.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: sqrt_tracejkff_unipolar
+  layer: operation
+  sim_module: sim/operation/sqrt_tracejkff.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: square_dff_bipolar
+  layer: operation
+  sim_module: sim/operation/square_dff.py
+  inputs:
+    input: i_input
+  outputs:
+    out: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: square_dff_unipolar
+  layer: operation
+  sim_module: sim/operation/square_dff.py
+  inputs:
+    input: i_input
+  outputs:
+    out: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: sync_skewed
+  layer: operation
+  sim_module: sim/operation/sync_skewed.py
+  inputs:
+    input_1: i_input_1
+    input_2: i_input_2
+  outputs:
+    output_1: o_out_1
+    input_2: o_out_2
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: sync_skewed_int
+  layer: operation
+  sim_module: sim/operation/sync_skewed_int.py
+  inputs:
+    input_1: i_input_1
+    input_2: i_input_2
+  outputs:
+    output_1: o_out_1
+    input_2: o_out_2
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: tanh_hard
+  layer: operation
+  sim_module: sim/operation/tanh_hard.py
+  inputs:
+    input: i_input
+  outputs:
+    input: o_out
+  parameters: {}
+
+- rtl_module: tanh_p1
+  layer: operation
+  sim_module: sim/operation/tanh_p1.py
+  inputs:
+    input: i_input
+  outputs:
+    out: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: tanh_pn
+  layer: operation
+  sim_module: sim/operation/tanh_pn.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: uni2bi
+  layer: operation
+  sim_module: sim/operation/uni2bi.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"

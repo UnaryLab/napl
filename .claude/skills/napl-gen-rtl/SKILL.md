@@ -7,7 +7,7 @@ description: >-
   "write the Verilog for add_any", "implement shiftreg in hardware", "lower sqrt_emit to
   RTL", "make the hardware for this op"), even without the word "RTL". It emits one module
   per polarity variant plus a testbench and a golden-vector generator under
-  src/napl/imp/<op>/, makes `make test OP=<op>` PASS bit-exactly, and writes the
+  src/napl/imp/operation/<op>/, makes `make test OP=<op>` PASS bit-exactly, and writes the
   RTL pipeline delay back to the class's self.hw.pp_delay. Operation subpackage only: napl
   modules/metrics/layers are not gate-level circuits. Sibling to napl-validate-sim-rtl
   (which validates an existing RTL against the test's inputs) and to the napl-port-unarysim
@@ -20,7 +20,7 @@ description: >-
 ## Scope
 
 napl lowers each gate-level operation to a synthesizable Verilog counterpart under
-`src/napl/imp/<op>/`. This skill produces that RTL for one operation: the module(s),
+`src/napl/imp/operation/<op>/`. This skill produces that RTL for one operation: the module(s),
 a self-checking testbench, and a generator that emits golden vectors **from the napl Python
 model** so the hardware is checked against the actual simulator, not a hand-written truth table.
 It is the single-op, interactive version of the napl-port-unarysim workflow's RTL phase, and the
@@ -62,7 +62,7 @@ forces an unsound gate-level design onto a class that has no natural circuit.
 
 ## Output contract
 
-A working op directory under `src/napl/imp/<op>/` where `conda run -n napl make test
+A working op directory under `src/napl/imp/operation/<op>/` where `conda run -n napl make test
 OP=<op>` PASSes bit-exactly, the RTL pipeline delay written back into the class's hardware contract
 (`self.hw.pp_delay`), and a durable row in `reports/napl-gen-rtl-report.md` (class, RTL module(s),
 status, make test result, pp_delay, polarities, and if skipped/failed why).
@@ -94,7 +94,7 @@ Generate one operation per subagent.
 
 Pin down the napl `operation` class (e.g. `mul_and`, `shiftreg`, `add_any`), its source under
 `src/napl/sim/operation/`, and its `tests/operation/test_<op>.py`. The op directory and `make test`
-OP name is the class name: `src/napl/imp/<op>/`. **Operation subpackage only** - napl
+OP name is the class name: `src/napl/imp/operation/<op>/`. **Operation subpackage only** - napl
 `module`/`metric`/`algorithm` classes are whole-tensor or statistical, not per-timestep gate
 circuits, so they have no RTL; report that and stop if asked for one.
 
@@ -114,7 +114,7 @@ model before writing a line), simplicity first (the smallest gate-level circuit 
 `forward()`, no speculative parameters or modes), surgical changes (touch only this op's folder), and
 goal-driven execution with a verifiable success criterion (`make test OP=<op>` PASSes bit-exactly).
 
-Lay the op out self-contained under `src/napl/imp/<op>/{rtl,tb,gen,vec,build}/`,
+Lay the op out self-contained under `src/napl/imp/operation/<op>/{rtl,tb,gen,vec,build}/`,
 following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
 
 - **`rtl/*.v`** - one synthesizable module per concrete variant. **Module naming:** the module name
@@ -150,8 +150,8 @@ following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
   resolve under the fixed Makefile) and instantiate the DUT with the override
   `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the verified hardware is the model's configuration.
 
-Copy the nearest live pattern: `imp/mul_and/` (combinational, no sizing params) or
-`imp/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
+Copy the nearest live pattern: `imp/operation/mul_and/` (combinational, no sizing params) or
+`imp/operation/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
 parameter overridden from `vec/shiftreg_params.vh`). Do NOT edit the shared `Makefile` - it is already
 generic via `OP=` and runs the gen script (which writes the header) before compiling.
 
@@ -212,8 +212,8 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
   class name.
 - `RULE_IMP.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
   `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/imp/mul_and/` - canonical combinational example (rtl, tb, gen).
-- `src/napl/imp/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.
+- `src/napl/imp/operation/mul_and/` - canonical combinational example (rtl, tb, gen).
+- `src/napl/imp/operation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.
 - `src/napl/sim/base/base.py` - `hw_params` (the `pp_delay` contract); `operation/mul_and.py`,
   `operation/shiftreg.py` show the `self.hw = hw_params(pp_delay=...)` idiom.
 - `.claude/skills/napl-validate-sim-rtl/SKILL.md` - sibling: validates a generated RTL against the

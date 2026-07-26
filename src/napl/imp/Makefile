@@ -3,12 +3,12 @@
 #   make test  OP=mul_and     # generate vectors, compile, simulate, check
 #   make clean OP=mul_and     # remove that op's build artifacts + generated vectors
 #
-# Each operation is self-contained under its own folder:
-#   <op>/rtl/    hand-written RTL modules (one per variant)
-#   <op>/tb/     <op>_tb.v self-checking testbench
-#   <op>/gen/    gen_<op>.py -- golden vectors from the napl Python model
-#   <op>/vec/    generated <op>.vec (gitignored)
-#   <op>/build/  compiled sim + log (auto-created, gitignored)
+# Each operation is self-contained under operation/<op>/:
+#   operation/<op>/rtl/    hand-written RTL modules (one per variant)
+#   operation/<op>/tb/     <op>_tb.v self-checking testbench
+#   operation/<op>/gen/    gen_<op>.py -- golden vectors from the napl Python model
+#   operation/<op>/vec/    generated <op>.vec (gitignored)
+#   operation/<op>/build/  compiled sim + log (auto-created, gitignored)
 #
 # Vector generation imports napl, so run inside the `napl` conda env
 # (or:  conda run -n napl make test OP=mul_and).
@@ -25,17 +25,17 @@ test: run
 
 # Golden vectors come from the Python functional model.
 vectors:
-	$(PYTHON) $(OP)/gen/gen_$(OP).py
+	$(PYTHON) operation/$(OP)/gen/gen_$(OP).py
 
 compile: vectors
-	mkdir -p $(OP)/build
-	$(IVERILOG) -g2001 -Wall -o $(OP)/build/sim $(OP)/rtl/*.v $(OP)/tb/$(OP)_tb.v
+	mkdir -p operation/$(OP)/build
+	$(IVERILOG) -g2001 -Wall -Ioperation -o operation/$(OP)/build/sim operation/$(OP)/rtl/*.v operation/$(OP)/tb/$(OP)_tb.v
 
 # vvp runs from inside the op folder so the testbench's relative path
 # (vec/<op>.vec) resolves.
 run: compile
-	cd $(OP) && $(VVP) build/sim | tee build/sim.log
-	@grep -q "^PASS" $(OP)/build/sim.log || { echo "*** $(OP): TEST FAILED ***"; exit 1; }
+	cd operation/$(OP) && $(VVP) build/sim | tee build/sim.log
+	@grep -q "^PASS" operation/$(OP)/build/sim.log || { echo "*** $(OP): TEST FAILED ***"; exit 1; }
 
 clean:
-	rm -rf $(OP)/build $(OP)/vec/*.vec
+	rm -rf operation/$(OP)/build operation/$(OP)/vec/*.vec
