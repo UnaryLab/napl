@@ -16,7 +16,7 @@
 module div_iscb_bi2uni (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     // 3-bit signed accumulator holds [-2, 1] with slack for the +/-1 step.
@@ -26,7 +26,7 @@ module div_iscb_bi2uni (
     reg signed [3:0] acc_q;
 
     // acc += 2*in - 1, clamped.
-    wire signed [3:0] step    = i_in ? 4'sd1 : -4'sd1;
+    wire signed [3:0] step    = i_input ? 4'sd1 : -4'sd1;
     wire signed [3:0] acc_sum = acc_q + step;
     wire signed [3:0] acc_clmp =
         (acc_sum > ACC_MAX) ? ACC_MAX :

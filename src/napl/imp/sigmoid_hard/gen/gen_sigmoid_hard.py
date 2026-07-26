@@ -17,7 +17,7 @@ RTL is validated as-is (no <op>_params.vh emitted).
 
 Output: vec/sigmoid_hard.vec, one line per cycle:
 
-    <i_rst_n> <i_in> <o_out>   (each 0/1, space-separated)
+    <i_rst_n> <i_input> <o_out>   (each 0/1, space-separated)
 
 i_rst_n=0 marks a cycle where the model was reset (accumulator <- 0) *before*
 producing that cycle's output; the testbench pulses its active-low reset there.
@@ -61,7 +61,7 @@ def main():
     # half, reset, then prove the second half matches a fresh-from-reset model.
     split = len(stream) // 2
 
-    rows = []  # (i_rst_n, i_in, o_out)
+    rows = []  # (i_rst_n, i_input, o_out)
 
     # segment 1: from reset() at t=0
     model.reset()

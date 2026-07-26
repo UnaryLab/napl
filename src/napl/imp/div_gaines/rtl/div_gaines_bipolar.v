@@ -5,7 +5,7 @@
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=div_gaines
 module div_gaines_bipolar #(
-    parameter integer DEPTH = 5
+    parameter integer DEPTH = 5  // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,

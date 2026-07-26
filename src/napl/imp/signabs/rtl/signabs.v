@@ -10,9 +10,9 @@
 // input, so they are combinational within the same timestep (pp_delay = 0); the
 // register only carries the accumulator forward to the next cycle.
 //
-//   acc_next = clamp(acc + (i_in ? +1 : -1), 0, ACC_MAX)
+//   acc_next = clamp(acc + (i_input ? +1 : -1), 0, ACC_MAX)
 //   o_sign   = (acc_next < ACC_MED)        // 1 == negative, 0 == positive
-//   o_abs    = o_sign ^ i_in
+//   o_abs    = o_sign ^ i_input
 //
 // Reset (active-low i_rst_n) reproduces the Python reset() state EXACTLY:
 // acc = ACC_MED = 2**(WIDTH-1). signabs has no polarity variants
@@ -29,19 +29,19 @@ module signabs #(
 ) (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
-    input  wire i_in,     // bipolar rate-coded input spike
+    input  wire i_input,     // bipolar rate-coded input spike
     output wire o_sign,   // 1 == negative, 0 == positive (this timestep)
     output wire o_abs     // magnitude spike
 );
     localparam integer ACC_MAX = (1 << WIDTH) - 1;       // saturating maximum
     localparam integer ACC_MED = (1 << (WIDTH - 1));     // midpoint / reset value
 
-    // acc holds the value carried into this timestep; acc_next folds in i_in.
+    // acc holds the value carried into this timestep; acc_next folds in i_input.
     reg  [WIDTH-1:0] acc;
     reg  [WIDTH-1:0] acc_next;
 
     always @(*) begin
-        if (i_in) begin
+        if (i_input) begin
             // +1, saturating at ACC_MAX.
             acc_next = (acc == ACC_MAX[WIDTH-1:0]) ? ACC_MAX[WIDTH-1:0]
                                                    : acc + 1'b1;
@@ -53,7 +53,7 @@ module signabs #(
     end
 
     assign o_sign = (acc_next < ACC_MED[WIDTH-1:0]) ? 1'b1 : 1'b0;
-    assign o_abs  = o_sign ^ i_in;
+    assign o_abs  = o_sign ^ i_input;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

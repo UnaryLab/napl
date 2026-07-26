@@ -11,7 +11,7 @@ longer mixed stream so the testbench exercises many cycles.
 
 Output: ../vec/tanh_hard.vec, one line per cycle:
 
-    <i_in> <o_out>      (each 0/1, space-separated)
+    <i_input> <o_out>      (each 0/1, space-separated)
 
 Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_tanh_hard.py

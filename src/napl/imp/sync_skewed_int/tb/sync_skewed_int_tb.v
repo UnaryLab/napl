@@ -5,16 +5,16 @@
 module sync_skewed_int_tb;
     reg i_clk;
     reg i_rst_n;
-    reg i_in_1;
-    reg i_in_2;
+    reg i_input_1;
+    reg i_input_2;
     wire [`GEN_WIDTH-1:0] o_out_1;
     wire o_out_2;
 
     sync_skewed_int #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in_1(i_in_1),
-        .i_in_2(i_in_2),
+        .i_input_1(i_input_1),
+        .i_input_2(i_input_2),
         .o_out_1(o_out_1),
         .o_out_2(o_out_2)
     );
@@ -40,8 +40,8 @@ module sync_skewed_int_tb;
     endtask
 
     initial begin
-        i_in_1 = 1'b0;
-        i_in_2 = 1'b0;
+        i_input_1 = 1'b0;
+        i_input_2 = 1'b0;
         i_rst_n = 1'b1;
 
         if (`GEN_PP_DELAY != 0) begin
@@ -60,7 +60,7 @@ module sync_skewed_int_tb;
         while (!$feof(fd)) begin
             code = $fscanf(
                 fd, "%b %b %b %d %b\n",
-                reset_flag, i_in_1, i_in_2, expected_1, expected_2
+                reset_flag, i_input_1, i_input_2, expected_1, expected_2
             );
             if (code == 5) begin
                 if (reset_flag)

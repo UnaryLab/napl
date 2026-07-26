@@ -6,7 +6,7 @@
 // Reads golden vectors produced by gen/gen_tanh_hard.py (from the napl Python
 // model) and asserts the RTL reproduces them. tanh_hard is a stateless
 // combinational identity pass-through (no polarity split, no clock), so each
-// vector row is driven on i_in and o_out is checked after the logic settles.
+// vector row is driven on i_input and o_out is checked after the logic settles.
 // Prints "PASS ..." iff every vector matches; the Makefile greps for that line
 // to decide the exit status.
 //
@@ -14,10 +14,10 @@
 //   make test OP=tanh_hard
 //==============================================================================
 module tanh_hard_tb;
-    reg  i_in;
+    reg  i_input;
     wire o_out;
 
-    tanh_hard dut (.i_in(i_in), .o_out(o_out));
+    tanh_hard dut (.i_input(i_input), .o_out(o_out));
 
     integer fd, code, n, fails;
     reg in_b, exp_out;
@@ -34,11 +34,11 @@ module tanh_hard_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b\n", in_b, exp_out);
             if (code == 2) begin
-                i_in = in_b;
+                i_input = in_b;
                 #1;                         // let the combinational logic settle
                 n = n + 1;
                 if (o_out !== exp_out) begin
-                    $display("FAIL cycle %0d: i_in=%b got %b exp %b", n, in_b, o_out, exp_out);
+                    $display("FAIL cycle %0d: i_input=%b got %b exp %b", n, in_b, o_out, exp_out);
                     fails = fails + 1;
                 end
             end

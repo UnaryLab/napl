@@ -8,14 +8,14 @@
 // "PASS ..." iff every vector matches; the Makefile greps for that line.
 //
 // sigmoid_hard is stateful (one posedge i_clk per Python forward() timestep).
-// Each vector line is "<i_rst_n> <i_in> <o_out>". A line with i_rst_n=0 marks a
+// Each vector line is "<i_rst_n> <i_input> <o_out>". A line with i_rst_n=0 marks a
 // cycle where the Python model was reset() (accumulator <- 0) *before*
 // producing that cycle's output; the testbench holds its active-low reset low
 // across that cycle so the accumulator is 0 when the combinational output is
 // sampled. This replays the gen script's t=0 reset AND its mid-stream reset,
 // proving the RTL's i_rst_n matches the model's reset from a dirtied state.
 //
-// Output is combinational in (acc, i_in), so it is sampled in the same cycle
+// Output is combinational in (acc, i_input), so it is sampled in the same cycle
 // the input is applied.
 //
 // Run (from src/napl/imp/):
@@ -24,13 +24,13 @@
 module sigmoid_hard_tb;
     reg  i_clk;
     reg  i_rst_n;
-    reg  i_in;
+    reg  i_input;
     wire o_out;
 
     sigmoid_hard dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
-        .i_in   (i_in),
+        .i_input   (i_input),
         .o_out  (o_out)
     );
 
@@ -49,7 +49,7 @@ module sigmoid_hard_tb;
         end
 
         // Settle on a falling edge before driving the first vector.
-        i_in    = 1'b0;
+        i_input    = 1'b0;
         i_rst_n = 1'b1;
         @(negedge i_clk);
 
@@ -64,11 +64,11 @@ module sigmoid_hard_tb;
                 // acc=0 with this cycle's input -- matching the model, which is
                 // reset() before this cycle's forward().
                 i_rst_n = rst_n_s;
-                i_in    = in_s;
+                i_input    = in_s;
                 #1;                 // let reset + combinational output settle
                 n = n + 1;
                 if (o_out !== exp_out) begin
-                    $display("FAIL cycle %0d: i_rst_n=%b i_in=%b got %b exp %b",
+                    $display("FAIL cycle %0d: i_rst_n=%b i_input=%b got %b exp %b",
                              n, rst_n_s, in_s, o_out, exp_out);
                     fails = fails + 1;
                 end

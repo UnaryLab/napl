@@ -3,14 +3,14 @@
 
 // mul_csg_bipolar -- unary multiply by conditional spike generation (bipolar).
 //
-// Bit-serial port of napl mul_csg.forward() (bipolar branch). i_in_1 is the
+// Bit-serial port of napl mul_csg.forward() (bipolar branch). i_input_1 is the
 // fixed-point operand round((in_1+1)/2 * 2**WIDTH) in [0, 2**WIDTH] (WIDTH+1 bits:
-// prob 1.0 maps to 2**WIDTH); i_in_0 is the 1-bit input spike. Two independent
+// prob 1.0 maps to 2**WIDTH); i_input_0 is the 1-bit input spike. Two independent
 // ROM-walking counters (WIDTH-bit ROM values in [0, 2**WIDTH-1]) drive the paths:
-//   spike     = (i_in_1 > num_seq[seq_idx]);     path     = i_in_0 & spike
-//   spike_inv = (i_in_1 > num_seq[seq_idx_inv]); path_inv = ~i_in_0 & ~spike_inv
+//   spike     = (i_input_1 > num_seq[seq_idx]);     path     = i_input_0 & spike
+//   spike_inv = (i_input_1 > num_seq[seq_idx_inv]); path_inv = ~i_input_0 & ~spike_inv
 //   o_out = path | path_inv
-//   seq_idx advances by i_in_0, seq_idx_inv by ~i_in_0 (their enables).
+//   seq_idx advances by i_input_0, seq_idx_inv by ~i_input_0 (their enables).
 // Output is combinational in the CURRENT counters (pp_delay = 0); both counters
 // are registered on posedge i_clk and cleared to 0 by i_rst_n (matching reset()).
 //
@@ -18,7 +18,7 @@
 // Python model's config: the testbench overrides it with `GEN_WIDTH (emitted by
 // gen/gen_mul_csg.py from the config), so the verified hardware tracks the
 // simulator. WIDTH sizes both seq-index counters, the ROM value width, and the
-// i_in_1 operand bus (WIDTH+1 bits). The num_seq ROM is GENERATED from the model
+// i_input_1 operand bus (WIDTH+1 bits). The num_seq ROM is GENERATED from the model
 // for the inherited WIDTH and loaded via $readmemb from vec/mul_csg_rom.hex; the
 // bipolar branch reuses the SAME table at both indices, so one ROM file serves
 // both read ports.
@@ -28,8 +28,8 @@ module mul_csg_bipolar #(
 ) (
     input  wire             i_clk,
     input  wire             i_rst_n,
-    input  wire             i_in_0,
-    input  wire [WIDTH:0]   i_in_1,   // fixed-point operand in [0, 2**WIDTH]
+    input  wire             i_input_0,
+    input  wire [WIDTH:0]   i_input_1,   // fixed-point operand in [0, 2**WIDTH]
     output wire             o_out
 );
 
@@ -53,10 +53,10 @@ module mul_csg_bipolar #(
     assign num_seq = num_seq_rom[seq_idx];
     assign num_seq_inv = num_seq_rom[seq_idx_inv];
 
-    assign spike     = (i_in_1 > {1'b0, num_seq})     ? 1'b1 : 1'b0;
-    assign spike_inv = (i_in_1 > {1'b0, num_seq_inv}) ? 1'b1 : 1'b0;
-    assign path      = i_in_0 & spike;
-    assign path_inv  = (~i_in_0) & (~spike_inv);
+    assign spike     = (i_input_1 > {1'b0, num_seq})     ? 1'b1 : 1'b0;
+    assign spike_inv = (i_input_1 > {1'b0, num_seq_inv}) ? 1'b1 : 1'b0;
+    assign path      = i_input_0 & spike;
+    assign path_inv  = (~i_input_0) & (~spike_inv);
     assign o_out     = path | path_inv;
 
     always @(posedge i_clk or negedge i_rst_n) begin
@@ -64,8 +64,8 @@ module mul_csg_bipolar #(
             seq_idx     <= {WIDTH{1'b0}};
             seq_idx_inv <= {WIDTH{1'b0}};
         end else begin
-            seq_idx     <= seq_idx     + {{(WIDTH-1){1'b0}},  i_in_0};
-            seq_idx_inv <= seq_idx_inv + {{(WIDTH-1){1'b0}}, ~i_in_0};
+            seq_idx     <= seq_idx     + {{(WIDTH-1){1'b0}},  i_input_0};
+            seq_idx_inv <= seq_idx_inv + {{(WIDTH-1){1'b0}}, ~i_input_0};
         end
     end
 

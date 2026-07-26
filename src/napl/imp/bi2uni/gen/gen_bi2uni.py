@@ -5,7 +5,7 @@ Verilog against the *actual* simulator, not a hand-derived truth table.
 
 Output: ../vec/bi2uni.vec, one line per cycle:
 
-    <i_in> <o_out>        (each 0/1, space-separated)
+    <i_input> <o_out>        (each 0/1, space-separated)
 
 bi2uni is stateful (a signed accumulator), so a single input stream is driven
 through the model cycle by cycle from reset() and the per-cycle (input, output)
@@ -42,7 +42,7 @@ BI2UNI = {"width": 2}
 # test_bi2uni.py codec_config1: the encoder feeding bi2uni.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
-# Marker emitted as the i_in field to tell the testbench to pulse i_rst_n low and
+# Marker emitted as the i_input field to tell the testbench to pulse i_rst_n low and
 # restart from the model's post-reset() state, then resume checking. Chosen
 # outside the {0,1} spike alphabet so it can never collide with a real vector.
 RST = "R"
@@ -74,8 +74,8 @@ def main():
             model.reset()
             for v in seg:
                 for bit in encode_value(CODEC, v):
-                    i_in = torch.tensor(bit, dtype=model.stype)
-                    o_out = int(model(i_in).item())
+                    i_input = torch.tensor(bit, dtype=model.stype)
+                    o_out = int(model(i_input).item())
                     f.write(f"{bit} {o_out}\n")
                     rows += 1
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} (GEN_WIDTH={BI2UNI['width']})")

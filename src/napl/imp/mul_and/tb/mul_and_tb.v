@@ -16,8 +16,8 @@ module mul_and_tb;
     wire out_uni, out_bi;
 
     // One module per polarity, both fed the same stimulus.
-    mul_and_unipolar dut_uni (.i_in_0(in_0), .i_in_1(in_1), .o_out(out_uni));
-    mul_and_bipolar  dut_bi  (.i_in_0(in_0), .i_in_1(in_1), .o_out(out_bi));
+    mul_and_unipolar dut_uni (.i_input_0(in_0), .i_input_1(in_1), .o_out(out_uni));
+    mul_and_bipolar  dut_bi  (.i_input_0(in_0), .i_input_1(in_1), .o_out(out_bi));
 
     integer fd, code, n, fails;
     reg a, b, exp_uni, exp_bi;

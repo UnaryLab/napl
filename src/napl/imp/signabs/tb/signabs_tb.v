@@ -12,9 +12,9 @@
 // cycle by cycle.
 //
 // Timing contract (matches the Python forward()): at timestep t the model folds
-// i_in into the accumulator and returns sign/abs from the UPDATED value, all in
+// i_input into the accumulator and returns sign/abs from the UPDATED value, all in
 // one call. In RTL acc is registered and o_sign/o_abs are combinational from the
-// current acc + i_in, so per cycle we (1) drive i_in, (2) check o_sign/o_abs
+// current acc + i_input, so per cycle we (1) drive i_input, (2) check o_sign/o_abs
 // against the settled combinational outputs, then (3) pulse one posedge i_clk to
 // commit acc_next. i_rst_n is held low first so the co-sim starts from the exact
 // post-reset() state (acc = ACC_MED).
@@ -34,7 +34,7 @@ module signabs_tb;
     signabs #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_sign  (sign_bit),
         .o_abs   (abs_bit)
     );
@@ -79,7 +79,7 @@ module signabs_tb;
                     rst_n = 1'b1;
                 end
                 // Drive this cycle's input; o_sign/o_abs settle combinationally
-                // from the current acc + i_in (the UPDATED-acc outputs the model
+                // from the current acc + i_input (the UPDATED-acc outputs the model
                 // returns this timestep). Check, then posedge to commit acc_next.
                 in_bit = a;
                 #1;   // let the combinational outputs settle

@@ -6,12 +6,12 @@
 // streams is the elementwise min. Purely combinational (pp_delay = 0).
 // Verify from src/napl/imp with: make test OP=min_tc
 module min_tc (
-    input  wire i_in_0,
-    input  wire i_in_1,
+    input  wire i_input_0,
+    input  wire i_input_1,
     output wire o_out
 );
 
-    assign o_out = i_in_0 & i_in_1;
+    assign o_out = i_input_0 & i_input_1;
 
 endmodule
 

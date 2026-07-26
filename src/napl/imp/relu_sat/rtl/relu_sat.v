@@ -12,7 +12,7 @@
 // Each add_any per timestep:  acc += (partial - offset); clamp; out = acc>=scale;
 // acc -= scale*out.  The accumulators here are scaled by 2 so the 0.5 offsets are
 // integers (half-units): A = 2*acc, integer, clamped to [-8, 6] (= 2*[-4, 3]).
-//   sub stage: A_sub += 2*i_in - 1;        clamp; out_sub = A_sub >= 2; A_sub -= 2*out_sub
+//   sub stage: A_sub += 2*i_input - 1;        clamp; out_sub = A_sub >= 2; A_sub -= 2*out_sub
 //   add stage: A_add += 2*out_sub + 1;     clamp; o_out   = A_add >= 2; A_add -= 2*out_add
 //
 // Output is combinational from the current accumulator state (same cycle as the
@@ -22,7 +22,7 @@
 module relu_sat (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,        // bipolar rate-coded input spike
+    input  wire i_input,        // bipolar rate-coded input spike
     output wire o_out        // bipolar rate-coded ReLU output spike
 );
     // Half-unit accumulators (2*acc): signed, range [-8, 6]; 5-bit signed holds it.
@@ -31,7 +31,7 @@ module relu_sat (
 
     // ---- combinational: this cycle's outputs and next-cycle accumulator state ----
     // sub stage
-    wire signed [5:0] sum_sub = $signed({acc_sub[4], acc_sub}) + (i_in ? 6'sd1 : -6'sd1);
+    wire signed [5:0] sum_sub = $signed({acc_sub[4], acc_sub}) + (i_input ? 6'sd1 : -6'sd1);
     wire signed [5:0] clmp_sub = (sum_sub > 6'sd6)  ? 6'sd6  :
                                  (sum_sub < -6'sd8) ? -6'sd8 : sum_sub;
     wire out_sub = (clmp_sub >= 6'sd2);

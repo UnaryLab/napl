@@ -5,21 +5,21 @@
 module sqrt_gaines_tb;
     reg i_clk;
     reg i_rst_n;
-    reg i_in_uni;
-    reg i_in_bi;
+    reg i_input_uni;
+    reg i_input_bi;
     wire o_out_uni;
     wire o_out_bi;
 
     sqrt_gaines_unipolar #(.WIDTH(`GEN_WIDTH)) dut_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_in_uni),
+        .i_input(i_input_uni),
         .o_out(o_out_uni)
     );
     sqrt_gaines_bipolar #(.WIDTH(`GEN_WIDTH)) dut_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_in_bi),
+        .i_input(i_input_bi),
         .o_out(o_out_bi)
     );
 
@@ -45,8 +45,8 @@ module sqrt_gaines_tb;
 
     initial begin
         i_rst_n = 1'b1;
-        i_in_uni = 1'b0;
-        i_in_bi = 1'b0;
+        i_input_uni = 1'b0;
+        i_input_bi = 1'b0;
 
         if (`GEN_PP_DELAY != 1) begin
             $display("ERROR: sqrt_gaines pp_delay must be 1");
@@ -64,7 +64,7 @@ module sqrt_gaines_tb;
         while (!$feof(fd)) begin
             code = $fscanf(
                 fd, "%b %b %b %b %b\n",
-                reset_flag, i_in_uni, expected_uni, i_in_bi, expected_bi
+                reset_flag, i_input_uni, expected_uni, i_input_bi, expected_bi
             );
             if (code == 5) begin
                 if (reset_flag)

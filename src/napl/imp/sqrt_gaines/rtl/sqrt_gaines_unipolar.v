@@ -5,11 +5,11 @@
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=sqrt_gaines
 module sqrt_gaines_unipolar #(
-    parameter integer WIDTH = 5
+    parameter integer WIDTH = 5  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     localparam [WIDTH-1:0] CNT_MAX = {WIDTH{1'b1}};
@@ -38,9 +38,9 @@ module sqrt_gaines_unipolar #(
         end else begin
             rng_idx <= rng_idx + {{(WIDTH-1){1'b0}}, 1'b1};
             out_d <= o_out;
-            if (i_in && !decrement && cnt < CNT_MAX)
+            if (i_input && !decrement && cnt < CNT_MAX)
                 cnt <= cnt + {{(WIDTH-1){1'b0}}, 1'b1};
-            else if (!i_in && decrement && cnt > {WIDTH{1'b0}})
+            else if (!i_input && decrement && cnt > {WIDTH{1'b0}})
                 cnt <= cnt - {{(WIDTH-1){1'b0}}, 1'b1};
         end
     end

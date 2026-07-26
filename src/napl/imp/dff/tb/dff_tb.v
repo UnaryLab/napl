@@ -14,7 +14,7 @@
 // Timing contract (matches the Python forward()): at timestep t the model
 // returns the OLDEST cell (reg_q[0]) BEFORE pushing the new input. So per cycle
 // we (1) check o_out == expected against the CURRENT register state, (2) drive
-// i_in, then (3) pulse one posedge i_clk to perform the shift. i_rst_n is held
+// i_input, then (3) pulse one posedge i_clk to perform the shift. i_rst_n is held
 // low first so the co-sim starts from the exact post-reset() state (all zeros).
 //
 // A lone "R" line in the vector file is a MID-STREAM reset marker emitted by the
@@ -34,7 +34,7 @@ module dff_tb;
     dff #(.DEPTH(`GEN_DEPTH)) dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_bit)
     );
 

@@ -6,11 +6,11 @@
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=exp_n1
 module exp_n1 #(
-    parameter integer WIDTH = 8
+    parameter integer WIDTH = 8  // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     reg [WIDTH-1:0] coef_idx;
@@ -28,7 +28,7 @@ module exp_n1 #(
     initial $readmemb("vec/exp_n1_rom.hex", coef_rom);
 
     assign coef = coef_rom[coef_idx];
-    assign n_1 = ~(i_in & coef[3]);
+    assign n_1 = ~(i_input & coef[3]);
     assign n_2 = ~(n_1 & input_d1 & coef[2]);
     assign n_3 = ~(n_2 & input_d2 & coef[1]);
     assign n_4 = ~(n_3 & input_d3 & coef[0]);
@@ -46,7 +46,7 @@ module exp_n1 #(
             input_d4 <= input_d3;
             input_d3 <= input_d2;
             input_d2 <= input_d1;
-            input_d1 <= i_in;
+            input_d1 <= i_input;
         end
     end
 endmodule

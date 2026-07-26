@@ -13,7 +13,7 @@ emitted; the RTL is validate-only.
 
 Output: ../vec/relu_sat.vec, one line per cycle:
 
-    <rst> <i_in> <o_out>      (each 0/1, space-separated)
+    <rst> <i_input> <o_out>      (each 0/1, space-separated)
 
 `rst`=1 marks a cycle where the model was reset() BEFORE this timestep (the RTL
 testbench pulses i_rst_n low on that cycle). We exercise:

@@ -9,13 +9,13 @@
 //
 // Per timestep (one posedge i_clk):
 //   sync_skewed (counter cnt, 0..3 saturating, width=2):
-//     diff   = i_in_0 ^ i_in_1                 // input_01_10: the pair is 01/10
+//     diff   = i_input_0 ^ i_input_1                 // input_01_10: the pair is 01/10
 //     not_min= (cnt != 0)
 //     not_max= (cnt != 3)
-//     select = not_min - (not_min + not_max) * i_in_0
-//     sync_0 = i_in_0 + diff * select          // skewed output_1, a 0/1 spike
-//     sync_1 = i_in_1                           // input_2 passes through
-//     cnt   += diff ? (i_in_0 ? +1 : -1) : 0   // saturating at [0,3]
+//     select = not_min - (not_min + not_max) * i_input_0
+//     sync_0 = i_input_0 + diff * select          // skewed output_1, a 0/1 spike
+//     sync_1 = i_input_1                           // input_2 passes through
+//     cnt   += diff ? (i_input_0 ? +1 : -1) : 0   // saturating at [0,3]
 //   lt_rc:
 //     d_en   = sync_0 ^ sync_1
 //     o_out  = dff                              // REGISTERED (previous state)
@@ -33,8 +33,8 @@
 module lt_rc (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
-    input  wire i_in_0,   // spike stream 0 (the "smaller" operand to sync)
-    input  wire i_in_1,   // spike stream 1 (kept unchanged through sync)
+    input  wire i_input_0,   // spike stream 0 (the "smaller" operand to sync)
+    input  wire i_input_1,   // spike stream 1 (kept unchanged through sync)
     output wire o_out     // registered less-than spike
 );
     // sync_skewed state: 2-bit saturating counter, range 0..3.
@@ -43,24 +43,24 @@ module lt_rc (
     reg        dff;
 
     // ---- combinational sync_skewed datapath (cnt held constant) ----
-    wire diff    = i_in_0 ^ i_in_1;            // pair is 01 or 10
+    wire diff    = i_input_0 ^ i_input_1;            // pair is 01 or 10
     wire not_min = (cnt != 2'd0);
     wire not_max = (cnt != 2'd3);
 
-    // select = not_min - (not_min + not_max) * i_in_0   (small signed integer)
-    // sync_0 = i_in_0 + diff * select, which is always a 0/1 spike:
-    //   diff==0          -> sync_0 = i_in_0
+    // select = not_min - (not_min + not_max) * i_input_0   (small signed integer)
+    // sync_0 = i_input_0 + diff * select, which is always a 0/1 spike:
+    //   diff==0          -> sync_0 = i_input_0
     //   diff==1, in_0==0 -> sync_0 = not_min       (0 + 1*not_min)
     //   diff==1, in_0==1 -> sync_0 = 1 - not_max   (1 + 1*(-not_max))
-    wire sync_0 = diff ? (i_in_0 ? (~not_max) : not_min) : i_in_0;
-    wire sync_1 = i_in_1;
+    wire sync_0 = diff ? (i_input_0 ? (~not_max) : not_min) : i_input_0;
+    wire sync_1 = i_input_1;
 
     // counter next-state with saturation at the boundaries.
     reg  [1:0] cnt_nxt;
     always @* begin
         cnt_nxt = cnt;
         if (diff) begin
-            if (i_in_0) begin
+            if (i_input_0) begin
                 if (not_max) cnt_nxt = cnt + 2'd1;   // add 1, else hold at 3
             end else begin
                 if (not_min) cnt_nxt = cnt - 2'd1;   // sub 1, else hold at 0

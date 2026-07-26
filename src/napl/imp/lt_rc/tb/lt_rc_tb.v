@@ -10,7 +10,7 @@
 // before this cycle's update), so for each vector:
 //   1. if rst==1 this is the first cycle of a new reset segment -> pulse
 //      i_rst_n low so cnt<=0, dff<=0 (the post-reset() state),
-//   2. drive i_in_0/i_in_1 for the timestep,
+//   2. drive i_input_0/i_input_1 for the timestep,
 //   3. o_out already holds the pre-edge dff (== model output), so compare it,
 //   4. pulse i_clk to advance the registered state to the next timestep.
 //
@@ -22,14 +22,14 @@
 module lt_rc_tb;
     reg  i_clk;
     reg  i_rst_n;
-    reg  i_in_0, i_in_1;
+    reg  i_input_0, i_input_1;
     wire o_out;
 
     lt_rc dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
-        .i_in_0 (i_in_0),
-        .i_in_1 (i_in_1),
+        .i_input_0 (i_input_0),
+        .i_input_1 (i_input_1),
         .o_out  (o_out)
     );
 
@@ -63,8 +63,8 @@ module lt_rc_tb;
             code = $fscanf(fd, "%b %b %b %b\n", rst, a, b, exp_out);
             if (code == 4) begin
                 if (rst) do_reset;
-                i_in_0 = a;
-                i_in_1 = b;
+                i_input_0 = a;
+                i_input_1 = b;
                 #1;                       // let combinational o_out settle
                 n = n + 1;
                 if (o_out !== exp_out) begin

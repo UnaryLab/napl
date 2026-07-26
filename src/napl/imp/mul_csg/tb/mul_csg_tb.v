@@ -26,25 +26,25 @@
 module mul_csg_tb;
     reg                 i_clk;
     reg                 i_rst_n;
-    reg                 i_in_0;
-    reg  [`GEN_WIDTH:0] i_in_1u;   // operand bus = WIDTH+1 bits
-    reg  [`GEN_WIDTH:0] i_in_1b;
+    reg                 i_input_0;
+    reg  [`GEN_WIDTH:0] i_input_1u;   // operand bus = WIDTH+1 bits
+    reg  [`GEN_WIDTH:0] i_input_1b;
     wire                o_out_uni;
     wire                o_out_bi;
 
     mul_csg_unipolar #(.WIDTH(`GEN_WIDTH)) dut_u (
         .i_clk   (i_clk),
         .i_rst_n (i_rst_n),
-        .i_in_0  (i_in_0),
-        .i_in_1  (i_in_1u),
+        .i_input_0  (i_input_0),
+        .i_input_1  (i_input_1u),
         .o_out   (o_out_uni)
     );
 
     mul_csg_bipolar #(.WIDTH(`GEN_WIDTH)) dut_b (
         .i_clk   (i_clk),
         .i_rst_n (i_rst_n),
-        .i_in_0  (i_in_0),
-        .i_in_1  (i_in_1b),
+        .i_input_0  (i_input_0),
+        .i_input_1  (i_input_1b),
         .o_out   (o_out_bi)
     );
 
@@ -57,9 +57,9 @@ module mul_csg_tb;
     initial begin
         i_clk   = 1'b0;
         i_rst_n = 1'b1;
-        i_in_0  = 1'b0;
-        i_in_1u = {(`GEN_WIDTH+1){1'b0}};
-        i_in_1b = {(`GEN_WIDTH+1){1'b0}};
+        i_input_0  = 1'b0;
+        i_input_1u = {(`GEN_WIDTH+1){1'b0}};
+        i_input_1b = {(`GEN_WIDTH+1){1'b0}};
 
         fd = $fopen("vec/mul_csg.vec", "r");
         if (fd == 0) begin
@@ -84,9 +84,9 @@ module mul_csg_tb;
                 end
 
                 // drive inputs and let the combinational output settle
-                i_in_0  = a;
-                i_in_1u = in1u[`GEN_WIDTH:0];
-                i_in_1b = in1b[`GEN_WIDTH:0];
+                i_input_0  = a;
+                i_input_1u = in1u[`GEN_WIDTH:0];
+                i_input_1b = in1b[`GEN_WIDTH:0];
                 #1;
 
                 n = n + 1;

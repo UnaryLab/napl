@@ -41,7 +41,7 @@ module add_any_tb;
 
     reg              i_clk;
     reg              i_rst_n;
-    reg  [IN_W-1:0]  i_in;
+    reg  [IN_W-1:0]  i_input;
     wire             o_uni;
     wire             o_bi;
 
@@ -52,7 +52,7 @@ module add_any_tb;
     ) dut_uni (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
-        .i_in   (i_in),
+        .i_input   (i_input),
         .o_out  (o_uni)
     );
 
@@ -63,7 +63,7 @@ module add_any_tb;
     ) dut_bi (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
-        .i_in   (i_in),
+        .i_input   (i_input),
         .o_out  (o_bi)
     );
 
@@ -82,7 +82,7 @@ module add_any_tb;
             $finish;
         end
 
-        i_in    = {IN_W{1'b0}};
+        i_input    = {IN_W{1'b0}};
         i_rst_n = 1'b1;
 
         n = 0;
@@ -101,15 +101,15 @@ module add_any_tb;
                 end
                 // Drive the input just after a falling edge so it is stable at the
                 // rising edge; o_out is combinational from the accumulators.
-                i_in = part[IN_W-1:0];
+                i_input = part[IN_W-1:0];
                 #1;                     // let the combinational outputs settle
                 n = n + 1;
                 if (o_uni !== exp_uni) begin
-                    $display("FAIL cycle %0d unipolar: i_in=%0d got %b exp %b", n, part, o_uni, exp_uni);
+                    $display("FAIL cycle %0d unipolar: i_input=%0d got %b exp %b", n, part, o_uni, exp_uni);
                     fails = fails + 1;
                 end
                 if (o_bi !== exp_bi) begin
-                    $display("FAIL cycle %0d bipolar: i_in=%0d got %b exp %b", n, part, o_bi, exp_bi);
+                    $display("FAIL cycle %0d bipolar: i_input=%0d got %b exp %b", n, part, o_bi, exp_bi);
                     fails = fails + 1;
                 end
                 @(posedge i_clk);       // advance the accumulator state

@@ -1,7 +1,7 @@
 """Emit golden vectors for max_rc from the napl Python model.
 
 Drives the model with random {0,1} spike streams on (input_0, input_1) and
-records per cycle: reset i_in_0 i_in_1 o_max o_arg. max_rc has no polarity
+records per cycle: reset i_input_0 i_input_1 o_max o_arg. max_rc has no polarity
 branch. Reset is asserted before the first row and once after state has changed.
 """
 import os

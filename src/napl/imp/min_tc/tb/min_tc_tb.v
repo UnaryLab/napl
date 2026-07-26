@@ -17,8 +17,8 @@ module min_tc_tb;
     integer vin0, vin1, vexp;
 
     min_tc dut (
-        .i_in_0 (r_in_0),
-        .i_in_1 (r_in_1),
+        .i_input_0 (r_in_0),
+        .i_input_1 (r_in_1),
         .o_out  (w_out)
     );
 

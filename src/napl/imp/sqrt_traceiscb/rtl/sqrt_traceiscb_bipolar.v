@@ -36,7 +36,7 @@
 module sqrt_traceiscb_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
-    input  wire i_in,     // input spike stream
+    input  wire i_input,     // input spike stream
     output wire o_out     // output spike stream (combinational, 0-cycle latency)
 );
     // Registered state (post-reset() values are all zero). acc is signed,
@@ -49,7 +49,7 @@ module sqrt_traceiscb_bipolar (
     reg idx_q;            // cordiv idx (rand_seq [0,1] -> buf0/buf1)
 
     // Combinational datapath for this timestep.
-    wire output_bit = trace_q | i_in;            // ((1-trace)&in)+trace
+    wire output_bit = trace_q | i_input;            // ((1-trace)&in)+trace
 
     // bi2uni: acc + (2*output - 1), clamped to [-2, 1].
     wire signed [2:0] acc_step = output_bit ? (acc_q + 3'sd1) : (acc_q - 3'sd1);

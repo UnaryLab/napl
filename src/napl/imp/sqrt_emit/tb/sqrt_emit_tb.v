@@ -7,8 +7,8 @@
 // model) and asserts both polarity variants reproduce them cycle by cycle.
 //
 // Timing contract (matches the Python forward()): o_out at timestep t is
-// combinational in i_in given the cycle-t registers, then the new state is
-// clocked in. So per cycle we (1) drive i_in, let it settle combinationally,
+// combinational in i_input given the cycle-t registers, then the new state is
+// clocked in. So per cycle we (1) drive i_input, let it settle combinationally,
 // (2) check o_out == expected, then (3) pulse one posedge i_clk to commit the
 // state update. i_rst_n is held low first so the co-sim starts from the exact
 // post-reset() state (emit=0, acc=0, acc_b=0, sr[i]=i%2).
@@ -28,14 +28,14 @@ module sqrt_emit_tb;
     sqrt_emit_unipolar dut_uni (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_uni)
     );
 
     sqrt_emit_bipolar dut_bip (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_bip)
     );
 

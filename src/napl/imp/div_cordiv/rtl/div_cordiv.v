@@ -29,8 +29,8 @@
 // Verify from src/napl/imp with: make test OP=div_cordiv
 //==============================================================================
 module div_cordiv #(
-    parameter integer DEPTH = 2,
-    parameter integer WIDTH = 1
+    parameter integer DEPTH = 2,  // inherited from config['depth']; tb overrides via `GEN_DEPTH
+    parameter integer WIDTH = 1   // inherited from log2(config['depth']); tb overrides via `GEN_WIDTH
 ) (
     input  wire i_clk,       // one posedge == one Python forward() timestep
     input  wire i_rst_n,     // active-low; maps to Python reset()

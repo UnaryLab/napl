@@ -28,12 +28,12 @@ module dff #(
 ) (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
-    input  wire i_in,     // input spike stream
+    input  wire i_input,     // input spike stream
     output wire o_out     // delayed spike stream (DEPTH cycles old)
 );
     // reg_q[0] is the oldest cell (the one read out this cycle); reg_q[DEPTH-1]
     // is the most recently written. Each posedge: emit reg_q[0], shift left, and
-    // load i_in into the tail. (At DEPTH=1 this is a single D flip-flop.)
+    // load i_input into the tail. (At DEPTH=1 this is a single D flip-flop.)
     reg [DEPTH-1:0] reg_q;
 
     genvar index;
@@ -44,7 +44,7 @@ module dff #(
                     if (!i_rst_n)
                         reg_q[index] <= 1'b0;
                     else
-                        reg_q[index] <= i_in;
+                        reg_q[index] <= i_input;
                 end
             end else begin : g_body
                 always @(posedge i_clk or negedge i_rst_n) begin

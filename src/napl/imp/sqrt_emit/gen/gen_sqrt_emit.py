@@ -17,7 +17,7 @@ parameters and is validated as-is.
 
 We drive both models from reset() with one shared input stream and record, per
 cycle, the input, a mid-stream RESET flag, and each variant's output. The output
-at cycle t is what forward() returns at that timestep (combinational in i_in
+at cycle t is what forward() returns at that timestep (combinational in i_input
 given the cycle-t registers). To prove reset equivalence from a *dirtied* state
 (both models are stateful) we inject a mid-stream reset(): at that cycle the RTL
 re-asserts i_rst_n and both models are reset() before resuming the same stream.

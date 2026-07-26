@@ -9,7 +9,7 @@
 // only the emit feedback differs: bipolar scrambles by AND-ing with bi2uni(out)
 // rather than out directly. Per timestep t (one posedge i_clk):
 //
-//   in_sum  = i_in + emit_out                 // emit_out is feedback from t-1
+//   in_sum  = i_input + emit_out                 // emit_out is feedback from t-1
 //   acc_add = clamp(acc + in_sum, -4, 3)      // nsadd: unipolar, scale=1, w=3
 //   o_out   = (acc_add >= 1)
 //   acc'    = acc_add - o_out
@@ -21,7 +21,7 @@
 //   acc_b'    = acc_b_add - out_uni
 //   emit_out' = scrambled & out_uni            // bipolar emit
 //
-// o_out is combinational in i_in given the cycle-t registers, so the input->
+// o_out is combinational in i_input given the cycle-t registers, so the input->
 // output latency is 0 (pp_delay = 0).
 //
 // Reset (active-low i_rst_n) maps to the Python reset():
@@ -30,7 +30,7 @@
 module sqrt_emit_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
-    input  wire i_in,     // input spike stream
+    input  wire i_input,     // input spike stream
     output wire o_out     // square-root spike stream
 );
     reg signed [3:0] acc;      // nsadd accumulator, clamped to [-4, 3]
@@ -39,7 +39,7 @@ module sqrt_emit_bipolar (
     reg        [1:0] sr;       // sr[0] = oldest (read out), sr[1] = newest
 
     // --- nsadd combinational datapath ---------------------------------------
-    wire [1:0]        in_sum  = {1'b0, i_in} + {1'b0, emit_out};   // 0,1,2
+    wire [1:0]        in_sum  = {1'b0, i_input} + {1'b0, emit_out};   // 0,1,2
     wire signed [4:0] acc_pre = $signed({acc[3], acc}) + $signed({3'b000, in_sum});
     wire signed [4:0] acc_add =
         (acc_pre > 5'sd3)  ? 5'sd3  :

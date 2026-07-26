@@ -16,7 +16,7 @@
 module div_iscb_uni2bi (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     // 5-bit signed accumulator holds [-4, 3] with slack for the +1/+2 step.
@@ -26,7 +26,7 @@ module div_iscb_uni2bi (
     reg signed [4:0] acc_q;
 
     // acc += (in + 1), clamped.
-    wire signed [4:0] step    = i_in ? 5'sd2 : 5'sd1;
+    wire signed [4:0] step    = i_input ? 5'sd2 : 5'sd1;
     wire signed [4:0] acc_sum = acc_q + step;
     wire signed [4:0] acc_clmp =
         (acc_sum > ACC_MAX) ? ACC_MAX :

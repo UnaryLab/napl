@@ -9,9 +9,9 @@
 // One posedge i_clk == one Python forward() timestep. Active-low i_rst_n maps to
 // the Python reset(): cnt <- 0, dff <- 0.
 //
-// Inputs  i_in_0, i_in_1 : 1-bit spikes (sync_skewed receives them as
-//                          input_1=i_in_0, input_2=i_in_1).
-// Outputs o_min          : min spike    = dff*i_in_0 + (1-dff)*i_in_1 (PRE-update dff)
+// Inputs  i_input_0, i_input_1 : 1-bit spikes (sync_skewed receives them as
+//                          input_1=i_input_0, input_2=i_input_1).
+// Outputs o_min          : min spike    = dff*i_input_0 + (1-dff)*i_input_1 (PRE-update dff)
 //         o_argmin       : argmin spike  = 1 - dff_next               (POST-update dff)
 //
 // Mirroring the Python forward(): the min uses the dff value held coming into the
@@ -22,8 +22,8 @@
 module min_rc (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in_0,
-    input  wire i_in_1,
+    input  wire i_input_0,
+    input  wire i_input_1,
     output wire o_min,
     output wire o_argmin
 );
@@ -35,18 +35,18 @@ module min_rc (
 
     // --- sync_skewed combinational datapath ---------------------------------
     // input_01_10 : the two spikes differ (01 or 10)
-    wire x01 = i_in_0 ^ i_in_1;
+    wire x01 = i_input_0 ^ i_input_1;
 
     wire cnt_not_min = (cnt != 2'd0);
     wire cnt_not_max = (cnt != CNT_MAX);
 
-    // select = cnt_not_min - (cnt_not_min + cnt_not_max) * i_in_0
-    // sync_0  = i_in_0 + x01 * select   (always 0/1; case-derived below)
-    //   x01==0          -> sync_0 = i_in_0
-    //   x01==1,i_in_0==1 -> sync_0 = 1 - cnt_not_max  (=cnt_not_max ? 0 : 1)
-    //   x01==1,i_in_0==0 -> sync_0 = cnt_not_min
-    wire sync_0 = x01 ? (i_in_0 ? ~cnt_not_max : cnt_not_min) : i_in_0;
-    wire sync_1 = i_in_1;  // input_2 passes through unchanged
+    // select = cnt_not_min - (cnt_not_min + cnt_not_max) * i_input_0
+    // sync_0  = i_input_0 + x01 * select   (always 0/1; case-derived below)
+    //   x01==0          -> sync_0 = i_input_0
+    //   x01==1,i_input_0==1 -> sync_0 = 1 - cnt_not_max  (=cnt_not_max ? 0 : 1)
+    //   x01==1,i_input_0==0 -> sync_0 = cnt_not_min
+    wire sync_0 = x01 ? (i_input_0 ? ~cnt_not_max : cnt_not_min) : i_input_0;
+    wire sync_1 = i_input_1;  // input_2 passes through unchanged
 
     // --- min_rc combinational datapath --------------------------------------
     wire d_enable = sync_0 ^ sync_1;
@@ -57,16 +57,16 @@ module min_rc (
 
     // min output uses the ORIGINAL inputs and the pre-update dff;
     // argmin is read after the in-timestep dff update (1 - dff_next)
-    assign o_min    = dff ? i_in_0 : i_in_1;
+    assign o_min    = dff ? i_input_0 : i_input_1;
     assign o_argmin = ~dff_next;
 
-    // next-state for cnt: cnt + x01*(2*i_in_0 - 1), saturated to [0, CNT_MAX]
+    // next-state for cnt: cnt + x01*(2*i_input_0 - 1), saturated to [0, CNT_MAX]
     // only changes when x01 (the inputs differ).
     reg [1:0] cnt_next;
     always @(*) begin
         cnt_next = cnt;
         if (x01) begin
-            if (i_in_0) begin
+            if (i_input_0) begin
                 if (cnt_not_max) cnt_next = cnt + 2'd1;  // saturate at CNT_MAX
             end else begin
                 if (cnt_not_min) cnt_next = cnt - 2'd1;  // saturate at 0

@@ -40,20 +40,20 @@ module div_iscb_bipolar (
 
     div_iscb_signabs u_sad (
         .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_in(i_dividend), .o_sign(sign_d), .o_abs(abs_d)
+        .i_input(i_dividend), .o_sign(sign_d), .o_abs(abs_d)
     );
     div_iscb_signabs u_sas (
         .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_in(i_divisor), .o_sign(sign_s), .o_abs(abs_s)
+        .i_input(i_divisor), .o_sign(sign_s), .o_abs(abs_s)
     );
 
     div_iscb_bi2uni u_b2u_d (
         .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_in(abs_d), .o_out(u_abs_d)
+        .i_input(abs_d), .o_out(u_abs_d)
     );
     div_iscb_bi2uni u_b2u_s (
         .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_in(abs_s), .o_out(u_abs_s)
+        .i_input(abs_s), .o_out(u_abs_s)
     );
 
     // Unipolar magnitude division core (sync_skewed + div_cordiv).
@@ -65,7 +65,7 @@ module div_iscb_bipolar (
 
     div_iscb_uni2bi u_u2b (
         .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_in(u_abs_q), .o_out(bi_abs_q)
+        .i_input(u_abs_q), .o_out(bi_abs_q)
     );
 
     assign o_quotient = sign_d ^ sign_s ^ bi_abs_q;

@@ -5,7 +5,7 @@
 module exp_ng_tb;
     reg i_clk;
     reg i_rst_n;
-    reg i_in;
+    reg i_input;
     wire o_out;
 
     exp_ng #(
@@ -14,7 +14,7 @@ module exp_ng_tb;
     ) dut (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_in),
+        .i_input(i_input),
         .o_out(o_out)
     );
 
@@ -38,7 +38,7 @@ module exp_ng_tb;
     endtask
 
     initial begin
-        i_in = 1'b0;
+        i_input = 1'b0;
         i_rst_n = 1'b1;
         reset_dut;
 
@@ -60,14 +60,14 @@ module exp_ng_tb;
             if (code == 1 && token == "R") begin
                 reset_dut;
             end else if (code == 1) begin
-                i_in = (token[7:0] == "1");
+                i_input = (token[7:0] == "1");
                 code = $fscanf(fd, "%b\n", expected);
                 #1;
                 count = count + 1;
                 if (o_out !== expected) begin
                     $display(
                         "FAIL exp_ng cycle %0d: in=%b got=%b expected=%b",
-                        count, i_in, o_out, expected
+                        count, i_input, o_out, expected
                     );
                     fails = fails + 1;
                 end

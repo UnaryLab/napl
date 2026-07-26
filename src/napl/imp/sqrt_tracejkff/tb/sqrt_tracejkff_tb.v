@@ -8,8 +8,8 @@
 // cycle.
 //
 // Timing contract (matches the Python forward()): o_out at timestep t is
-// combinational in i_in given the cycle-t trace/acc registers, then the new
-// state is clocked in. So per cycle we (1) drive i_in, let it settle, (2) check
+// combinational in i_input given the cycle-t trace/acc registers, then the new
+// state is clocked in. So per cycle we (1) drive i_input, let it settle, (2) check
 // o_out against the expected column BEFORE the committing posedge, then (3)
 // pulse one posedge i_clk to commit the state update. Checking before the
 // posedge (rather than on the next negedge) is required: otherwise the posedge
@@ -33,14 +33,14 @@ module sqrt_tracejkff_tb;
     sqrt_tracejkff_unipolar dut_uni (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_uni)
     );
 
     sqrt_tracejkff_bipolar dut_bip (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_bip)
     );
 

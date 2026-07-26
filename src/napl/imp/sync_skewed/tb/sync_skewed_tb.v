@@ -11,7 +11,7 @@
 // model) and asserts the skewed synchronizer reproduces them cycle by cycle.
 //
 // Timing contract (matches the Python forward()): at timestep t the outputs are
-// combinational in (i_in_1, i_in_2, cnt) where cnt is the value BEFORE this
+// combinational in (i_input_1, i_input_2, cnt) where cnt is the value BEFORE this
 // timestep's update. So per cycle we (1) drive this cycle's inputs, (2) let the
 // combinational outputs settle and check them against the current register
 // state, then (3) pulse one posedge i_clk to perform the counter update.
@@ -32,8 +32,8 @@ module sync_skewed_tb;
     sync_skewed #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in_1  (in_1),
-        .i_in_2  (in_2),
+        .i_input_1  (in_1),
+        .i_input_2  (in_2),
         .o_out_1 (out_1),
         .o_out_2 (out_2)
     );

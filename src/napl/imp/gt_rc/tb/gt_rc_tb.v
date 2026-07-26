@@ -31,8 +31,8 @@ module gt_rc_tb;
     gt_rc dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in_0  (in_0),
-        .i_in_1  (in_1),
+        .i_input_0  (in_0),
+        .i_input_1  (in_1),
         .o_out   (out)
     );
 

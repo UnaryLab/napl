@@ -12,7 +12,7 @@ pulse i_rst_n at the matching cycle.
 
 Output: ../vec/relu_cnt.vec, one line per timestep:
 
-    <i_in> <o_out> <rst>   (each 0/1, space-separated; rst=1 means "reset BEFORE
+    <i_input> <o_out> <rst>   (each 0/1, space-separated; rst=1 means "reset BEFORE
                             this cycle's output is produced")
 
 The sizing param WIDTH is the single source of truth: it is read from the op

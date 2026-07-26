@@ -8,7 +8,7 @@ sqrt_tracejkff is stateful (a JK-FF trace register; bipolar also carries a
 width-2 bi2uni accumulator). reset() zeroes both. We drive each polarity model
 from reset() with the SAME input stream and record (in, out_unipolar,
 out_bipolar) per cycle. The output at cycle t is what forward() returns at that
-timestep, which is combinational in i_in given the cycle's incoming state.
+timestep, which is combinational in i_input given the cycle's incoming state.
 
 Because the op is stateful, we also emit a MID-STREAM reset: after dirtying the
 trace/acc registers with a leading segment, we call model.reset() and emit a

@@ -9,8 +9,8 @@
 //
 // Reads golden vectors produced by gen/gen_bi2uni.py (from the napl Python
 // model) and replays them cycle by cycle. bi2uni is a Mealy machine: o_out is
-// combinational in i_in and the accumulator, which advances on each posedge
-// i_clk. So per cycle we drive i_in, let o_out settle, check it, then clock
+// combinational in i_input and the accumulator, which advances on each posedge
+// i_clk. So per cycle we drive i_input, let o_out settle, check it, then clock
 // once to advance the accumulator. i_rst_n is pulsed low first to start from
 // the model's post-reset() state (acc = 0).
 //
@@ -26,13 +26,13 @@
 module bi2uni_tb;
     reg  i_clk;
     reg  i_rst_n;
-    reg  i_in;
+    reg  i_input;
     wire o_out;
 
     bi2uni #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk   (i_clk),
         .i_rst_n (i_rst_n),
-        .i_in    (i_in),
+        .i_input    (i_input),
         .o_out   (o_out)
     );
 
@@ -52,7 +52,7 @@ module bi2uni_tb;
 
     initial begin
         i_clk   = 1'b0;
-        i_in    = 1'b0;
+        i_input    = 1'b0;
         i_rst_n = 1'b1;
         n       = 0;
         fails   = 0;
@@ -75,11 +75,11 @@ module bi2uni_tb;
                 end else begin
                     in_bit  = (in_str == "1");
                     exp_out = (out_str == "1");
-                    i_in = in_bit;
+                    i_input = in_bit;
                     #1;                 // let the combinational output settle
                     n = n + 1;
                     if (o_out !== exp_out) begin
-                        $display("FAIL cyc=%0d i_in=%b : got %b exp %b", n, in_bit, o_out, exp_out);
+                        $display("FAIL cyc=%0d i_input=%b : got %b exp %b", n, in_bit, o_out, exp_out);
                         fails = fails + 1;
                     end
                     // advance the accumulator one step.

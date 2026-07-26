@@ -9,15 +9,15 @@
 // It works for both unipolar and bipolar spike streams, so there is no polarity
 // split and the module is the bare op name.
 //
-//   o_out = i_in        (identity)
+//   o_out = i_input        (identity)
 //
 // Stateless and combinational: the output is the input in the same cycle, so
 // pp_delay = 0.
 //==============================================================================
 module tanh_hard (
-    input  wire i_in,    // input spike stream
+    input  wire i_input,    // input spike stream
     output wire o_out    // output spike (identity)
 );
-    assign o_out = i_in;
+    assign o_out = i_input;
 endmodule
 `default_nettype wire

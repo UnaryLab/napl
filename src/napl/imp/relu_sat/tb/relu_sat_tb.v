@@ -6,9 +6,9 @@
 // Reads golden vectors produced by gen/gen_relu_sat.py (from the napl Python
 // model) and asserts the RTL reproduces them cycle-for-cycle. relu_sat is
 // stateful and combinational from state (pp_delay=0): each vector row is one
-// timestep "<rst> <i_in> <o_out>".
+// timestep "<rst> <i_input> <o_out>".
 //
-//   * rst=0 : a normal timestep. Drive i_in, sample o_out in the same cycle
+//   * rst=0 : a normal timestep. Drive i_input, sample o_out in the same cycle
 //             (combinational from the accumulators), then pulse one posedge
 //             i_clk to commit the accumulator update.
 //   * rst=1 : the model called reset() BEFORE this timestep. Assert i_rst_n low
@@ -25,13 +25,13 @@
 module relu_sat_tb;
     reg  i_clk;
     reg  i_rst_n;
-    reg  i_in;
+    reg  i_input;
     wire o_out;
 
     relu_sat dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
-        .i_in   (i_in),
+        .i_input   (i_input),
         .o_out  (o_out)
     );
 
@@ -49,7 +49,7 @@ module relu_sat_tb;
             $finish;
         end
 
-        i_in    = 1'b0;
+        i_input    = 1'b0;
         i_rst_n = 1'b1;
         @(negedge i_clk);
 
@@ -69,11 +69,11 @@ module relu_sat_tb;
                 end
                 // Drive the input on a negedge so it is stable; o_out is
                 // combinational from the (now possibly reset) accumulators.
-                i_in = in_b;
+                i_input = in_b;
                 #1;                     // let the combinational output settle
                 n = n + 1;
                 if (o_out !== exp_out) begin
-                    $display("FAIL cycle %0d: rst=%b i_in=%b got %b exp %b",
+                    $display("FAIL cycle %0d: rst=%b i_input=%b got %b exp %b",
                              n, rst_b, in_b, o_out, exp_out);
                     fails = fails + 1;
                 end

@@ -2,19 +2,19 @@
 `default_nettype none
 
 module mul_gaines_tb;
-    reg i_in_0;
-    reg i_in_1;
+    reg i_input_0;
+    reg i_input_1;
     wire o_uni;
     wire o_bi;
 
     mul_gaines_unipolar dut_uni (
-        .i_in_0(i_in_0),
-        .i_in_1(i_in_1),
+        .i_input_0(i_input_0),
+        .i_input_1(i_input_1),
         .o_out(o_uni)
     );
     mul_gaines_bipolar dut_bi (
-        .i_in_0(i_in_0),
-        .i_in_1(i_in_1),
+        .i_input_0(i_input_0),
+        .i_input_1(i_input_1),
         .o_out(o_bi)
     );
 
@@ -37,7 +37,7 @@ module mul_gaines_tb;
         while (!$feof(fd)) begin
             code = $fscanf(
                 fd, "%b %b %b %b\n",
-                i_in_0, i_in_1, exp_uni, exp_bi
+                i_input_0, i_input_1, exp_uni, exp_bi
             );
             if (code == 4) begin
                 #1;

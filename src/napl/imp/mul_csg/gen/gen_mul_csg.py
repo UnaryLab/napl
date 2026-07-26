@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Emit golden vectors for mul_csg from the napl Python model.
 
-mul_csg is a stateful bit-serial op: a fixed-point operand i_in_1 is compared
+mul_csg is a stateful bit-serial op: a fixed-point operand i_input_1 is compared
 against a generator ROM num_seq[idx], with idx counters advanced by the input
 spike. The RTL inherits its size (WIDTH = ceil(log2(timestep))) from this config,
 and the num_seq ROM is GENERATED here from the model and loaded by the RTL via
@@ -18,7 +18,7 @@ Per cycle we record:  rst in_0 in_1u out_uni in_1b out_bi
   in_1b  -- bipolar operand:   round((in_1 + 1)/2 * LEN)      (drives _bipolar)
   out_bi -- bipolar model output
 
-in_1u/in_1b are constant within a sequence (i_in_1 is a held operand), but the
+in_1u/in_1b are constant within a sequence (i_input_1 is a held operand), but the
 columns carry them every cycle so the testbench can drive without parsing state.
 """
 import math
@@ -163,7 +163,7 @@ def main():
 
     lines = ["rst in_0 in_1u out_uni in_1b out_bi"]
 
-    # The RTL operand i_in_1 is the integer round(prob*LEN); the comparison is
+    # The RTL operand i_input_1 is the integer round(prob*LEN); the comparison is
     # bit-exact with the model's float gt() only when prob is an exact multiple of
     # 1/LEN. The same real operand drives BOTH polarity modules, so it must be
     # exact in both interpretations: unipolar prob = value, bipolar prob =

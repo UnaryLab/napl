@@ -19,7 +19,7 @@ module add_gaines_tb;
     ) dut_scaled_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_scaled_uni),
+        .i_input(i_scaled_uni),
         .o_out(o_scaled_uni)
     );
     add_gaines #(
@@ -29,7 +29,7 @@ module add_gaines_tb;
     ) dut_scaled_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_scaled_bi),
+        .i_input(i_scaled_bi),
         .o_out(o_scaled_bi)
     );
     add_gaines #(
@@ -39,7 +39,7 @@ module add_gaines_tb;
     ) dut_unscaled (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_unscaled),
+        .i_input(i_unscaled),
         .o_out(o_unscaled)
     );
 

@@ -13,14 +13,14 @@
 // Prints "PASS ..." iff every vector matches; the Makefile greps for that line
 // to decide the exit status.
 //
-// Vector format per line:  <rst> <i_in> <out_uni> <out_bi>
-// rst=1 marks cycles where the model.reset() was replayed before driving i_in;
+// Vector format per line:  <rst> <i_input> <out_uni> <out_bi>
+// rst=1 marks cycles where the model.reset() was replayed before driving i_input;
 // the tb pulses active-low i_rst_n low across a posedge there to clear the delay
 // line, proving reset equivalence from a dirtied mid-stream state.
 //
 // Timing model: one Python forward() timestep == one posedge i_clk. The delay
 // line holds the previous inputs; the output is combinational from the current
-// input and the oldest cell. So for each vector we drive i_in, let the
+// input and the oldest cell. So for each vector we drive i_input, let the
 // combinational output settle, check it, then clock the line forward.
 // i_rst_n is pulsed low first to match the Python reset() (delay line = 0).
 //
@@ -30,16 +30,16 @@
 module square_dff_tb;
     reg  i_clk;
     reg  i_rst_n;
-    reg  i_in;
+    reg  i_input;
     wire o_out_uni, o_out_bi;
 
     // One module per polarity, both fed the same stimulus. DEPTH inherited from
     // the Python model via `GEN_DEPTH.
     square_dff_unipolar #(.DEPTH(`GEN_DEPTH)) dut_uni (
-        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_in(i_in), .o_out(o_out_uni)
+        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_input(i_input), .o_out(o_out_uni)
     );
     square_dff_bipolar #(.DEPTH(`GEN_DEPTH)) dut_bi (
-        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_in(i_in), .o_out(o_out_bi)
+        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_input(i_input), .o_out(o_out_bi)
     );
 
     integer fd, code, n, fails;
@@ -50,7 +50,7 @@ module square_dff_tb;
     always #5 i_clk = ~i_clk;
 
     initial begin
-        i_in    = 1'b0;
+        i_input    = 1'b0;
         i_rst_n = 1'b1;
         n       = 0;
         fails   = 0;
@@ -88,18 +88,18 @@ module square_dff_tb;
                 // combinational output settle, then check before the rising
                 // edge that advances the delay line.
                 @(negedge i_clk);
-                i_in = in_s;
+                i_input = in_s;
                 #1;
                 n = n + 1;
                 if (o_out_uni !== exp_uni) begin
-                    $display("FAIL[uni] t=%0d i_in=%b : got %b exp %b", n, in_s, o_out_uni, exp_uni);
+                    $display("FAIL[uni] t=%0d i_input=%b : got %b exp %b", n, in_s, o_out_uni, exp_uni);
                     fails = fails + 1;
                 end
                 if (o_out_bi !== exp_bi) begin
-                    $display("FAIL[bi]  t=%0d i_in=%b : got %b exp %b", n, in_s, o_out_bi, exp_bi);
+                    $display("FAIL[bi]  t=%0d i_input=%b : got %b exp %b", n, in_s, o_out_bi, exp_bi);
                     fails = fails + 1;
                 end
-                // Rising edge clocks the delay line (shift in i_in).
+                // Rising edge clocks the delay line (shift in i_input).
                 @(posedge i_clk);
             end
         end

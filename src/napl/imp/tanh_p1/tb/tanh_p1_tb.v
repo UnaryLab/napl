@@ -5,13 +5,13 @@
 module tanh_p1_tb;
     reg i_clk;
     reg i_rst_n;
-    reg i_in;
+    reg i_input;
     wire o_out;
 
     tanh_p1 #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
-        .i_in(i_in),
+        .i_input(i_input),
         .o_out(o_out)
     );
 
@@ -36,7 +36,7 @@ module tanh_p1_tb;
 
     initial begin
         i_rst_n = 1'b1;
-        i_in = 1'b0;
+        i_input = 1'b0;
 
         if (`GEN_PP_DELAY != 0) begin
             $display("ERROR: tanh_p1 pp_delay must be 0");
@@ -53,7 +53,7 @@ module tanh_p1_tb;
         fails = 0;
         while (!$feof(fd)) begin
             code = $fscanf(
-                fd, "%b %b %b\n", reset_flag, i_in, expected
+                fd, "%b %b %b\n", reset_flag, i_input, expected
             );
             if (code == 3) begin
                 if (reset_flag)
@@ -63,7 +63,7 @@ module tanh_p1_tb;
                 if (o_out !== expected) begin
                     $display(
                         "FAIL tanh_p1 cycle %0d: in=%b got=%b expected=%b",
-                        count, i_in, o_out, expected
+                        count, i_input, o_out, expected
                     );
                     fails = fails + 1;
                 end

@@ -16,7 +16,7 @@
 module div_iscb_signabs (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_sign,
     output wire o_abs
 );
@@ -29,12 +29,12 @@ module div_iscb_signabs (
     wire        at_max   = (acc_q == ACC_MAX);
     wire        at_min   = (acc_q == 4'd0);
     wire [3:0]  acc_next =
-        i_in ? (at_max ? ACC_MAX : (acc_q + 4'd1))
+        i_input ? (at_max ? ACC_MAX : (acc_q + 4'd1))
              : (at_min ? 4'd0    : (acc_q - 4'd1));
 
     wire sign = (acc_next < ACC_MED);
     assign o_sign = sign;
-    assign o_abs  = sign ^ i_in;
+    assign o_abs  = sign ^ i_input;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

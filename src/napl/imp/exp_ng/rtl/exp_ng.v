@@ -5,12 +5,12 @@
 // State uses an asynchronous active-low reset to the Python reset value.
 // Verify from src/napl/imp with: make test OP=exp_ng
 module exp_ng #(
-    parameter integer DEPTH = 5,
-    parameter integer GAIN = 1
+    parameter integer DEPTH = 5, // inherited from config['depth']; tb overrides via `GEN_DEPTH
+    parameter integer GAIN = 1   // inherited from config['gain']; tb overrides via `GEN_GAIN
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
@@ -32,9 +32,9 @@ module exp_ng #(
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
             cnt <= CNT_INIT;
-        else if (i_in && cnt < CNT_MAX)
+        else if (i_input && cnt < CNT_MAX)
             cnt <= cnt + 1'b1;
-        else if (!i_in && cnt > 0)
+        else if (!i_input && cnt > 0)
             cnt <= cnt - 1'b1;
     end
 endmodule

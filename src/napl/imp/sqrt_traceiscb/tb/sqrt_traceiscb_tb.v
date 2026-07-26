@@ -8,7 +8,7 @@
 //
 // Timing contract (matches the Python forward()): the output at timestep t is
 // combinational from the current input and the registered state at the START of
-// the cycle. So per cycle we (1) drive i_in, (2) let the combinational o_out
+// the cycle. So per cycle we (1) drive i_input, (2) let the combinational o_out
 // settle, (3) check it against the expected column, then (4) pulse one posedge
 // i_clk to advance the registered state. i_rst_n is held low first so the co-sim
 // starts from the exact post-reset() state (all registers 0).
@@ -35,14 +35,14 @@ module sqrt_traceiscb_tb;
     sqrt_traceiscb_unipolar dut_uni (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_uni)
     );
 
     sqrt_traceiscb_bipolar dut_bi (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in_bit),
+        .i_input    (in_bit),
         .o_out   (out_bi)
     );
 

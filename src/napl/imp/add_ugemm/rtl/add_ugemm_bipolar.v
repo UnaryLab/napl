@@ -4,14 +4,14 @@
 // Bipolar uGEMM adder. SCALED mirrors the Python configuration at elaboration.
 // Verify from src/napl/imp with: make test OP=add_ugemm
 module add_ugemm_bipolar #(
-    parameter integer SCALED = 1,
-    parameter integer ENTRY = 8,
-    parameter integer COUNT_WIDTH = 4,
-    parameter integer ACC_WIDTH = 14
+    parameter integer SCALED = 1,      // inherited from config['scaled']; tb overrides via `GEN_SCALED
+    parameter integer ENTRY = 8,       // # addends (reduction dim); tb overrides via `GEN_ENTRY
+    parameter integer COUNT_WIDTH = 4, // derived from ENTRY; tb overrides via `GEN_COUNT_WIDTH
+    parameter integer ACC_WIDTH = 14   // accumulator width; tb overrides via `GEN_ACC_WIDTH
 ) (
     input  wire             i_clk,
     input  wire             i_rst_n,
-    input  wire [ENTRY-1:0] i_in,
+    input  wire [ENTRY-1:0] i_input,
     output wire             o_out
 );
     wire [COUNT_WIDTH-1:0] partial_count [0:ENTRY];
@@ -21,7 +21,7 @@ module add_ugemm_bipolar #(
     generate
         for (lane = 0; lane < ENTRY; lane = lane + 1) begin : g_count
             assign partial_count[lane+1] = partial_count[lane]
-                + {{(COUNT_WIDTH-1){1'b0}}, i_in[lane]};
+                + {{(COUNT_WIDTH-1){1'b0}}, i_input[lane]};
         end
     endgenerate
 

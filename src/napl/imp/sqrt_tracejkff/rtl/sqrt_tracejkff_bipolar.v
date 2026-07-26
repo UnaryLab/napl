@@ -6,7 +6,7 @@
 // RTL counterpart of napl.sim.operation.sqrt_tracejkff (forward(), bipolar branch)
 // in src/napl/sim/operation/sqrt_tracejkff.py. Per timestep t (one posedge i_clk):
 //
-//   output  = trace | i_in                  // trace = JK-FF state from t-1
+//   output  = trace | i_input                  // trace = JK-FF state from t-1
 //   out_uni = bi2uni(output)                 // width-2 bipolar->unipolar
 //   trace'  = (~trace) & out_uni             // JK update: J=out_uni, K=1
 //
@@ -15,7 +15,7 @@
 //   out_uni = (acc_n >= 1)
 //   acc'    = acc_n - out_uni                // stays in range
 //
-// The output is combinational in i_in given the current trace register, so the
+// The output is combinational in i_input given the current trace register, so the
 // input->output latency is 0 (pp_delay = 0). The trace and acc registers are
 // clocked and updated each cycle.
 //
@@ -24,14 +24,14 @@
 module sqrt_tracejkff_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset() (trace=0, acc=0)
-    input  wire i_in,     // input spike stream
+    input  wire i_input,     // input spike stream
     output wire o_out     // square-root spike stream
 );
     reg               trace;
     reg  signed [2:0] acc;     // bi2uni accumulator, range [-2, 1]
 
     // Combinational output: trace OR input. trace is the JK-FF q from cycle t-1.
-    assign o_out = trace | i_in;
+    assign o_out = trace | i_input;
 
     // bi2uni step on this cycle's output.
     // acc_sum = acc + 2*output - 1, then clamp to [-2, 1].

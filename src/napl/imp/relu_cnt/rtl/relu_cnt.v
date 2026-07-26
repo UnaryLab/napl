@@ -8,19 +8,19 @@
 // running bipolar value and clamps the output toward bipolar 0.
 //
 //   below_half = (acc < HALF)          // HALF = 2^(WIDTH-1)
-//   o_out      = i_in | below_half     // force 1 unless input 0 and acc>=HALF
+//   o_out      = i_input | below_half     // force 1 unless input 0 and acc>=HALF
 //   acc       <= clamp(acc + (o_out ? +1 : -1), 0, MAX)   // MAX = 2^WIDTH - 1
 //
-// Output is combinational in i_in and the current acc (pp_delay = 0); acc
+// Output is combinational in i_input and the current acc (pp_delay = 0); acc
 // advances on each posedge i_clk. Active-low i_rst_n reloads acc = HALF, the
 // model's reset() state.
 //==============================================================================
 module relu_cnt #(
-    parameter WIDTH = 3
+    parameter integer WIDTH = 3  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,    // input spike (bipolar rate-coded)
+    input  wire i_input,    // input spike (bipolar rate-coded)
     output wire o_out    // ReLU output spike
 );
     localparam [WIDTH-1:0] MAX  = {WIDTH{1'b1}};        // 2^WIDTH - 1
@@ -30,7 +30,7 @@ module relu_cnt #(
 
     wire below_half = (acc < HALF);
 
-    assign o_out = i_in | below_half;
+    assign o_out = i_input | below_half;
 
     // Up/down saturating counter: +1 when o_out, -1 otherwise, clamped to [0, MAX].
     wire [WIDTH-1:0] acc_next =

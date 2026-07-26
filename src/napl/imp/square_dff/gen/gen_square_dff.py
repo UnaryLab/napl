@@ -19,10 +19,10 @@ inherit DEPTH from one place; they cannot drift.
 
 Output: ../vec/square_dff.vec, one line per timestep:
 
-    <rst> <i_in> <out_unipolar> <out_bipolar>   (each 0/1, space-separated)
+    <rst> <i_input> <out_unipolar> <out_bipolar>   (each 0/1, space-separated)
 
 rst=1 marks cycles where reset() is applied (to the model) / i_rst_n pulsed low
-(in the RTL) BEFORE driving i_in.
+(in the RTL) BEFORE driving i_input.
 
 Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_square_dff.py

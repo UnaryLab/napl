@@ -5,7 +5,7 @@ Verilog against the *actual* simulator, not a hand-derived truth table.
 
 Output: ../vec/uni2bi.vec, one line per cycle:
 
-    <i_in> <o_out>        (each 0/1, space-separated)
+    <i_input> <o_out>        (each 0/1, space-separated)
 
 uni2bi is stateful (a signed accumulator), so a single input stream is driven
 through the model cycle by cycle from reset() and the per-cycle (input, output)
@@ -71,8 +71,8 @@ def main():
                 model.reset()
                 f.write(f"{RESET_MARK}\n")
             for bit in seg:
-                i_in = torch.tensor(bit, dtype=model.stype)
-                o_out = int(model(i_in).item())
+                i_input = torch.tensor(bit, dtype=model.stype)
+                o_out = int(model(i_input).item())
                 f.write(f"{bit} {o_out}\n")
                 rows += 1
     print(f"wrote {VEC} ({rows} vectors, mid-stream reset) "

@@ -5,11 +5,11 @@
 // State uses an asynchronous active-low reset to the Python reset value.
 // Verify from src/napl/imp with: make test OP=tanh_pn
 module tanh_pn #(
-    parameter integer DEPTH = 3
+    parameter integer DEPTH = 3  // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
@@ -24,9 +24,9 @@ module tanh_pn #(
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
             cnt <= CNT_HALF;
-        else if (i_in && cnt < CNT_MAX)
+        else if (i_input && cnt < CNT_MAX)
             cnt <= cnt + 1'b1;
-        else if (!i_in && cnt > 0)
+        else if (!i_input && cnt > 0)
             cnt <= cnt - 1'b1;
     end
 endmodule

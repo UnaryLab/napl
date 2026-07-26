@@ -4,15 +4,15 @@
 // Gaines adder. SCALED selects the RNG-driven MUX or the unscaled OR circuit
 // at elaboration. Verify from src/napl/imp with: make test OP=add_gaines
 module add_gaines #(
-    parameter integer SCALED = 1,
-    parameter integer ENTRY = 8,
-    parameter integer SELECT_WIDTH = 3
+    parameter integer SCALED = 1,       // inherited from config['scaled']; tb overrides via `GEN_SCALED
+    parameter integer ENTRY = 8,        // inherited from config['entry']; tb overrides via `GEN_ENTRY
+    parameter integer SELECT_WIDTH = 3  // inherited from log2(config['entry']); tb overrides via `GEN_SELECT_WIDTH
 ) (
     /* verilator lint_off UNUSEDSIGNAL */
     input  wire             i_clk,
     input  wire             i_rst_n,
     /* verilator lint_on UNUSEDSIGNAL */
-    input  wire [ENTRY-1:0] i_in,
+    input  wire [ENTRY-1:0] i_input,
     output wire             o_out
 );
     generate
@@ -22,7 +22,7 @@ module add_gaines #(
 
             initial $readmemb("vec/add_gaines_rom.hex", select_rom);
 
-            assign o_out = i_in[select_rom[select_index]];
+            assign o_out = i_input[select_rom[select_index]];
 
             always @(posedge i_clk or negedge i_rst_n) begin
                 if (!i_rst_n)
@@ -32,7 +32,7 @@ module add_gaines #(
                         + {{(SELECT_WIDTH-1){1'b0}}, 1'b1};
             end
         end else begin : g_unscaled
-            assign o_out = |i_in;
+            assign o_out = |i_input;
         end
     endgenerate
 endmodule

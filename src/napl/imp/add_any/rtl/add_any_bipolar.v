@@ -34,7 +34,7 @@ module add_any_bipolar #(
 ) (
     input  wire                  i_clk,
     input  wire                  i_rst_n,
-    input  wire [IN_W-1:0]       i_in,     // per-timestep partial sum, range [0, ENTRY]
+    input  wire [IN_W-1:0]       i_input,     // per-timestep partial sum, range [0, ENTRY]
     output wire                  o_out     // bipolar rate-coded output spike
 );
     // ---- ceil(log2(x)) constant function (Verilog-2001) ----
@@ -72,8 +72,8 @@ module add_any_bipolar #(
     wire signed [SUM_W-1:0] s_ofs = TWO_OFS[SUM_W-1:0];
 
     // ---- combinational: this cycle's output and next-cycle accumulator state ----
-    // 2*partial as a signed value (i_in in [0,ENTRY]): zero-extend to SUM_W, then <<1.
-    wire signed [SUM_W-1:0] in_ext = $signed({{(SUM_W-IN_W){1'b0}}, i_in});
+    // 2*partial as a signed value (i_input in [0,ENTRY]): zero-extend to SUM_W, then <<1.
+    wire signed [SUM_W-1:0] in_ext = $signed({{(SUM_W-IN_W){1'b0}}, i_input});
     wire signed [SUM_W-1:0] two_p  = in_ext <<< 1;
     wire signed [SUM_W-1:0] sum   = $signed(acc) + two_p - s_ofs;   // + 2*partial - 2*offset
     wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi :

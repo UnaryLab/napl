@@ -8,7 +8,7 @@
 // of sync_skewed (width=2, cnt in 0..3, reset to 0). One posedge i_clk == one
 // Python forward() timestep; i_rst_n (active low) == Python reset().
 //
-// Per cycle (a=i_in_0, b=i_in_1), reproducing sync_skewed(width=2) then gt_rc:
+// Per cycle (a=i_input_0, b=i_input_1), reproducing sync_skewed(width=2) then gt_rc:
 //   diff        = a ^ b                         // sync's input_01_10
 //   sync_0      = diff ? (a ? (cnt==3) : (cnt!=0)) : a   // skewed input_0
 //   sync_1      = b                             // input_1 passthrough
@@ -20,15 +20,15 @@
 module gt_rc (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in_0,
-    input  wire i_in_1,
+    input  wire i_input_0,
+    input  wire i_input_1,
     output wire o_out
 );
     reg       dff;        // result register, reset to 1
     reg [1:0] cnt;        // sync_skewed skew counter, 0..3, reset to 0
 
-    wire       a    = i_in_0;
-    wire       b    = i_in_1;
+    wire       a    = i_input_0;
+    wire       b    = i_input_1;
     wire       diff = a ^ b;
 
     wire cnt_not_min = (cnt != 2'd0);

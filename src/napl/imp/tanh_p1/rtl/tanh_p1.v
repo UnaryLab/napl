@@ -6,11 +6,11 @@
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=tanh_p1
 module tanh_p1 #(
-    parameter integer WIDTH = 8
+    parameter integer WIDTH = 8  // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (
     input  wire i_clk,
     input  wire i_rst_n,
-    input  wire i_in,
+    input  wire i_input,
     output wire o_out
 );
     reg [WIDTH-1:0] coef_idx;
@@ -34,7 +34,7 @@ module tanh_p1 #(
     assign coef = coef_rom[coef_idx];
     assign input_d4 = input_delay[3];
     assign input_d8 = input_delay[7];
-    assign n_1 = i_in & input_d4;
+    assign n_1 = i_input & input_d4;
     assign n_2 = ~n_1;
     assign n_2_term = coef[3] ? n_2 : 1'b1;
     assign n_3 = ~(n_2_term & n_1_delay[0]);
@@ -51,7 +51,7 @@ module tanh_p1 #(
             n_1_delay <= 3'b000;
         end else begin
             coef_idx <= coef_idx + {{(WIDTH-1){1'b0}}, 1'b1};
-            input_delay <= {input_delay[6:0], i_in};
+            input_delay <= {input_delay[6:0], i_input};
             n_1_delay <= {n_1_delay[1:0], n_1};
         end
     end

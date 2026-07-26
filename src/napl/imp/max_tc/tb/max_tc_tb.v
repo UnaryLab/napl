@@ -11,10 +11,10 @@
 //   make test OP=max_tc
 //==============================================================================
 module max_tc_tb;
-    reg  i_in_0, i_in_1;
+    reg  i_input_0, i_input_1;
     wire o_out;
 
-    max_tc dut (.i_in_0(i_in_0), .i_in_1(i_in_1), .o_out(o_out));
+    max_tc dut (.i_input_0(i_input_0), .i_input_1(i_input_1), .o_out(o_out));
 
     integer fd, code, n, fails;
     reg a, b, exp_out;
@@ -31,8 +31,8 @@ module max_tc_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b %b\n", a, b, exp_out);
             if (code == 3) begin
-                i_in_0 = a;
-                i_in_1 = b;
+                i_input_0 = a;
+                i_input_1 = b;
                 #1;                         // let the combinational logic settle
                 n = n + 1;
                 if (o_out !== exp_out) begin

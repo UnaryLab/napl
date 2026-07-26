@@ -32,7 +32,7 @@ module relu_cnt_tb;
     relu_cnt #(.WIDTH(WIDTH)) dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
-        .i_in    (in),
+        .i_input    (in),
         .o_out   (out)
     );
 
@@ -77,7 +77,7 @@ module relu_cnt_tb;
                     rst_n = 1'b1;
                 end
                 // Drive input while clock is low; output is combinational in
-                // i_in and the current acc register.
+                // i_input and the current acc register.
                 in = a;
                 #1;
                 n = n + 1;
