@@ -8,8 +8,8 @@ from loguru import logger
 class correlation(napl_base):
     """
     Stochastic cross-correlation (SCC) between two spike streams, accumulated over
-    timesteps. Call forward(in_1, in_2) once per timestep to accumulate the joint
-    histogram of bit pairs, then analyze() to compute the SCC. If only in_1 is given,
+    timesteps. Call forward(input_1, input_2) once per timestep to accumulate the joint
+    histogram of bit pairs, then analyze() to compute the SCC. If only input_1 is given,
     the SCC is computed between the stream and its one-step-delayed self
     (autocorrelation). Reference: "Exploiting Correlation in Stochastic Circuit
     Design".
@@ -28,30 +28,30 @@ class correlation(napl_base):
         self.sum_1 = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         self.sum_2 = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
         # one-step delay buffer for the autocorrelation (single-input) case
-        self.in_1_d = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.input_1_d = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
 
 
     def _reset(self):
-        for p in [self.paired_11, self.sum_1, self.sum_2, self.in_1_d]:
+        for p in [self.paired_11, self.sum_1, self.sum_2, self.input_1_d]:
             p.data = torch.zeros_like(p.data)
 
 
-    def forward(self, in_1, in_2=None):
-        if in_2 is None:
-            in_2 = self.in_1_d.clone().detach()
-            self.in_1_d.data = in_1.clone().detach().type(self.ntype)
+    def forward(self, input_1, input_2=None):
+        if input_2 is None:
+            input_2 = self.input_1_d.clone().detach()
+            self.input_1_d.data = input_1.clone().detach().type(self.ntype)
 
         # bool is left uncast: addcmul/add promote it to the ntype accumulator, so the
         # two per-timestep .type() casts are redundant dispatches (kept as int8/float 0/1).
-        in_1_is_1 = torch.ne(in_1, 0)
-        in_2_is_1 = torch.ne(in_2, 0)
+        input_1_is_1 = torch.ne(input_1, 0)
+        input_2_is_1 = torch.ne(input_2, 0)
 
         # out-of-place add (assigned to .data) so the scalar accumulators broadcast up
         # to the input shape on the first call, matching the decoder/accuracy idiom.
         # addcmul fuses the 11-product and the add, saving one temporary per timestep.
-        self.paired_11.data = torch.addcmul(self.paired_11, in_1_is_1, in_2_is_1)
-        self.sum_1.data = self.sum_1.add(in_1_is_1)
-        self.sum_2.data = self.sum_2.add(in_2_is_1)
+        self.paired_11.data = torch.addcmul(self.paired_11, input_1_is_1, input_2_is_1)
+        self.sum_1.data = self.sum_1.add(input_1_is_1)
+        self.sum_2.data = self.sum_2.add(input_2_is_1)
 
 
     @property
@@ -60,8 +60,8 @@ class correlation(napl_base):
         SCC, computed on access from the accumulated bit-pair counts.
         """
         a = self.paired_11               # 11
-        b = self.sum_1 - a               # 10 = (1-count of in_1) - 11
-        c = self.sum_2 - a               # 01 = (1-count of in_2) - 11
+        b = self.sum_1 - a               # 10 = (1-count of input_1) - 11
+        c = self.sum_2 - a               # 01 = (1-count of input_2) - 11
         n = self.timestep_cur            # run length == number of forward() calls
         d = n - a - b - c                # 00: the pairs accounted for nowhere else
         ad_minus_bc = a * d - b * c

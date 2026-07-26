@@ -109,7 +109,10 @@ def test_known_answer():
             metric = correlation().to(device)
             assert not metric.valid
             for spike_1, spike_2 in zip(stream_1, stream_2):
-                metric(spike_1.to(device), spike_2.to(device))
+                metric(
+                    input_1=spike_1.to(device),
+                    input_2=spike_2.to(device),
+                )
             result, max_index = metric.analyze()
             assert metric.valid
             assert metric.timestep_cur == stream_1.numel()
