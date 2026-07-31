@@ -82,6 +82,29 @@ def test_encoder():
         )
 
 
+def test_encoder_rank2():
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 16,
+        'generator': 'sobol',
+    }
+    input_cpu = torch.tensor([[-0.75, -0.25], [0.25, 0.75]])
+
+    for device in devices():
+        stream_encoder = encoder(config).to(device)
+        stream_accuracy = accuracy(config).to(device)
+        input = input_cpu.to(device)
+
+        _run(stream_encoder, stream_accuracy, input, config['timestep'])
+        error, _ = stream_accuracy.analyze(input)
+
+        assert stream_accuracy.spike_value.shape == input.shape
+        assert error.shape == input.shape
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(
+            config['timestep']
+        )
+
+
 def test_number_sequences():
     width = 4
     length = 2**width
@@ -118,6 +141,7 @@ def test_input_scale():
 
 if __name__ == '__main__':
     test_encoder()
+    test_encoder_rank2()
     test_number_sequences()
     test_input_scale()
     print('Test passed.')

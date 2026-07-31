@@ -1,6 +1,8 @@
 import math
 import time
 
+import torch
+
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
@@ -27,6 +29,29 @@ class napl_mul_csg(napl_base):
         o_spike = self.mul_csg(i_spike, input_1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
+
+
+def test_mul_csg_rank2():
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 4,
+        'generator': 'sobol',
+    }
+    input_0_cpu = torch.tensor(
+        [[0, 1, 0], [1, 0, 1]],
+        dtype=global_config.stype,
+    )
+    input_1_cpu = torch.ones((2, 3), dtype=global_config.ntype)
+
+    for device in devices():
+        mul_csg_inst = mul_csg(config).to(device)
+        result = mul_csg_inst(
+            input_0_cpu.to(device),
+            input_1_cpu.to(device),
+        )
+
+        assert result.ndim == 2
+        assert torch.equal(result.cpu(), input_0_cpu)
 
     
 def test_mul_csg():
@@ -66,4 +91,5 @@ def test_mul_csg():
 
 
 if __name__ == '__main__':
+    test_mul_csg_rank2()
     test_mul_csg()

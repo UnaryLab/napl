@@ -44,14 +44,31 @@ def _linear_ste_grads(ctx, grad_output):
 
 
 class linear(napl_base):
-    """
-    Streaming unary fully-connected layer: y = W x (+ b), computed bit by bit.
+    """Apply a rate-coded unary fully connected layer one timestep at a time.
+
+    Use this layer when inputs are already spike tensors and weights should be
+    encoded on a separate number-sequence dimension. It computes ``W x + b`` bit by bit.
     Each timestep the weights (and bias) are encoded into spikes on a distinct RNG
     dimension from the input (so the operand streams are decorrelated), multiplied with
     the incoming input spikes (XNOR for bipolar, AND for unipolar), and the partial
     products are summed by a scaled unary adder. The decoded output value is the inner
     product divided by `scale` (default in_features + has_bias) so it stays in unary
-    range, i.e. it represents (W x + b) / scale. Rate-coded weights. References: uGEMM.
+    range, so it represents ``(W x + b) / scale``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear
+
+        layer = linear(torch.zeros(3, 2), config={"polarity": "bipolar",
+                       "timestep": 4, "generator": "sobol"})
+        output_spike = layer(torch.ones(1, 2))
+
+    References
+    ----------
+    *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
     def __init__(
             self,
@@ -66,6 +83,27 @@ class linear(napl_base):
                 'width': 12,
             }
         ):
+        """Construct the streaming layer from external numeric parameters.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults
+                to ``None``.
+            config: Configuration mapping with these keys:
+
+                * **polarity** - ``"unipolar"`` or ``"bipolar"``. Defaults to
+                  ``"bipolar"``.
+                * **timestep** - Weight-encoder stream length. Defaults to ``256``.
+                * **generator** - Number-sequence generator. Defaults to
+                  ``"sobol"``.
+                * **dim** - One-based weight Sobol dimension. Defaults to ``2``;
+                  bias uses the next dimension.
+                * **scale** - Output scaling divisor. ``None`` uses
+                  ``in_features + has_bias``. Defaults to ``None``.
+                * **width** - Signed accumulator width. Defaults to ``12`` and
+                  must satisfy ``2 ** (width - 1) >= in_features + has_bias``.
+                * **name** - Optional instance label. Defaults to ``None``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing operation at
         # module top would create an import cycle with module/__init__.
@@ -107,7 +145,29 @@ class linear(napl_base):
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
+    def _reset(self):
+        """Reset state owned directly by the layer.
+
+        This class has no extra local state. The inherited ``reset()`` method
+        resets the weight and bias encoders and the unary adder.
+        """
+        pass
+
     def forward(self, input_spike):
+        """Process one input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``. Leading dimensions are preserved.
+
+        Returns:
+            Output spike tensor with the last dimension replaced by
+            ``out_features``.
+
+        The call advances this layer and its registered streaming children and
+        updates the adder accumulator. External weight and bias tensors are not
+        modified.
+        """
         # input_spike: (..., in_features) spike tensor for the current timestep
         w_spike = self.w_encoder(self.weight)                       # (out_features, in_features)
         xf = input_spike.type(self.ntype)
@@ -123,8 +183,10 @@ class linear(napl_base):
 
 
 class linear_pc(napl_base):
-    """
-    Streaming unary linear *parallel counter*: the per-timestep binary inner-product
+    """Return the per-timestep parallel count of a unary linear product.
+
+    Use this streaming layer when downstream logic needs the raw product count
+    rather than a scaled output bitstream. It returns the per-timestep binary inner-product
     count of the input spikes against freshly encoded weight spikes, before any accumulation
     into a bitstream. This is the `linear` partial sum without its scaled unary adder.
 
@@ -134,7 +196,24 @@ class linear_pc(napl_base):
     sum(input == weight) (+ bias spike, added on the input-1 path only, matching FSULinearPC).
     The count per timestep lies in [0, entry] with entry = in_features + has_bias; accumulating
     the count over T timesteps and dividing by T recovers the unipolar inner product directly,
-    or the bipolar inner product as 2*mean - entry. References: uGEMM. UnarySim: FSULinearPC.
+    or the bipolar inner product as ``2 * mean - entry``. This class matches
+    UnarySim ``FSULinearPC``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_pc
+
+        counter = linear_pc(torch.ones(3, 2),
+                            config={"polarity": "unipolar", "timestep": 4,
+                                    "generator": "sobol"})
+        count = counter(torch.ones(1, 2))
+
+    References
+    ----------
+    *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
     def __init__(
             self,
@@ -147,6 +226,18 @@ class linear_pc(napl_base):
                 'dim': 2,
             }
         ):
+        """Construct the counter from external numeric weights and bias.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults
+                to ``None``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"sobol"``), and **dim** (weight Sobol dimension,
+                default ``2``; bias uses ``dim + 1``). **name** is an optional
+                instance label and defaults to ``None``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing at module top would
         # create an import cycle with module/__init__.
@@ -172,7 +263,28 @@ class linear_pc(napl_base):
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
+    def _reset(self):
+        """Reset state owned directly by the counter.
+
+        This class has no extra local state. The inherited ``reset()`` method
+        resets its registered encoders.
+        """
+        pass
+
     def forward(self, input_spike):
+        """Count spike products for one timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``.
+
+        Returns:
+            Numeric count tensor with last dimension ``out_features``. Each
+            element is in ``[0, in_features + has_bias]``.
+
+        The call advances the counter and its encoders. It does not accumulate
+        counts across timesteps.
+        """
         # input_spike: (..., in_features) spike tensor for the current timestep
         w_spike = self.w_encoder(self.weight)                       # (out_features, in_features)
         xf = input_spike.type(self.ntype)
@@ -216,11 +328,22 @@ class _linear_fxp_fn(torch.autograd.Function):
 
 
 class linear_fxp(napl_base):
-    """
-    Binary-domain fixed-point fully-connected layer: dynamically scale input and weight
+    """Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
+
+    Use this single-shot layer for quantization-aware evaluation or training. It dynamically scales input and weight
     to widthi/widthw-bit fixed point (via rshift_offset over their quantile magnitude),
     matmul, then shift the output back. Single-shot; trains via STE (exact linear
-    gradient). Approximates nn.Linear within the quantization bound.
+    gradient) and approximates ``nn.Linear`` within the quantization bound.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_fxp
+
+        layer = linear_fxp(2, 3)
+        output = layer(torch.zeros(1, 2))
     """
     streaming = False
     def __init__(
@@ -238,6 +361,22 @@ class linear_fxp(napl_base):
                 'rounding': 'round',
             }
         ):
+        """Construct the fixed-point layer and initialize trainable parameters.
+
+        Args:
+            in_features: Number of input features.
+            out_features: Number of output features.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial weight tensor shaped
+                ``(out_features, in_features)``. Defaults to ``None``.
+            bias_ext: Optional initial bias tensor shaped ``(out_features,)``.
+                Used only when **bias** is ``True``. Defaults to ``None``.
+            config: Configuration mapping with **widthi** and **widthw** (input
+                and weight widths, both default ``8``), **quantilei** and
+                **quantilew** (scaling quantiles, both default ``1``), and
+                **rounding** (rounding mode, default ``"round"``). **name** is an
+                optional instance label and defaults to ``None``.
+        """
         super().__init__(config, [])
         self.in_features, self.out_features = in_features, out_features
         self.widthi = config.get('widthi', 8)
@@ -249,7 +388,27 @@ class linear_fxp(napl_base):
         self.max_abs_w = 2 ** self.widthw
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state, so the hook returns
+        ``None`` without changing trainable parameters.
+        """
+        pass
+
     def forward(self, input):
+        """Apply the fixed-point linear approximation.
+
+        Args:
+            input: Numeric tensor shaped ``(batch, in_features)``.
+
+        Returns:
+            Numeric tensor shaped ``(batch, out_features)``.
+
+        The call computes dynamic shifts from the input and weight. It does not
+        change persistent state or ``timestep_cur``; the custom backward uses the
+        straight-through linear gradient.
+        """
         rshift_i, rshift_w, _ = rshift_offset(input, self.weight, self.widthi - 1, self.widthw - 1,
                                               self.rounding, self.quantilei, self.quantilew)
         rshift_o = 0 - rshift_i - rshift_w
@@ -322,13 +481,26 @@ class _linear_hub_fn(torch.autograd.Function):
 
 
 class linear_hub(napl_base):
-    """
-    Binary-domain HUB (hybrid unary-binary) fully-connected layer: input and weight are
-    quantized to sign-magnitude fixed point, and each |input|x|weight| product is looked
+    """Apply a hybrid unary-binary approximation of ``torch.nn.Linear``.
+
+    Use this single-shot trainable layer when products should use a precomputed
+    unary multiplication value map while the interface remains numeric. Input and weight are
+    quantized to sign-magnitude fixed point, and each absolute input-weight product is looked
     up from a precomputed value map that emulates the unary (bitstream-AND) multiplication
     under the chosen RNG. Single-shot; trains via STE. Approximates nn.Linear
     within the unary-multiplication bound. Rate coding, sign-magnitude.
-    Requires widthi == widthw.
+    Requires ``widthi == widthw``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_hub
+
+        layer = linear_hub(2, 3, config={"widthi": 4, "widthw": 4,
+                                        "cycle": 8})
+        output = layer(torch.zeros(1, 2))
     """
     streaming = False
     def __init__(
@@ -349,6 +521,32 @@ class linear_hub(napl_base):
                 'rounding': 'round',
             }
         ):
+        """Construct the HUB layer and its unary-product lookup map.
+
+        Args:
+            in_features: Number of input features.
+            out_features: Number of output features.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial weight tensor. Defaults to ``None``.
+            bias_ext: Optional initial bias tensor. Defaults to ``None``.
+            config: Configuration mapping with these keys:
+
+                * **widthi**, **widthw** - Equal sign-magnitude widths. Both
+                  default to ``8``.
+                * **rngi**, **rngw** - Input and weight RNG names. Both default
+                  to ``"sobol"``; ``"rc"``, ``"race"``, ``"tc"``,
+                  ``"race10"``, and ``"tc10"`` follow the implemented map rules.
+                * **quantilei**, **quantilew** - Dynamic-scaling quantiles. Both
+                  default to ``1``.
+                * **cycle** - Active unary cycles, capped at ``2 ** (widthi - 1)``.
+                  The declared default is ``128``; ``None`` selects the cap.
+                * **rounding** - Dynamic-scaling rounding mode. Defaults to
+                  ``"round"``.
+                * **name** - Optional instance label. Defaults to ``None``.
+
+        The value map is persistent non-trainable state; weights and optional bias
+        are trainable parameters.
+        """
         super().__init__(config, [])
         self.in_features, self.out_features = in_features, out_features
         self.widthi = config.get('widthi', 8)
@@ -364,11 +562,32 @@ class linear_hub(napl_base):
         self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
         cycle_cfg = config.get('cycle', None)
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
-        self.mapcbsg = torch.nn.Parameter(mapcbsg, requires_grad=False)
+        self.register_buffer('mapcbsg', mapcbsg)
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state. The lookup map and
+        trainable parameters are unchanged.
+        """
+        pass
+
     def forward(self, input):
+        """Apply the HUB linear approximation.
+
+        Args:
+            input: Two-dimensional numeric tensor shaped
+                ``(batch, in_features)``.
+
+        Returns:
+            Numeric tensor shaped ``(batch, out_features)``.
+
+        The call reads the lookup map and computes dynamic shifts without changing
+        persistent state or ``timestep_cur``. Backpropagation uses a
+        straight-through linear gradient.
+        """
         rshift_i, rshift_w, rshift_o = rshift_offset(input, self.weight, self.widthi - 1, self.widthw - 1,
                                                      self.rounding, self.quantilei, self.quantilew)
         return _linear_hub_fn.apply(input, self.weight, self.bias,
@@ -480,12 +699,26 @@ _TLUT_FP_WIDTH = {'bfloat16': 8, 'float16': 11, 'float32': 24}
 
 
 class linear_tlut(napl_base):
-    """
-    Binary-domain temporal-LUT (T-LUT) fully-connected layer: the chosen operand (input or
+    """Apply a temporal-LUT approximation of ``torch.nn.Linear``.
+
+    Use this single-shot trainable layer to decompose either the input or weight
+    into temporal digits while retaining a numeric interface. The chosen operand (input or
     weight) is decomposed into a sum of widtht-bit temporal digits and accumulated, while
     the other operand stays fixed-point (fxp) or floating-point (fp). Three modes follow
     from the (formati, formatw) pair: fxpfxp, fxpfp, fpfp. Single-shot; trains via
-    STE. Approximates nn.Linear within the temporal-decomposition bound. Sign-magnitude.
+    STE and approximates ``nn.Linear`` within the temporal-decomposition bound.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_tlut
+
+        layer = linear_tlut(2, 3, config={"temporal": "i", "widtht": 4,
+                                         "formati": "fxp", "widthi": 8,
+                                         "formatw": "fxp", "widthw": 8})
+        output = layer(torch.zeros(1, 2))
     """
     streaming = False
     def __init__(
@@ -508,6 +741,32 @@ class linear_tlut(napl_base):
                 'rounding': 'round',
             }
         ):
+        """Construct the temporal-LUT layer and select its execution mode.
+
+        Args:
+            in_features: Number of input features.
+            out_features: Number of output features.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial weight tensor. Defaults to ``None``.
+            bias_ext: Optional initial bias tensor. Defaults to ``None``.
+            config: Configuration mapping with these keys:
+
+                * **temporal** - ``"i"`` or ``"input"`` to decompose inputs;
+                  ``"w"`` or ``"weight"`` to decompose weights. Defaults to
+                  ``"i"``.
+                * **widtht** - Bits per temporal digit. Defaults to ``4``.
+                * **formati**, **formatw** - Operand formats. ``"fxp"`` selects
+                  fixed point; floating formats must be keys in the implemented
+                  width map: ``"bfloat16"``, ``"float16"``, or ``"float32"``.
+                  Both default to ``"fxp"``.
+                * **widthi**, **widthw** - Fixed-point widths. Both default to ``8``.
+                * **quantilei**, **quantilew** - Scaling quantiles. Both default
+                  to ``1``.
+                * **cycle** - Active cycles, capped at ``2 ** widtht``. ``None``
+                  selects the cap and is the default.
+                * **rounding** - Fixed-point rounding mode. Defaults to ``"round"``.
+                * **name** - Optional instance label. Defaults to ``None``.
+        """
         super().__init__(config, [])
         self.in_features, self.out_features = in_features, out_features
         self.temporal = config.get('temporal', 'i').lower()
@@ -547,7 +806,26 @@ class linear_tlut(napl_base):
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state, so the hook returns
+        ``None`` without changing trainable parameters.
+        """
+        pass
+
     def forward(self, input):
+        """Apply the selected temporal-LUT linear approximation.
+
+        Args:
+            input: Numeric tensor shaped ``(batch, in_features)``.
+
+        Returns:
+            Numeric tensor shaped ``(batch, out_features)``.
+
+        The call does not change persistent state or ``timestep_cur``. The
+        selected custom autograd path supplies a straight-through linear gradient.
+        """
         cp, cn = self.cycle_act, -self.cycle_act
         if self.mode == 'fxpfxp':
             return _linear_tlut_fxpfxp_fn.apply(input, self.weight, self.bias, self.temporal,

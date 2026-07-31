@@ -8,14 +8,27 @@ from loguru import logger
 
 class exp_n1(napl_base):
     """
-    Unary exp(-x) for unipolar input, via the truncated Maclaurin series
-    exp(-x) = 1 - x(1 - x/2(1 - x/3(1 - x/4(1 - x/5)))): a chain of NAND-style
-    stages, each ANDing a delayed tap of the input stream (delays decorrelate
-    the reused stream) with a constant stream (1/5, 1/4, 1/3, 1/2).
-    Reference:
-    K. Parhi and Y. Liu. "Computing Arithmetic Functions Using Stochastic
-    Logic by Series Expansion." IEEE Transactions on Emerging Topics in
-    Computing, 2017, Fig. 12.
+    Approximate ``exp(-x)`` from a unipolar rate-coded spike stream.
+
+    This streaming kernel uses a truncated Maclaurin-series circuit. Use it
+    when the input represents values in ``[0, 1]`` and a stochastic
+    approximation of the negative exponential is required.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import exp_n1
+
+        operation = exp_n1()
+        output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        K. Parhi and Y. Liu, *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2017, Fig. 12.
     """
     def __init__(
         self,
@@ -26,6 +39,21 @@ class exp_n1(napl_base):
             'dim': 1,
         }
     ):
+        """
+        Configure the unipolar series-expansion kernel and its constant streams.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
+              - **generator**: Number-sequence generator accepted by :func:`napl.sim.module.encoder.gen_num_seq`; the default is ``"sobol"``.
+              - **dim**: First Sobol dimension used for the four constant streams; the default is ``1``.
+              - **name**: Optional module name.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         assert self.polarity == 'unipolar', \
             logger.error(f'Invalid polarity: <{self.polarity}>; exp_n1 supports unipolar only.')
@@ -47,10 +75,12 @@ class exp_n1(napl_base):
         # one decorrelated sequence per constant (dims dim..dim+3); the streams
         # are periodic in self.len, so precompute the whole (len, 4) spike table
         seqs = torch.stack(
-            [gen_num_seq({'width': self.width, 'generator': config['generator'], 'dim': dim + i}).data
+            [gen_num_seq({'width': self.width, 'generator': config['generator'], 'dim': dim + i})
              for i in range(4)], dim=1)
-        self.const_spike = torch.nn.Parameter(
-            torch.gt(const_q.unsqueeze(0).type(self.ntype), seqs).type(torch.int8), requires_grad=False)
+        self.register_buffer(
+            'const_spike',
+            torch.gt(const_q.unsqueeze(0).type(self.ntype), seqs).type(torch.int8),
+        )
         # host-side copy of the constant bits: spikes are {0,1}, so a 0 bit
         # collapses its whole NAND stage to the scalar 1 and a 1 bit makes the
         # AND an identity, skipping the per-timestep tensor & with a constant
@@ -58,18 +88,41 @@ class exp_n1(napl_base):
 
         # input delay taps d1..d4; scalar zeros broadcast to the input shape on
         # the first forward()
-        self.input_d1 = torch.nn.Parameter(torch.zeros(1).type(self.stype), requires_grad=False)
-        self.input_d2 = torch.nn.Parameter(torch.zeros(1).type(self.stype), requires_grad=False)
-        self.input_d3 = torch.nn.Parameter(torch.zeros(1).type(self.stype), requires_grad=False)
-        self.input_d4 = torch.nn.Parameter(torch.zeros(1).type(self.stype), requires_grad=False)
+        self.register_buffer('input_d1', torch.zeros(1).type(self.stype))
+        self.register_buffer('input_d2', torch.zeros(1).type(self.stype))
+        self.register_buffer('input_d3', torch.zeros(1).type(self.stype))
+        self.register_buffer('input_d4', torch.zeros(1).type(self.stype))
 
 
     def _reset(self):
-        for tap in (self.input_d1, self.input_d2, self.input_d3, self.input_d4):
-            tap.data = torch.zeros(1, dtype=self.stype, device=tap.device)
+        """
+        Clear the four input-delay taps to their scalar zero state.
+        """
+        self.input_d1.resize_(1).zero_()
+        self.input_d2.resize_(1).zero_()
+        self.input_d3.resize_(1).zero_()
+        self.input_d4.resize_(1).zero_()
 
 
     def forward(self, input: torch.tensor):
+        """
+        Process one timestep of a unipolar input stream.
+
+        The call advances the internal input-delay line and returns one
+        unipolar output spike per input element.
+
+        Args:
+            input: Tensor of current 0/1 input spikes.
+
+        Returns:
+            Output spike tensor with the same shape and spike dtype as ``input``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = operation(torch.tensor([0.0, 1.0]))
+        """
         # input is a spike tensor
         # n_k is a tensor iff its constant bit is 1, the scalar 1 otherwise
         c0, c1, c2, c3 = self._const_bits[(self.timestep_cur - 1) % self.len]
@@ -94,10 +147,9 @@ class exp_n1(napl_base):
         if output.shape != input.shape:
             # d4 is still the scalar init tap: keep the input-shaped contract
             output = output.expand(input.shape)
-        # shift the delay line oldest-first; taps hold references (the producer
-        # emits a fresh tensor each timestep, same assumption as dff)
-        self.input_d4.data = self.input_d3.data
-        self.input_d3.data = self.input_d2.data
-        self.input_d2.data = self.input_d1.data
-        self.input_d1.data = input
+        # shift the delay line oldest-first
+        self.input_d4.resize_as_(self.input_d3).copy_(self.input_d3.detach())
+        self.input_d3.resize_as_(self.input_d2).copy_(self.input_d2.detach())
+        self.input_d2.resize_as_(self.input_d1).copy_(self.input_d1.detach())
+        self.input_d1.resize_as_(input).copy_(input.detach())
         return output.type(self.stype)

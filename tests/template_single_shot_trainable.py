@@ -1,10 +1,9 @@
 # Copy to tests/<subpackage>/test_<name>.py and fill in every TODO.
 # The template_ prefix keeps this file out of sweep_test.py's test_*.py glob.
 #
-# single_shot_suite checks known answers, PyTorch-reference fidelity,
-# execution state, every declared STE gradient, and performance on every
-# device. Speedup is the saved CPU runtime divided by each device runtime for
-# the same NAPL module and identical pre-generated inputs.
+# single_shot_suite checks known answers, rank-2-or-higher PyTorch-reference
+# fidelity, execution state, every declared STE gradient, and performance on
+# every device. Speedup is the saved CPU runtime divided by each device runtime.
 # Use timer only for a separate unpaired elapsed measurement.
 from napl.utils._shared_test import single_shot_suite
 
@@ -15,7 +14,8 @@ def make_module_pair():
 
 
 def make_inputs():
-    # TODO: return pre-generated CPU input tensors as a tuple.
+    # TODO: return pre-generated CPU input tensors as a tuple. Fidelity inputs
+    # are promoted to at least rank 2 by single_shot_suite.
     raise NotImplementedError('TODO: implement make_inputs')
 
 

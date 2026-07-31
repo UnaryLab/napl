@@ -9,11 +9,27 @@ from loguru import logger
 
 class tanh_p1(napl_base):
     """
-    Combinational tanh(x) for unipolar spike streams via series expansion, from
-    "K. Parhi and Y. Liu. Computing Arithmetic Functions Using Stochastic Logic
-    by Series Expansion. IEEE TETC 2017", fig. 10: a NAND/AND cascade against
-    four internal constant spike streams (62/153, 17/42, 2/5, 1/3), with DFF
-    delay lines decorrelating the reused input and n_1 streams.
+    Approximate ``tanh(x)`` from a unipolar spike stream by series expansion.
+
+    Use this streaming kernel when the input represents values in ``[0, 1]``
+    and a stochastic NAND/AND-cascade implementation of hyperbolic tangent is
+    required.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import tanh_p1
+
+        operation = tanh_p1()
+        output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        K. Parhi and Y. Liu, *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2017, Fig. 10.
     """
     def __init__(
             self,
@@ -23,6 +39,21 @@ class tanh_p1(napl_base):
                 'generator': 'sobol',
             }
     ):
+        """
+        Configure the unipolar series-expansion kernel and coefficient streams.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
+              - **generator**: Number-sequence generator accepted by :func:`napl.sim.module.encoder.gen_num_seq`; the default is ``"sobol"``.
+              - **dim**: First Sobol dimension used for the four coefficient streams; the default is ``1``.
+              - **name**: Optional module name.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         assert self.polarity == 'unipolar', \
             logger.error(f'Invalid polarity: <{self.polarity}>; combinational tanh_p1 needs unipolar mode.')
@@ -48,7 +79,7 @@ class tanh_p1(napl_base):
                                           'dim': dim + i})
             coef_bin = torch.tensor(coef, dtype=self.ntype).mul(self.len).round()
             coef_seq.append(torch.gt(coef_bin, num_seq.mul(self.len).floor()).type(torch.int8))
-        self.coef_seq = torch.nn.Parameter(torch.stack(coef_seq), requires_grad=False)
+        self.register_buffer('coef_seq', torch.stack(coef_seq))
         # per-timestep coefficient bits as Python ints: avoids a 4-way tensor
         # index (and its GPU launches) in the hot path, and lets forward()
         # constant-fold the NAND stages whose bit is 0.
@@ -62,7 +93,32 @@ class tanh_p1(napl_base):
         self.n_1_dff_3 = dff({'depth': 1})
 
 
+    def _reset(self):
+        """
+        Reset no class-owned state; :meth:`reset` resets the child delay lines.
+        """
+        pass
+
+
     def forward(self, input: torch.tensor):
+        """
+        Process one timestep of a unipolar input stream.
+
+        The call advances all decorrelating delay lines and evaluates the
+        coefficient-selected NAND/AND cascade.
+
+        Args:
+            input: Tensor of current 0/1 unipolar input spikes.
+
+        Returns:
+            Unipolar 0/1 output spike tensor with the same shape as ``input``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = operation(torch.tensor([0.0, 1.0]))
+        """
         # input is a spike tensor
         in_i8 = input.type(torch.int8)
         c2, c3, c4, c5 = self.coef_bits[(self.timestep_cur - 1) % self.len]

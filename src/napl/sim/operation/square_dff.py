@@ -6,10 +6,29 @@ from napl.sim.operation import dff
 
 class square_dff(napl_base):
     """
-    This module is for unary square with AND gate and dff, supporting unipolar/bipolar.
-    References:
-    1) uGEMM: Unary Computing Architecture for GEMM Applications
-    2) uGEMM: Unary Computing for GEMM Applications
+    Square a unary stream by multiplying it with a delayed copy.
+
+    Use this stateful square operation when delay-based decorrelation is desired.
+    It applies AND to unipolar spikes and XNOR to bipolar spikes after delaying
+    one operand by the configured depth.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import square_dff
+
+        square = square_dff({'polarity': 'unipolar', 'depth': 1})
+        output = square(torch.tensor([1], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*.
+
+        *uGEMM: Unary Computing for GEMM Applications*.
     """
     def __init__(
             self,
@@ -18,6 +37,19 @@ class square_dff(napl_base):
                 'depth': 1,
             }
         ):
+        """
+        Configure the stream polarity and decorrelation delay.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Use ``"unipolar"`` for AND or ``"bipolar"`` for XNOR; the default is ``"bipolar"``.
+              - **depth**: Number of timesteps in the internal D flip-flop delay; the default is ``1``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['polarity'], polarity_required=True)
         self.hw = hw_params(pp_delay=0)
 
@@ -30,7 +62,30 @@ class square_dff(napl_base):
         self._spike_is_int8 = (self.stype == torch.int8)
 
 
+    def _reset(self):
+        """
+        Reset no additional local state beyond the internal delay module.
+        """
+        pass
+
+
     def forward(self, input: torch.tensor):
+        """
+        Square one timestep against its delayed copy.
+
+        Args:
+            input: Current 0/1 spike tensor.
+
+        Returns:
+            The elementwise AND or XNOR of the current and delayed spikes. The
+            internal D flip-flop stores the current input for later timesteps.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = square(torch.tensor([1], dtype=torch.int8))
+        """
         # input is a spike tensor
         input_d = self.dff(input)
         if self._spike_is_int8:

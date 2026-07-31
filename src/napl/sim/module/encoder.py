@@ -81,7 +81,7 @@ def gen_num_seq(config={
     elif generator == 'sys':
         num_seq = get_sysrand_seq(width=width)
 
-    return torch.nn.Parameter(num_seq.type(global_config.ntype), requires_grad=False)
+    return num_seq.type(global_config.ntype)
 
 
 def input_scale(input, quantile=1):
@@ -105,6 +105,24 @@ def input_scale(input, quantile=1):
 
 
 class encoder(napl_base):
+    """Encode numeric values as a unary spike stream.
+
+    Use this module to generate one rate-coded or temporal-coded spike tensor per
+    call. Values are interpreted in ``[0, 1]`` for unipolar encoding and
+    ``[-1, 1]`` for bipolar encoding.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import encoder
+
+        enc = encoder({"polarity": "unipolar", "timestep": 4,
+                       "generator": "sobol"})
+        output_spike = enc(torch.tensor([0.25, 0.75]))
+    """
+
     def __init__(
             self,
             config:dict={
@@ -113,6 +131,26 @@ class encoder(napl_base):
                 'generator': 'sobol',
                 }
         ):
+        """Configure the stream length and number-sequence generator.
+
+        Args:
+            config: Configuration mapping with these keys:
+
+                * **polarity** - ``"unipolar"`` or ``"bipolar"``. Defaults to
+                  ``"bipolar"``.
+                * **timestep** - Requested positive stream length. Defaults to
+                  ``256``; the generated sequence period is the next power of two.
+                * **generator** - ``"sobol"``, ``"lfsr"``, ``"sys"``,
+                  ``"rc"``, ``"tc"``, ``"rate"``, or ``"temporal"``.
+                  Defaults to ``"sobol"``.
+                * **dim** - One-based Sobol dimension. Defaults to ``1``.
+                * **seed** - Optional integer LFSR seed. Defaults to ``None``.
+                * **taps** - Optional non-empty LFSR feedback-tap list. Defaults
+                  to ``None``.
+                * **name** - Optional instance label. Defaults to ``None``.
+
+        Construction generates and stores the complete number sequence.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
         self.timestep = config['timestep']
@@ -128,21 +166,36 @@ class encoder(napl_base):
         # the sequence is used to compare with the input data
         config_updated = {'width': self.width}
         config_updated.update(config)
-        self.num_seq = gen_num_seq(config=config_updated)
+        self.register_buffer('num_seq', gen_num_seq(config=config_updated))
 
         # avoid recomputing the bipolar prob transform when re-encoding an unchanged input
         self._prob_cache = None
 
 
     def _reset(self):
-        """
-        Reset the timestep and spike count.
+        """Drop the cached bipolar probability transform.
+
+        The number sequence is unchanged. This hook returns ``None`` and is
+        called by ``reset()``, which separately resets the timestep.
         """
         # drop the cached input/prob so reset releases the pinned tensors
         self._prob_cache = None
 
 
     def forward(self, input: torch.Tensor):
+        """Encode one timestep for a numeric input tensor.
+
+        Args:
+            input: Numeric tensor in ``[0, 1]`` for unipolar encoding or
+                ``[-1, 1]`` for bipolar encoding.
+
+        Returns:
+            A same-shaped ``0``/``1`` spike tensor using the configured global
+            spike dtype.
+
+        Calling the module advances ``timestep_cur`` and selects the next number
+        in the periodic sequence. The input tensor is not modified.
+        """
         # use gt to generate the spike
         # if input is 0, then a all 0 spike stream is generated
         # if input is 1, then one spike in the spike stream will be 0

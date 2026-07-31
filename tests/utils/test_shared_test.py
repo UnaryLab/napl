@@ -1,6 +1,7 @@
 import torch
 
 from napl.utils._shared_test import (
+    _multirank_inputs,
     timer,
     assert_inputs_equal,
     benchmark,
@@ -64,6 +65,24 @@ def test_clone_inputs_and_equality():
         torch.testing.assert_close(
             baseline_inputs[0], shared_cpu[0].to(device)
         )
+
+
+def test_multirank_inputs():
+    scalar = torch.tensor(1.0)
+    vector = torch.arange(3)
+    matrix = torch.arange(6).reshape(2, 3)
+
+    result = _multirank_inputs((scalar, vector, matrix))
+
+    assert [value.shape for value in result] == [
+        torch.Size([1, 1]),
+        torch.Size([1, 3]),
+        torch.Size([2, 3]),
+    ]
+    assert all(value.ndim >= 2 for value in result)
+    assert torch.equal(result[0].reshape(()), scalar)
+    assert torch.equal(result[1].reshape(3), vector)
+    assert result[2] is matrix
 
 
 def test_benchmark():
@@ -246,6 +265,7 @@ def test_suite_config_validation():
 if __name__ == '__main__':
     test_timer()
     test_clone_inputs_and_equality()
+    test_multirank_inputs()
     test_benchmark()
     test_streaming_suite()
     test_single_shot_suite()

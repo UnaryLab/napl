@@ -1,0 +1,286 @@
+@import url('https://fonts.googleapis.com/css2?family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+:root {
+  --napl-text: #333;
+  --napl-heading: #111;
+  --napl-border: #eee;
+  --napl-link: navy;
+  --napl-header-bg: #b0b5ab;
+  --napl-header-border: #9da29a;
+  --napl-font: "Gill Sans", "Gill Sans MT", "Gill Sans Nova", Cabin, Calibri, sans-serif;
+}
+
+.napl-site-header,
+.napl-site-header *,
+.napl-site-header *::before,
+.napl-site-header *::after {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--napl-text);
+  font-family: var(--napl-font);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+a,
+a:visited {
+  color: var(--napl-link);
+}
+
+.napl-site-header {
+  background: var(--napl-header-bg);
+  border-bottom: 1px solid var(--napl-header-border);
+}
+
+.napl-site-header__inner {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: 900px;
+  min-height: 72px;
+  padding: 0 32px;
+}
+
+.napl-site-header__brand,
+.napl-site-header__brand:visited {
+  align-items: center;
+  color: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  font-family: var(--napl-font);
+  font-size: 18px;
+  font-weight: 700;
+  gap: 3px;
+  padding: 10px 0;
+  text-decoration: none;
+}
+
+.napl-site-header__brand:hover {
+  color: #000;
+  text-decoration: none;
+}
+
+.napl-site-header__logo {
+  display: block;
+  height: 48px;
+  width: auto;
+}
+
+.napl-site-header__copy {
+  flex: 1;
+  text-align: center;
+}
+
+.napl-site-header__heading {
+  color: var(--napl-heading);
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.napl-site-header__heading a,
+.napl-site-header__heading a:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+div.document {
+  margin-top: 32px;
+}
+
+div.body {
+  color: var(--napl-text);
+  max-width: 980px;
+}
+
+div.body h1,
+div.body h2,
+div.body h3,
+div.body h4,
+div.body h5,
+div.body h6,
+div.sphinxsidebar h1,
+div.sphinxsidebar h2,
+div.sphinxsidebar h3,
+div.sphinxsidebar h4,
+div.sphinxsidebar input {
+  color: var(--napl-heading);
+  font-family: var(--napl-font);
+  font-weight: 700;
+}
+
+div.body h1 {
+  font-size: 25px;
+}
+
+div.body h2 {
+  border-bottom: 1px solid var(--napl-border);
+  font-size: 18px;
+  padding-bottom: 6px;
+}
+
+div.body h3,
+div.body h4 {
+  font-size: 15px;
+}
+
+div.body p,
+div.body dd,
+div.body li,
+div.body table,
+div.body dl.field-list {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+div.body .api-parameter-list {
+  display: grid;
+  grid-template-columns: fit-content(30%) auto;
+}
+
+div.body .api-parameter-list > p {
+  margin: 0;
+  padding-left: 0.5em;
+  padding-right: 5px;
+}
+
+div.body .api-parameter-list > ul {
+  margin: 0 0 10px;
+  padding-left: 1.5em;
+}
+
+div.body dl.field-list dd strong,
+div.body .api-parameter-list li > p > strong {
+  font-weight: 700;
+}
+
+div.sphinxsidebar {
+  font-family: var(--napl-font);
+  font-size: 15px;
+}
+
+div.sphinxsidebar h1.logo,
+div.sphinxsidebar h3,
+div.sphinxsidebar h4 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+div.sphinxsidebar p,
+div.sphinxsidebar p.caption,
+div.sphinxsidebar ul li,
+div.sphinxsidebar ul li.toctree-l1 > a,
+div.sphinxsidebar ul li.toctree-l2 > a,
+div.sphinxsidebar input {
+  font-size: 15px;
+}
+
+div.sphinxsidebar p.caption {
+  color: var(--napl-heading);
+  font-weight: 700;
+  margin-bottom: 6px;
+  margin-top: 24px;
+}
+
+div.sphinxsidebar h1.logo a,
+div.sphinxsidebar h1.logo a:visited {
+  color: var(--napl-heading);
+}
+
+.napl-github-button,
+.napl-github-button:visited {
+  background: #f6f8fa;
+  border: 1px solid #d1d5da;
+  border-radius: 4px;
+  color: #24292f;
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 10px;
+  text-decoration: none;
+}
+
+.napl-github-button:hover {
+  background: #f3f4f6;
+  color: #111;
+  text-decoration: none;
+}
+
+code.literal {
+  border: 0;
+}
+
+div.body p.rubric,
+div.body dl.py > dt.sig {
+  color: var(--napl-heading);
+  font-family: var(--napl-font);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+div.body dl.py > dt.sig .sig-name,
+div.body dl.py > dt.sig .sig-paren,
+div.body dl.py > dt.sig .optional {
+  font-size: inherit;
+}
+
+div.body dl.py > dt.sig .sig-param .n {
+  font-weight: 700;
+}
+
+div.body hr.api-member-divider {
+  border: 0;
+  border-top: 1px solid var(--napl-border);
+  margin: 30px 0;
+  width: 100%;
+}
+
+dl.py.class > dd > dl.py {
+  margin: 30px 0 0;
+}
+
+dl.py.property > dt.sig > span.property {
+  display: none;
+}
+
+@media screen and (max-width: 940px) {
+  body {
+    padding: 0;
+  }
+
+  .napl-site-header__heading {
+    font-size: 22px;
+  }
+
+  div.document {
+    box-sizing: border-box;
+    margin-top: 0;
+    padding: 24px 16px 0;
+  }
+
+  div.sphinxsidebar {
+    margin: 40px -16px -24px;
+  }
+}
+
+@media screen and (max-width: 560px) {
+  .napl-site-header__inner {
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .napl-site-header__copy {
+    padding: 14px 0;
+    text-align: left;
+  }
+
+  .napl-site-header__heading {
+    font-size: 20px;
+  }
+
+}

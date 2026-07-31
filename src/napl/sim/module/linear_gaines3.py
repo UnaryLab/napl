@@ -7,24 +7,43 @@ from loguru import logger
 
 
 class linear_gaines3(napl_base):
-    """
-    Streaming Gaines fully-connected layer: uMUL + gADD.
+    """Apply a streaming Gaines ``uMUL + gADD`` fully connected layer.
+
+    Use this UnarySim-compatible variant when weight products should share one
+    conditional-spike generator. Sharing limits accumulation accuracy through
+    correlation, so prefer :class:`linear` when fidelity is the main goal.
 
     Per timestep, weight spikes are conditionally generated from the binary weights by a
     single shared RNG (CSG, reusing operation.mul_csg): unipolar ANDs them with the input
     spikes, bipolar takes the disjoint input-1/input-0 dual paths (XNOR form). The
     per-output product count (parallel count, plus a bias spike on the direct path) then
     goes through a Gaines-style addition:
-      - scaled (default): output spike = (count >= scale_seq[t]), a random-comparison
-        scaled adder; the recovered value is (W x + b) / 2**round(log2(entry)) with
-        entry = in_features + has_bias.
-      - non-scaled: unipolar outputs the OR of the products (count > 0); bipolar feeds
-        2*count - entry into a saturating counter of `depth` bits seeded at half range
-        and outputs its MSB.
 
-    All weight streams share ONE RNG dimension (faithful to the original), so accumulation
-    accuracy is limited by inter-stream correlation; prefer linear for accuracy.
-    References: B. R. Gaines, "Stochastic computing systems". UnarySim: GainesLinear3.
+    - scaled (default): output spike = (count >= scale_seq[t]), a random-comparison
+      scaled adder; the recovered value is (W x + b) / 2**round(log2(entry)) with
+      entry = in_features + has_bias.
+
+    - non-scaled: unipolar outputs the OR of the products (count > 0); bipolar feeds
+      2*count - entry into a saturating counter of `depth` bits seeded at half range
+      and outputs its MSB.
+
+    This class matches UnarySim ``GainesLinear3``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_gaines3
+
+        layer = linear_gaines3(torch.zeros(3, 2),
+                               config={"polarity": "bipolar", "timestep": 4,
+                                       "generator": "sobol", "scaled": True})
+        output_spike = layer(torch.ones(1, 2))
+
+    References
+    ----------
+    B. R. Gaines, *Stochastic Computing Systems*.
     """
     def __init__(
             self,
@@ -36,6 +55,19 @@ class linear_gaines3(napl_base):
                 'generator': 'sobol',
             }
         ):
+        """Construct the Gaines layer from external numeric parameters.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults to
+                ``None``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"sobol"``), **scaled** (default ``True``),
+                **scale_dim** (scaled-threshold sequence dimension, default ``6``),
+                and **depth** (non-scaled counter bits, default ``8``). **name**
+                is an optional instance label and defaults to ``None``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing at module top would
         # create an import cycle with module/__init__.
@@ -62,22 +94,38 @@ class linear_gaines3(napl_base):
             # dim 6 matches the original's (rng_idx+5) with the default rng_idx=1
             width = round(math.log2(self.entry))
             self.scale_len = 2 ** width
-            self.scale_seq = torch.nn.Parameter(
+            self.register_buffer('scale_seq',
                 gen_num_seq({'width': width, 'generator': cfg['generator'],
-                             'dim': config.get('scale_dim', 6)}).data.mul(self.scale_len).floor(),
-                requires_grad=False)
+                             'dim': config.get('scale_dim', 6)}).mul(self.scale_len).floor())
         else:
             depth = config.get('depth', 8)
             self.max_cnt = 2 ** depth - 1
             self.half_cnt = 2 ** (depth - 1)
             # scalar counter that broadcasts up to the output shape on the first forward
-            self.cnt = torch.nn.Parameter(torch.full((1,), float(self.half_cnt)), requires_grad=False)
+            self.register_buffer('cnt', torch.full((1,), float(self.half_cnt)))
 
     def _reset(self):
+        """Reset the local non-scaled counter.
+
+        When **scaled** is ``False``, the counter returns to half of its configured
+        range. Registered child modules are reset separately by ``reset()``.
+        """
         if not self.scaled:
-            self.cnt.data = torch.full((1,), float(self.half_cnt), device=self.cnt.device, dtype=self.cnt.dtype)
+            self.cnt.resize_(1).fill_(self.half_cnt)
 
     def forward(self, input_spike):
+        """Process one input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``.
+
+        Returns:
+            Output spike tensor with last dimension ``out_features``.
+
+        The call advances the shared multiplier, optional bias encoder, local
+        counter when active, and ``timestep_cur``.
+        """
         # (..., 1, in) x (out, in) -> (..., out, in) product spikes; the bipolar dual paths
         # are disjoint, so the OR mul_csg returns sums to the direct + inverse path count
         prod = self.mul(input_spike.unsqueeze(-2), self.weight)
@@ -92,6 +140,11 @@ class linear_gaines3(napl_base):
             if self.polarity == 'unipolar':
                 output = torch.gt(pc, 0)
             else:
-                self.cnt.data = self.cnt.add(pc.mul(2).sub(self.entry)).clamp(0, self.max_cnt)
+                delta = pc.mul(2).sub_(self.entry)
+                if self.cnt.shape == delta.shape:
+                    self.cnt.add_(delta).clamp_(0, self.max_cnt)
+                else:
+                    cnt = self.cnt.add(delta).clamp(0, self.max_cnt).detach()
+                    self.cnt.resize_as_(cnt).copy_(cnt)
                 output = torch.gt(self.cnt, self.half_cnt)
         return output.type(self.stype)

@@ -8,13 +8,28 @@ from loguru import logger
 
 class add_gaines(napl_base):
     """
-    Gaines addition of `entry` spike streams along a dimension.
-    1) scaled: a MUX picks one input stream per timestep via an RNG select,
-       computing sum/entry (unipolar and bipolar).
-    2) non-scaled: an OR gate over the inputs approximates the sum for small
-       values (unipolar only).
-    Reference:
-    1) B. R. Gaines, 'Stochastic Computing Systems', 1969
+    Add rate-coded spike streams with the Gaines MUX or OR construction.
+
+    Use scaled mode to estimate the mean of a power-of-two number of unipolar
+    or bipolar streams. Use non-scaled mode for an OR-based approximation to a
+    small unipolar sum.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import add_gaines
+
+        adder = add_gaines({'polarity': 'unipolar', 'scaled': True,
+                            'entry': 2, 'generator': 'Sobol', 'dim': 1})
+        output = adder(torch.tensor([1, 0], dtype=torch.int8), dim=0)
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        B. R. Gaines, *Stochastic Computing Systems*, 1969.
     """
     def __init__(
         self,
@@ -28,6 +43,24 @@ class add_gaines(napl_base):
             'dim' : 1,
         }
     ):
+        """
+        Select scaled MUX addition or non-scaled OR addition.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Input encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **scaled**: Use MUX-based scaled addition when ``True`` or unipolar OR addition when ``False``; the default is ``True``.
+              - **entry**: Number of inputs in scaled mode. It must be a power of two; the default is ``8``.
+              - **generator**: Number-sequence generator used for MUX selection; the default is ``"Sobol"``.
+              - **dim**: Generator dimension forwarded when the selection sequence is built; the default is ``1``.
+              - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
         # combinational MUX / OR gate: no registers
         self.hw = hw_params(pp_delay=0)
@@ -51,10 +84,30 @@ class add_gaines(napl_base):
 
 
     def _reset(self):
+        """
+        Restart the local MUX selection sequence at its first value.
+        """
         self.idx = 0
 
 
     def forward(self, input: torch.Tensor, dim: int = 0):
+        """
+        Reduce one timestep of input spikes.
+
+        Args:
+            input: Spike tensor containing the streams to add.
+            dim: Dimension containing the input streams; the default is ``0``.
+
+        Returns:
+            The selected spike in scaled mode or the elementwise OR reduction
+            in non-scaled mode. Scaled calls advance the selection sequence.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = adder(torch.tensor([1, 0], dtype=torch.int8), dim=0)
+        """
         # input is a spike tensor; reduce over `dim`
         if self.scaled:
             assert input.size(dim) == self.entry, \

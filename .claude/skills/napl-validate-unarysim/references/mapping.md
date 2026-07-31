@@ -35,9 +35,6 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 **UnarySim classes and modes not ported to napl:**
 
 - `RNGMulti` and `BSGenMulti`
-- `FSUMul(static=False)`, the in-stream shift-register mode
-- `FSUAbs(shiftreg=True)` and `FSUAbs(interleave=True)`
-- `FSUReLU(encode="TC")` and `FSUReLU(shiftreg=True)`
 
 ## Metrics (`napl.sim.metric`  ->  UnarySim `metric/metric.py`)
 
@@ -54,6 +51,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | napl class | UnarySim class | file | notes |
 |------------|----------------|------|-------|
 | `mul_csg` | `FSUMul(static=True)` | `kernel/mul.py` | exact module match; carries an RNG -> SC-bound, see note |
+| `mul_shiftreg` | `FSUMul(static=False)` | `kernel/mul.py` | in-stream shift-register decorrelation; bit-exact on identical input streams |
 | `mul_and` | gate core inside `FSUMul` (no standalone module) | `kernel/mul.py` | bit-exact gate identity, see note |
 | `add_any` | `FSUAdd` | `kernel/add.py` | |
 | `div_cordiv` | `CORDIV_kernel` | `kernel/div.py` | correlated division, unipolar; operands pre-synchronized |
@@ -61,8 +59,13 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `sqrt_tracejkff` | `FSUSqrt(jk_trace=True, emit=False)` | `kernel/sqrt.py` | one UnarySim class, flag-selected; napl split into 3 modules |
 | `sqrt_traceiscb` | `FSUSqrt(jk_trace=False, emit=False)` | `kernel/sqrt.py` | iscbdiv-based trace |
 | `sqrt_emit` | `FSUSqrt(emit=True)` | `kernel/sqrt.py` | opportunistic bit-inserting |
-| `signabs` | `FSUAbs` + `FSUSign` | `kernel/abs.py`, `kernel/sign.py` | UnarySim exposes the absolute-value and sign functions as separate classes |
-| `relu_cnt`, `relu_sat` | `FSUReLU` | `kernel/relu.py` | two napl variants of one UnarySim FSU module |
+| `signabs` | `FSUAbs(shiftreg=False, interleave=False)` + `FSUSign(shiftreg=False)` | `kernel/abs.py`, `kernel/sign.py` | counter path; UnarySim exposes the absolute-value and sign functions as separate classes |
+| `signabs_interleave` | `FSUAbs(interleave=True)` | `kernel/abs.py` | interleaved accumulator-parity magnitude path |
+| `signabs_shiftreg` | `FSUAbs(shiftreg=True)` + `FSUSign(shiftreg=True)` | `kernel/abs.py`, `kernel/sign.py` | shift-register sign and magnitude path |
+| `relu_cnt` | `FSUReLU(encode="RC", shiftreg=False)` | `kernel/relu.py` | counter path |
+| `relu_shiftreg` | `FSUReLU(encode="RC", shiftreg=True)` | `kernel/relu.py` | shift-register path |
+| `relu_tc` | `FSUReLU(encode="TC")` | `kernel/relu.py` | temporal-coded path |
+| `relu_sat` | `FSUReLU(encode="RC", shiftreg=False)` | `kernel/relu.py` | napl saturating-adder alternative; within SC bound, not bit-exact |
 | `relu_hub` | `ScaleReLU` | `kernel/relu.py` | binary-domain |
 | `sigmoid_hard` / `sigmoid_hub` | `FSUHardsigmoid` / `ScaleHardsigmoid` | `kernel/sigmoid.py` | |
 | `tanh_hard` / `tanh_hub` | `FSUHardtanh` / `ScaleHardtanh` | `kernel/tanh.py` | |
@@ -95,8 +98,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
   **exactly napl `mul_csg`** (streamed operand x value operand, conditional spike generation). It
   carries an RNG, so napl-vs-UnarySim is SC-bound, not bit-exact, unless the two RNGs coincide.
 - `static=False` (in-stream): `in_1` is streamed but decorrelated through a `ShiftReg`, then
-  `in_0 & gt(source, rng[idx])`. This in-stream multiplier has **no direct napl equivalent** in the
-  current op set.
+  `in_0 & gt(source, rng[idx])`. This is napl `mul_shiftreg`.
 
 napl `mul_and` is the **pure AND (unipolar) / XNOR (bipolar) gate of two already-decorrelated spike
 streams** - no RNG. That gate is the `&`/`xnor` core *inside* `FSUMul_forward`, but UnarySim does not

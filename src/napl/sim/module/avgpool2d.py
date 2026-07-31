@@ -4,18 +4,46 @@ from napl.sim.base import napl_base
 
 
 class avgpool2d(napl_base):
-    """
-    Streaming unary 2d average pooling based on scaled addition.
-    Each timestep pools one spike tensor with AvgPool2d (window mean in [0, 1]),
-    accumulates it, and emits an output spike wherever the accumulator reaches 1
-    (then subtracts the emitted spike), so the output stream rate equals the
-    window-mean input rate. The mapping rate -> value is affine for both
-    polarities, so the same math serves unipolar and bipolar streams.
-    UnarySim: FSUAvgPool2d.
+    """Average-pool a unary spike stream one timestep at a time.
+
+    Use this module as the unary counterpart of ``torch.nn.AvgPool2d``. It
+    accumulates each pooled spike tensor and emits spikes whose rate represents
+    the window mean for either unipolar or bipolar encoding.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import avgpool2d
+
+        pool = avgpool2d(2, config={"polarity": "unipolar"})
+        output_spike = pool(torch.ones(1, 1, 2, 2))
+        assert output_spike.shape == (1, 1, 1, 1)
     """
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
                  count_include_pad=True, divisor_override=None,
                  config={'polarity': 'bipolar'}):
+        """Configure the pooling geometry and unary representation.
+
+        Args:
+            kernel_size: Pooling window size accepted by
+                ``torch.nn.AvgPool2d``.
+            stride: Pooling stride. Defaults to ``kernel_size`` through PyTorch.
+            padding: Implicit zero padding. Defaults to ``0``.
+            ceil_mode: Use ceiling instead of floor for output shapes when
+                ``True``. Defaults to ``False``.
+            count_include_pad: Include padded zeros in the mean when ``True``.
+                Defaults to ``True``.
+            divisor_override: Optional divisor used instead of the window size.
+                Defaults to ``None``.
+            config: Configuration mapping with **polarity**, either
+                ``"unipolar"`` or ``"bipolar"``. Defaults to ``"bipolar"``.
+                **name** is an optional instance label and defaults to ``None``.
+
+        Construction initializes a scalar accumulator that expands to the pooled
+        output shape on the first call.
+        """
         super().__init__(config, ['polarity'], polarity_required=True)
         self.avgpool2d = torch.nn.AvgPool2d(kernel_size, stride=stride, padding=padding,
                                             ceil_mode=ceil_mode,
@@ -23,12 +51,28 @@ class avgpool2d(napl_base):
                                             divisor_override=divisor_override)
         # scalar accumulator; broadcasts up to the pooled output shape on the
         # first forward() (napl broadcast idiom, no pre-sized input_shape needed)
-        self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
     def _reset(self):
-        self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
+        """Clear the local pooling accumulator.
+
+        The accumulator returns to a scalar zero and will adopt the next output
+        shape on demand. This hook returns ``None`` and is called by ``reset()``.
+        """
+        self.accumulator.resize_(1).zero_()
 
     def forward(self, input_spike):
+        """Process one spatial spike tensor.
+
+        Args:
+            input_spike: Current ``(batch, channel, height, width)`` spike tensor.
+
+        Returns:
+            A spike tensor with the shape produced by ``AvgPool2d``.
+
+        The call updates the persistent accumulator. Calling the module also
+        advances ``timestep_cur`` once.
+        """
         # input_spike: (batch, channel, H, W) spike tensor for the current timestep
         pooled_input = input_spike if input_spike.dtype == self.ntype else input_spike.type(self.ntype)
         delta = self.avgpool2d(pooled_input)
@@ -36,7 +80,8 @@ class avgpool2d(napl_base):
             self.accumulator.add_(delta)
         else:
             # first timestep: broadcast-expand the (1,) init out of place
-            self.accumulator.data = self.accumulator.add(delta)
+            expanded = self.accumulator.add(delta).detach()
+            self.accumulator.resize_as_(expanded).copy_(expanded)
         # single cast to stype: sub_ promotes the 0/1 spike into the ntype
         # accumulator in place, saving one full-tensor cast per timestep
         output = torch.ge(self.accumulator, 1).type(self.stype)

@@ -7,8 +7,10 @@ from loguru import logger
 
 
 class linear_gaines4(napl_base):
-    """
-    Streaming Gaines-style unary fully-connected layer (gMUL + gADD), LFSR-flavored:
+    """Apply a streaming Gaines layer with per-column number sequences.
+
+    Use this ``gMUL + gADD`` variant to reproduce the LFSR-oriented UnarySim
+    ``GainesLinear4`` design. It is a unary fully-connected layer computed bit by bit:
     y = W x (+ b), computed bit by bit. Each timestep the weights (and bias) are encoded
     into spikes on their own decorrelated number sequences (distinct sobol dim / lfsr
     seed from the input), multiplied with the incoming input spikes (AND for unipolar,
@@ -28,7 +30,20 @@ class linear_gaines4(napl_base):
     to `bitwidth` bits first; agreement is within the SC bound). The weight/bias spike
     streams are fixed and L-periodic, so the whole period is precomputed at init and
     forward() only indexes it.
-    UnarySim: GainesLinear4 (kernel/linear.py).
+    Weight and bias spike tables are precomputed for the complete sequence period.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_gaines4
+
+        layer = linear_gaines4(torch.zeros(3, 2),
+                               config={"polarity": "bipolar", "timestep": 4,
+                                       "generator": "lfsr", "scaled": True})
+        output_spike = layer(torch.ones(1, 2))
+
     """
     def __init__(
             self,
@@ -44,6 +59,22 @@ class linear_gaines4(napl_base):
                 'depth': 8,
             }
         ):
+        """Construct the layer and precompute its spike tables.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults to
+                ``None``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"lfsr"``), **dim** (first sequence dimension, default
+                ``2``), **seed** (first LFSR seed, default ``1``), **scaled**
+                (default ``True``), and **depth** (non-scaled bipolar counter bits,
+                default ``8``). **name** is an optional instance label and
+                defaults to ``None``.
+
+        Scaled mode requires ``in_features + has_bias >= 2``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing at module top
         # would create an import cycle with module/__init__.
@@ -74,7 +105,7 @@ class linear_gaines4(napl_base):
         width = math.ceil(math.log2(config['timestep']))
         self.w_len = 2 ** width
         cols = [gen_num_seq({'width': width, 'generator': config['generator'],
-                             'dim': dim + j, 'seed': seed + j}).data
+                             'dim': dim + j, 'seed': seed + j})
                 for j in range(self.in_features)]
         w_num_seq = torch.stack(cols, dim=1).to(weight.device)                       # (L, in)
         w_prob = ((weight + 1) / 2 if self.polarity == 'bipolar' else weight).type(self.ntype)
@@ -82,22 +113,21 @@ class linear_gaines4(napl_base):
         # pre-transposed for the matmul, instead of compare+cast every timestep.
         # ponytail: O(L*in*out) memory; re-encode per timestep if layers get big.
         w_spike_t = torch.gt(w_prob.t().unsqueeze(0), w_num_seq.unsqueeze(-1)).type(self.ntype)
-        self.w_spike_t = torch.nn.Parameter(w_spike_t, requires_grad=False)          # (L, in, out)
+        self.register_buffer('w_spike_t', w_spike_t)                                 # (L, in, out)
         if self.polarity == 'bipolar':
             # per-timestep constant of the XNOR identity below: in - sum(w)
-            self.w_offset = torch.nn.Parameter(self.in_features - w_spike_t.sum(1),
-                                               requires_grad=False)                  # (L, out)
+            self.register_buffer('w_offset', self.in_features - w_spike_t.sum(1))    # (L, out)
         if self.has_bias:
             self.bias = bias
             # bias spike stream is likewise fixed and L-periodic (the encoder derives the
             # same width from `timestep`): precompute it instead of encoding per timestep.
             b_num_seq = gen_num_seq({'width': width, 'generator': config['generator'],
                                      'dim': dim + self.in_features,
-                                     'seed': seed + self.in_features}).data.to(bias.device)
+                                     'seed': seed + self.in_features}).to(bias.device)
             b_prob = (bias + 1) / 2 if self.polarity == 'bipolar' else bias
-            self.b_spike = torch.nn.Parameter(
+            self.register_buffer('b_spike',
                 torch.gt(b_prob.unsqueeze(0), b_num_seq.unsqueeze(1)).type(self.ntype),
-                requires_grad=False)                                                 # (L, out)
+            )                                                                        # (L, out)
 
         if self.scaled:
             assert self.entry >= 2, logger.error(
@@ -110,21 +140,36 @@ class linear_gaines4(napl_base):
                                'dim': dim + self.in_features + 1,
                                'seed': seed + self.in_features + 1})
             # python-float thresholds: skips a per-timestep device tensor select
-            self.scale_thresh = (seq.data.type(self.ntype) * self.scale_len).tolist()
+            self.scale_thresh = (seq.type(self.ntype) * self.scale_len).tolist()
         else:
             # non-scaled bipolar: saturating counter of `depth` bits, init at half range;
             # scalar (1,) accumulator that broadcasts up to the input shape on first use.
             self.cnt_max = 2 ** self.depth - 1
             self.cnt_half = 2 ** (self.depth - 1)
-            self.cnt = torch.nn.Parameter(torch.full((1,), float(self.cnt_half), dtype=self.ntype),
-                                          requires_grad=False)
+            self.register_buffer('cnt', torch.full((1,), float(self.cnt_half), dtype=self.ntype))
 
     def _reset(self):
+        """Reset the local non-scaled counter.
+
+        When **scaled** is ``False``, the counter returns to half of its configured
+        range. Precomputed weight, bias, and threshold sequences are unchanged.
+        """
         if not self.scaled:
-            self.cnt.data = torch.full((1,), float(self.cnt_half), dtype=self.ntype,
-                                       device=self.cnt.device)
+            self.cnt.resize_(1).fill_(self.cnt_half)
 
     def forward(self, input_spike):
+        """Process one input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``.
+
+        Returns:
+            Output spike tensor with last dimension ``out_features``.
+
+        The call advances ``timestep_cur`` and may update the non-scaled bipolar
+        counter. Precomputed spike tables are read-only.
+        """
         # input_spike: (..., in_features) spike tensor for the current timestep
         idx = (self.timestep_cur - 1) % self.w_len
         xf = input_spike.type(self.ntype)
@@ -145,5 +190,10 @@ class linear_gaines4(napl_base):
         if self.polarity == 'unipolar':
             return torch.gt(pc, 0).type(self.stype)
         # non-scaled bipolar: integrate 2*pc - entry, saturate, threshold at half range
-        self.cnt.data = self.cnt.add(2 * pc - self.entry).clamp(0, self.cnt_max)
+        delta = 2 * pc - self.entry
+        if self.cnt.shape == delta.shape:
+            self.cnt.add_(delta).clamp_(0, self.cnt_max)
+        else:
+            cnt = self.cnt.add(delta).clamp(0, self.cnt_max).detach()
+            self.cnt.resize_as_(cnt).copy_(cnt)
         return torch.gt(self.cnt, self.cnt_half).type(self.stype)

@@ -7,10 +7,11 @@ from napl.sim.metric import (
     accuracy,
     correlation,
     stability,
+    stability_builder,
     stability_flux,
     stability_norm,
 )
-from napl.sim.metric._shared import analyze
+from napl.sim.metric._shared import Analysis, analyze
 from napl.utils._shared_test import devices
 
 
@@ -26,7 +27,7 @@ def capture_log(call):
 
 def test_analyze_known_answer():
     for device in devices():
-        input = torch.tensor([-2.0, 1.0, 0.0], device=device)
+        input = torch.tensor([[-2.0, 1.0, 0.0]], device=device)
         result = analyze(input)
 
         assert torch.equal(result.absolute, input.abs())
@@ -41,7 +42,7 @@ def test_analyze_known_answer():
 
 
 def test_analyze_report():
-    input = torch.tensor([-2.0, 1.0, 0.0])
+    input = torch.tensor([[-2.0, 1.0, 0.0]])
     result = analyze(input)
     assert capture_log(lambda: analyze(input)) == []
     messages = capture_log(
@@ -75,41 +76,44 @@ def test_analyze_report():
     assert messages[0] == 'Analysis report over <3> timesteps: '
 
 
-def test_accuracy_analyze_preserves_parameters():
+def test_accuracy_analyze_returns_local_results():
     for device in devices():
         metric = accuracy({'polarity': 'unipolar'}).to(device)
-        spike_error = metric.spike_error
-        metric(torch.tensor([1, 0], dtype=metric.stype, device=device))
+        metric(torch.tensor([[1, 0]], dtype=metric.stype, device=device))
 
-        result, _ = metric.analyze(torch.tensor([0.0, 1.0], device=device))
+        result, analysis_result = metric.analyze(
+            torch.tensor([[0.0, 1.0]], device=device)
+        )
 
-        assert result is spike_error
-        assert dict(metric.named_parameters())['spike_error'] is spike_error
+        assert not hasattr(metric, 'spike_error')
+        assert list(metric.named_parameters()) == []
+        assert set(dict(metric.named_buffers())) == {'spike_count'}
+        assert set(metric.state_dict()) == {'spike_count'}
         summary = analyze(result)
-        assert torch.equal(metric.spike_error_abs_min, summary.absolute_min)
-        assert torch.equal(metric.spike_error_abs_max, summary.absolute_max)
-        assert torch.equal(metric.spike_error_avg, summary.mean)
-        assert torch.equal(metric.spike_error_mae, summary.mean_absolute)
-        assert torch.equal(metric.spike_error_rmse, summary.root_mean_square)
+        assert isinstance(analysis_result, Analysis)
+        for actual, expected in zip(analysis_result, summary):
+            assert torch.equal(actual, expected)
 
         messages = capture_log(
             lambda: metric.analyze(
-                torch.tensor([0.0, 1.0], device=device),
+                torch.tensor([[0.0, 1.0]], device=device),
                 verbose=True,
             )
         )
         assert messages == [
-            f'Accuracy report over <{metric.timestep_cur}> timesteps: ',
-            f'    Max absolute error:     <{summary.absolute_max.item()}>',
-            f'    Min absolute error:     <{summary.absolute_min.item()}>',
-            f'    Mean error:             <{summary.mean.item()}>',
-            f'    Mean absolute error:    <{summary.mean_absolute.item()}>',
-            f'    Root mean square error: <{summary.root_mean_square.item()}>',
+            f'Progressive Error report over <{metric.timestep_cur}> timesteps: ',
+            f'    Max absolute progressive error:     <{summary.absolute_max.item()}>',
+            f'    Min absolute progressive error:     <{summary.absolute_min.item()}>',
+            f'    Mean progressive error:             <{summary.mean.item()}>',
+            f'    Mean absolute progressive error:    <{summary.mean_absolute.item()}>',
+            f'    Root mean square progressive error: <{summary.root_mean_square.item()}>',
             '',
         ]
+        metric.reset()
+        assert not hasattr(metric, 'spike_error')
 
 
-def test_metric_analyze_callers():
+def test_metric_analyze_returns_local_results():
     for device in devices():
         source = torch.ones(2)
         spike = source.to(device)
@@ -148,33 +152,48 @@ def test_metric_analyze_callers():
                     metric(spike)
             assert metric.valid
             assert metric.timestep_cur == 4
-            value, _ = metric.analyze()
+            value, analysis_result = metric.analyze()
             summary = analyze(value)
-            assert torch.equal(
-                getattr(metric, f'{prefix}_abs_min'),
-                summary.absolute_min,
-            )
-            assert torch.equal(
-                getattr(metric, f'{prefix}_abs_max'),
-                summary.absolute_max,
-            )
-            assert torch.equal(
-                getattr(metric, f'{prefix}_avg'),
-                summary.mean,
-            )
-            assert torch.equal(
-                getattr(metric, f'{prefix}_mae'),
-                summary.mean_absolute,
-            )
-            assert torch.equal(
-                getattr(metric, f'{prefix}_rmse'),
-                summary.root_mean_square,
+            assert isinstance(analysis_result, Analysis)
+            for actual, expected in zip(analysis_result, summary):
+                assert torch.equal(actual, expected)
+            for suffix in ('abs_min', 'abs_max', 'avg', 'mae', 'rmse'):
+                assert not hasattr(metric, f'{prefix}_{suffix}')
+
+
+def test_metric_persistent_tensor_state():
+    source = torch.tensor([-1.0, 1.0])
+    config = {'polarity': 'bipolar', 'threshold': 0.05}
+    metrics = (
+        accuracy(),
+        correlation(),
+        stability(source, config),
+        stability_norm(source, config),
+        stability_flux(source, source, config),
+        stability_builder(
+            source,
+            {
+                **config,
+                'normstability': 0.5,
+                'timestep': 4,
+                'generator': 'sobol',
+            },
+        ),
+    )
+    for metric in metrics:
+        assert list(metric.named_parameters()) == []
+        assert all(not buffer.requires_grad for _, buffer in metric.named_buffers())
+        for module in metric.modules():
+            assert all(
+                not isinstance(value, torch.Tensor)
+                for value in vars(module).values()
             )
 
 
 if __name__ == '__main__':
     test_analyze_known_answer()
     test_analyze_report()
-    test_accuracy_analyze_preserves_parameters()
-    test_metric_analyze_callers()
+    test_accuracy_analyze_returns_local_results()
+    test_metric_analyze_returns_local_results()
+    test_metric_persistent_tensor_state()
     print('Test passed.')

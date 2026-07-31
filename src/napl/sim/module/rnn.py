@@ -28,14 +28,41 @@ def _init_mgu_params(module, input_size, hidden_size, bias):
 
 
 class mgu_hard(napl_base):
-    """
-    Minimal Gated Unit (MGU) recurrent cell in the binary (float) domain with hard
-    activations: sigmoid -> hard sigmoid, tanh -> hard tanh, so every intermediate value
-    stays in the legal unary range. Single-shot; trainable.
-    Refs: "Simplified Minimal Gated Unit Variations for RNNs".
+    """Apply a trainable single-shot MGU cell with bounded hard activations.
+
+    Use this binary-domain cell when intermediate and output values must remain in
+    the legal unary range. It uses hard sigmoid and hard tanh by default and does
+    not advance the streaming timestep.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import mgu_hard
+
+        cell = mgu_hard(2, 3)
+        hidden = cell(torch.zeros(1, 2))
+
+    References
+    ----------
+    *Simplified Minimal Gated Unit Variations for RNNs*.
     """
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
+        """Construct the MGU cell and initialize its trainable parameters.
+
+        Args:
+            input_size: Number of input features.
+            hidden_size: Number of hidden features.
+            bias: Create trainable forget- and new-gate biases when ``True``.
+                Defaults to ``True``.
+            config: Configuration mapping with **hard**. ``True`` selects hard
+                sigmoid and hard tanh; ``False`` selects ``Sigmoid`` and ``Tanh``
+                for the gates while retaining the explicit bounding clamps.
+                Defaults to ``True``. **name** is an optional instance label and
+                defaults to ``None``.
+        """
         super().__init__(config, [])
         self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
         self.hard = config.get('hard', True)
@@ -45,7 +72,29 @@ class mgu_hard(napl_base):
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
+    def _reset(self):
+        """Reset local recurrent state.
+
+        The cell stores no hidden state between calls, so this hook returns
+        ``None`` without changing its trainable parameters.
+        """
+        pass
+
     def forward(self, input, hx=None):
+        """Compute one MGU recurrence in the binary domain.
+
+        Args:
+            input: Tensor of shape ``(batch, input_size)``.
+            hx: Optional previous hidden tensor of shape
+                ``(batch, hidden_size)``. Defaults to zeros.
+
+        Returns:
+            The next hidden tensor of shape ``(batch, hidden_size)``, bounded to
+            ``[-1, 1]``.
+
+        The call does not store ``hx`` or change ``timestep_cur``. Gradients flow
+        to the input and trainable parameters.
+        """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
         # forget gate
@@ -62,12 +111,41 @@ class mgu_hard(napl_base):
 
 
 class mgu_hardfxp(napl_base):
-    """
-    MGU cell as mgu_hard, but every operand is rounded to fixed point (intwidth, fracwidth)
-    before use (quant-aware). Single-shot; trainable via STE through round_fxp.
+    """Apply a quantization-aware MGU cell with hard range bounds.
+
+    Use this single-shot cell to train or evaluate an MGU while rounding operands
+    to the configured fixed-point format. ``round_fxp`` supplies the
+    straight-through gradient.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import mgu_hardfxp
+
+        cell = mgu_hardfxp(2, 3, config={"hard": True,
+                                        "intwidth": 3, "fracwidth": 4})
+        hidden = cell(torch.zeros(1, 2))
     """
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True, 'intwidth': 3, 'fracwidth': 4}):
+        """Construct the fixed-point MGU and initialize trainable parameters.
+
+        Args:
+            input_size: Number of input features.
+            hidden_size: Number of hidden features.
+            bias: Create trainable gate biases when ``True``. Defaults to ``True``.
+            config: Configuration mapping with these keys:
+
+                * **hard** - Use hard gate activations when ``True``; otherwise
+                  use ``Sigmoid`` and ``Tanh``. Defaults to ``True``.
+                * **intwidth** - Integer-bit count passed to ``round_fxp``.
+                  Defaults to ``3``.
+                * **fracwidth** - Fractional-bit count passed to ``round_fxp``.
+                  Defaults to ``4``.
+                * **name** - Optional instance label. Defaults to ``None``.
+        """
         super().__init__(config, [])
         self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
         self.hard = config.get('hard', True)
@@ -78,7 +156,29 @@ class mgu_hardfxp(napl_base):
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
+    def _reset(self):
+        """Reset local recurrent state.
+
+        The cell stores no hidden state between calls, so this hook returns
+        ``None`` without changing parameters or quantization settings.
+        """
+        pass
+
     def forward(self, input, hx=None):
+        """Compute one quantized MGU recurrence.
+
+        Args:
+            input: Tensor of shape ``(batch, input_size)``.
+            hx: Optional previous hidden tensor of shape
+                ``(batch, hidden_size)``. Defaults to zeros.
+
+        Returns:
+            The next hidden tensor of shape ``(batch, hidden_size)``, bounded to
+            ``[-1, 1]``.
+
+        Operands are quantized during the call. The cell does not store ``hx`` or
+        advance ``timestep_cur``.
+        """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
         t = self.trunc
@@ -100,17 +200,51 @@ class mgu_hardfxp(napl_base):
 
 
 class mgu(napl_base):
-    """
-    Streaming MGU cell, evaluated one timestep at a time. The two gate linears use a
+    """Evaluate a bipolar rate-coded MGU cell one timestep at a time.
+
+    Use this class as the streaming inner cell for :class:`mgu_hub`, or directly
+    when input and hidden spike streams are already available. The two gate linears use a
     saturating scale-1 unary adder (which realizes linear + hard tanh in the unary domain);
     the forget-gate hard sigmoid is the scaled add (x+1)/2; fg*hx uses conditional-spike-
     generation multiply (hx is a fixed value), fg*ng uses XNOR multiply, and the output is a
     scale-1 unary add of [ng, 1-fg*ng, fg*hx] (= hard tanh of ng*(1-fg)+fg*hx). hx is the
-    fixed hidden value for this streaming run. Inner cell used by mgu_hub. Bipolar,
-    rate coding.
+    fixed hidden value for this streaming run.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import mgu
+
+        cell = mgu(torch.zeros(3, 5), torch.zeros(3),
+                   torch.zeros(3, 5), torch.zeros(3), torch.zeros(1, 3),
+                   {"polarity": "bipolar", "timestep": 4,
+                    "generator": "sobol", "width": 12})
+        output_spike = cell(torch.ones(1, 2), torch.ones(1, 3))
     """
     def __init__(self, weight_f, bias_f, weight_n, bias_n, hx_value,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'width': 12}):
+        """Construct a streaming MGU from external gate parameters.
+
+        Args:
+            weight_f: Forget-gate weight tensor shaped
+                ``(hidden_size, hidden_size + input_size)``.
+            bias_f: Forget-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
+            weight_n: New-gate weight tensor with the same shape as ``weight_f``.
+            bias_n: New-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
+            hx_value: Fixed numeric hidden value used by conditional spike
+                generation.
+            config: Configuration mapping with these keys:
+
+                * **polarity** - Must be ``"bipolar"``. Defaults to
+                  ``"bipolar"``.
+                * **timestep** - Encoder stream length. Defaults to ``256``.
+                * **generator** - Number-sequence generator. Defaults to
+                  ``"sobol"``.
+                * **width** - Unary-adder accumulator width. Defaults to ``12``.
+                * **name** - Optional instance label. Defaults to ``None``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         from napl.sim.operation import sigmoid_hard, mul_csg, mul_and, add_any
         from napl.sim.module.linear import linear
@@ -130,7 +264,29 @@ class mgu(napl_base):
         self.fg_ng_mul = mul_and({'polarity': 'bipolar'})                                     # fg (spike) * ng (spike)
         self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
 
+    def _reset(self):
+        """Reset state owned directly by this cell.
+
+        This class has no additional local mutable state. The inherited
+        ``reset()`` method resets its registered child modules.
+        """
+        pass
+
     def forward(self, input_spike, hx_spike):
+        """Process one input and hidden-state spike timestep.
+
+        Args:
+            input_spike: Current input spike tensor shaped
+                ``(batch, input_size)``.
+            hx_spike: Current hidden spike tensor shaped
+                ``(batch, hidden_size)``.
+
+        Returns:
+            Next-hidden-state spike tensor shaped ``(batch, hidden_size)``.
+
+        The call updates registered streaming children and advances this cell's
+        ``timestep_cur`` once. ``hx_value`` remains unchanged.
+        """
         fg_in = self.fg_ug_tanh(torch.cat((hx_spike, input_spike), dim=1))
         fg = self.fg_sigmoid(fg_in)
         fg_hx = self.fg_hx_mul(fg, self.hx_value)
@@ -144,16 +300,51 @@ class mgu(napl_base):
 
 
 class mgu_hub(napl_base):
-    """
-    Hybrid (single-shot from the caller) MGU: internally encodes input and hx into spike
+    """Evaluate an MGU through an internal unary simulation in one call.
+
+    Use this hybrid unary-binary cell when callers provide numeric tensors but
+    the MGU computation should run through spike encoders, a streaming
+    :class:`mgu`, and progressive decoding. It internally encodes input and hx into spike
     streams, runs mgu over 2**width cycles, and decodes the output with the accuracy
     (progressive-error) metric. Corresponds to mgu_hard with hard activations. Weights are
     external.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import mgu_hub
+
+        cell = mgu_hub(2, 3, weight_f=torch.zeros(3, 5), bias_f=torch.zeros(3),
+                       weight_n=torch.zeros(3, 5), bias_n=torch.zeros(3),
+                       config={"polarity": "bipolar", "width": 2,
+                               "generator": "sobol"})
+        hidden = cell(torch.zeros(1, 2))
     """
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True,
                  weight_f=None, bias_f=None, weight_n=None, bias_n=None,
                  config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol'}):
+        """Configure the hybrid run and attach external gate parameters.
+
+        Args:
+            input_size: Number of input features.
+            hidden_size: Number of hidden features.
+            bias: Include gate bias in the fan-in calculation. Defaults to
+                ``True``.
+            weight_f: Forget-gate weight tensor. Defaults to ``None``.
+            bias_f: Forget-gate bias tensor. Defaults to ``None``.
+            weight_n: New-gate weight tensor. Defaults to ``None``.
+            bias_n: New-gate bias tensor. Defaults to ``None``.
+            config: Configuration mapping with **polarity** (passed through as
+                ``"bipolar"`` internally), **width** (stream exponent, default
+                ``8``), and **generator** (default ``"sobol"``). **name** is an
+                optional instance label and defaults to ``None``.
+
+        A complete forward call requires compatible weight tensors; construction
+        does not create trainable parameters.
+        """
         super().__init__(config, [])
         self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
         self.width = config.get('width', 8)
@@ -164,7 +355,29 @@ class mgu_hub(napl_base):
         entry = hidden_size + input_size + (1 if bias else 0)
         self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
 
+    def _reset(self):
+        """Reset state owned directly by the hybrid wrapper.
+
+        The wrapper creates its streaming components inside each call and has no
+        persistent local run state, so this hook returns ``None``.
+        """
+        pass
+
     def forward(self, input, hx=None):
+        """Run a complete ``2 ** width``-cycle unary MGU simulation.
+
+        Args:
+            input: Numeric tensor shaped ``(batch, input_size)``.
+            hx: Optional numeric hidden tensor shaped
+                ``(batch, hidden_size)``. Defaults to zeros.
+
+        Returns:
+            Decoded next-hidden tensor shaped ``(batch, hidden_size)``.
+
+        The method creates temporary encoders, cell, and accuracy metric. It does
+        not store ``hx`` and, as a single-shot module, does not advance
+        ``timestep_cur``.
+        """
         from napl.sim.module.encoder import encoder
         from napl.sim.metric import accuracy
         if hx is None:

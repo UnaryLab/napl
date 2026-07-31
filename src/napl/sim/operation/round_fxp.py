@@ -25,9 +25,26 @@ class _round_ste_fn(torch.autograd.Function):
 
 def round_ste(input, fracwidth=0, min_val=None, max_val=None):
     """
-    Straight-through-estimator round of a float tensor to a fixed-point grid with
-    `fracwidth` fractional bits, optionally clamped to [min_val, max_val]. The gradient
-    passes through unchanged, so it is differentiable for quant-aware training.
+    Round a tensor to a fixed-point grid with a straight-through gradient.
+
+    Args:
+        input: Floating-point tensor to quantize.
+        fracwidth: Number of fractional bits; the default is ``0``.
+        min_val: Optional minimum scaled integer code. ``None`` disables the lower clamp.
+        max_val: Optional maximum scaled integer code. ``None`` disables the upper clamp.
+
+    Returns:
+        Quantized tensor with the same dtype and shape as ``input``. During
+        backpropagation, its input gradient is passed through unchanged.
+
+    **Example:**
+
+    .. code-block:: python
+
+        import torch
+        from napl.sim.operation.round_fxp import round_ste
+
+        output = round_ste(torch.tensor([0.3]), fracwidth=2)
     """
     if min_val is None:
         min_val = float('-inf')
@@ -39,10 +56,21 @@ def round_ste(input, fracwidth=0, min_val=None, max_val=None):
 
 class round_fxp(napl_base):
     """
-    Quantize data to signed fixed-point format (sign, intwidth, fracwidth): the value
-    is rounded onto a 2**fracwidth grid and clamped to
-    [1 - 2**(intwidth+fracwidth), 2**(intwidth+fracwidth) - 1] / 2**fracwidth, using
-    straight-through rounding so it stays differentiable. Single-shot, binary-domain.
+    Quantize a tensor to a signed fixed-point format.
+
+    This single-shot binary-domain kernel rounds to increments of
+    ``2**(-fracwidth)`` and clamps to the representable range. Use it for
+    quantization-aware training because the input gradient passes through unchanged.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import round_fxp
+
+        operation = round_fxp({'intwidth': 3, 'fracwidth': 4})
+        output = operation(torch.tensor([0.1, -0.3]))
     """
     streaming = False
     def __init__(
@@ -52,6 +80,19 @@ class round_fxp(napl_base):
                 'fracwidth': 4,
             }
         ):
+        """
+        Configure the signed fixed-point format.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **intwidth**: Number of integer magnitude bits; the default is ``3``.
+              - **fracwidth**: Number of fractional bits; the default is ``4``.
+              - **name**: Optional module name.
+        """
         super().__init__(config, ['intwidth', 'fracwidth'])
 
         self.intwidth = config['intwidth']
@@ -62,7 +103,32 @@ class round_fxp(napl_base):
         # is purely combinational (saturating clamp on the fixed-point code).
         self.delay = 0
 
+    def _reset(self):
+        """
+        Reset no local state; this single-shot quantizer is stateless.
+        """
+        pass
+
     def forward(self, input):
+        """
+        Quantize a complete tensor with straight-through rounding.
+
+        This stateless call does not advance a streaming timestep. Passing
+        ``None`` returns ``None``.
+
+        Args:
+            input: Floating-point tensor to quantize, or ``None``.
+
+        Returns:
+            Quantized tensor with the same shape and dtype as ``input``, or
+            ``None`` when ``input`` is ``None``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = operation(torch.tensor([0.1, -0.3]))
+        """
 
         if input is None:
             return None

@@ -29,15 +29,16 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
         low_pen = (1 - (p_low <= B_L).float()) * L
         high_pen = (1 - (B_L <= p_high).float()) * L
         pads.append((low_pen, p_low - B_L, high_pen, B_L - p_high))
-    # Batch the candidate loop into (rows, N) 2D chunks: one kernel per op across many
-    # candidates instead of ~30 tiny launches per i. All ops are elementwise float32,
-    # so the values are bit-identical to the per-i loop; only the running-best scan is
-    # inherently sequential (the reference overwrites, not keeps, the best) and stays a
-    # cheap per-row loop. ponytail: chunk rows to cap peak memory at O(rows*N) floats.
+    # Batch the candidate loop into (rows, *source_shape) chunks: one kernel per op
+    # across many candidates instead of ~30 tiny launches per i. All ops are elementwise
+    # float32, so the values are bit-identical to the per-i loop; only the running-best
+    # scan is inherently sequential (the reference overwrites, not keeps, the best) and
+    # stays a cheap per-row loop. Chunk rows to cap peak memory at O(rows*N) floats.
     rows = max(1, min(search_range + 1, (1 << 20) // max(1, p_low_L.numel())))
     for start in range(0, search_range + 1, rows):
         i_idx = torch.arange(start, min(start + rows, search_range + 1),
-                             dtype=p_low_L.dtype).unsqueeze(1)
+                             dtype=p_low_L.dtype).reshape(
+                                 (-1,) + (1,) * p_low_L.ndim)
         p_L = torch.minimum(p_low_L + i_idx, p_high_L)
         # gcd with L (a power of 2) is the largest power of 2 dividing p_L,
         # i.e. p_L & -p_L, capped by p_L <= L; 0 maps to L. Same values as
@@ -75,11 +76,29 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
 
 class stability_norm(napl_base):
     """
-    Normalized, value-independent stability of a spike stream: actual stability (from the
-    stability metric) over the maximum stability achievable for the source value at this
-    stream length, per element in [0, 1]. Call forward(spike) once per timestep, then
-    analyze(). Reference: "Normalized Stability: A Cross-Level Design Metric for
-    Early Termination in Stochastic Computing".
+    Measure value-independent normalized stability of a spike stream.
+
+    This metric divides observed stability by the estimated maximum stability for
+    the source value and current stream length. Use it to compare streams whose
+    encoded values have different best-case convergence behavior.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import stability_norm
+
+        metric = stability_norm(torch.ones(1))
+        for _ in range(2):
+            metric(torch.ones(1))
+        value, result = metric.analyze()
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*.
     """
     def __init__(
             self,
@@ -89,6 +108,27 @@ class stability_norm(napl_base):
                 'threshold': 0.05,
             }
         ):
+        """
+        Configure the source value and stability threshold.
+
+        If ``config`` is supplied, it must contain both ``polarity`` and
+        ``threshold``.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **source** – Tensor of expected decoded values. Use values in
+              ``[0, 1]`` for unipolar streams or ``[-1, 1]`` for bipolar streams.
+            - **config** – Configuration mapping. The default is
+              ``{'polarity': 'bipolar', 'threshold': 0.05}``.
+
+              - **polarity**: Stream encoding, either ``"unipolar"`` or
+                ``"bipolar"``; the default is ``"bipolar"``.
+              - **threshold**: Maximum absolute progressive error considered
+                stable; the default is ``0.05``.
+              - **name**: Optional instance label; the default is ``None``.
+        """
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
         self.register_buffer('source', source)
@@ -102,10 +142,37 @@ class stability_norm(napl_base):
             prob = source
             half = self.threshold
         # in-threshold probability window of the source value
-        self.min_prob = torch.nn.Parameter((prob - half).clamp(min=0), requires_grad=False)
-        self.max_prob = torch.nn.Parameter((prob + half).clamp(max=1), requires_grad=False)
+        self.register_buffer('min_prob', (prob - half).clamp(min=0).detach())
+        self.register_buffer('max_prob', (prob + half).clamp(max=1).detach())
+
+
+    def _reset(self):
+        """
+        Perform the class-local reset, which has no additional mutable state.
+
+        The inherited reset method resets the timestep and child stability metric
+        before calling this hook. This hook returns ``None``.
+        """
+        pass
+
 
     def forward(self, spike):
+        """
+        Record one spike-stream timestep for normalized-stability analysis.
+
+        Args:
+            spike: Current 0/1 spike tensor with the same logical shape as
+                ``source``.
+
+        Calling the metric increments its timestep and advances the child
+        stability metric. The method returns ``None``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            metric(torch.ones(1))
+        """
         self.stability(spike)
         # no return: readers access .stability_norm on demand.
 
@@ -113,8 +180,17 @@ class stability_norm(napl_base):
     @property
     def stability_norm(self):
         """
-        Normalized stability, computed on access from the accumulated state.
-        Returns a fresh tensor; before any forward() it is the zeros seed.
+        Return the current per-element normalized stability.
+
+        The result is a fresh tensor with values clamped to ``[0, 1]``. Before
+        the first timestep, it is all zeros. Reading this property performs the
+        best-case search but does not change persistent metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            current = metric.stability_norm
         """
         if not self.valid:
             return torch.zeros_like(self.source)
@@ -139,7 +215,27 @@ class stability_norm(napl_base):
 
 
     def analyze(self, verbose=False):
-        # return the normalized stability and index of max abs normalized stability
+        """
+        Summarize the current per-element normalized stability.
+
+        Call this method after at least one timestep.
+
+        Args:
+            verbose: Set to ``True`` to print the analysis summary. The default
+                is ``False``.
+
+        Returns:
+            A pair containing the per-element normalized-stability tensor and its
+            complete :class:`napl.sim.metric._shared.Analysis` summary.
+
+        This method does not change the accumulated metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            value, result = metric.analyze()
+        """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: stability_norm computes from the accumulated state on each read
         stability_norm = self.stability_norm
@@ -150,10 +246,4 @@ class stability_norm(napl_base):
             value='normalized stability',
             timestep=self.timestep_cur,
         )
-        self.stability_norm_abs_max = result.absolute_max
-        self.stability_norm_abs_min = result.absolute_min
-        self.stability_norm_avg = result.mean
-        self.stability_norm_mae = result.mean_absolute
-        self.stability_norm_rmse = result.root_mean_square
-
-        return stability_norm, result.max_absolute_index
+        return stability_norm, result

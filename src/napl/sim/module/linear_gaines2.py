@@ -6,8 +6,10 @@ from loguru import logger
 
 
 class linear_gaines2(napl_base):
-    """
-    Streaming Gaines fully-connected layer (gMUL + uADD): y = W x (+ b), computed bit by
+    """Apply a streaming Gaines ``gMUL + uADD`` fully connected layer.
+
+    Use this variant when each weight column needs an independent Sobol dimension
+    and addition should use either a unary accumulator or a direct output tracker. It computes ``W x + b`` bit by
     bit. Gaines multiplication streams each weight column j against its own Sobol
     dimension j+1 (bias on dimension in_features+1), so the partial products across the
     fan-in are mutually decorrelated; per timestep the AND-count (unipolar) / XNOR-count
@@ -17,7 +19,23 @@ class linear_gaines2(napl_base):
     With 'scaled': False the non-scaled Gaines output stage subtracts the accumulation
     offset and emits a spike whenever the accumulator leads the count of spikes already
     emitted, so the decoded output tracks clamp(W x + b, -1, 1) directly.
-    References: B. R. Gaines, "Stochastic Computing Systems". UnarySim: GainesLinear2.
+    This class matches UnarySim ``GainesLinear2``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_gaines2
+
+        layer = linear_gaines2(torch.zeros(3, 2),
+                               config={"polarity": "bipolar", "timestep": 4,
+                                       "generator": "sobol", "scaled": True})
+        output_spike = layer(torch.ones(1, 2))
+
+    References
+    ----------
+    B. R. Gaines, *Stochastic Computing Systems*.
     """
     def __init__(
             self,
@@ -31,6 +49,22 @@ class linear_gaines2(napl_base):
                 'width': 12,
             }
         ):
+        """Construct the Gaines layer and precompute weight spike matrices.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults to
+                ``None``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (positive stream length, default
+                ``256``), **generator** (must be ``"sobol"``, ``"rc"``, or
+                ``"rate"``; default ``"sobol"``), **scaled** (default ``True``),
+                and **width** (scaled-adder width, default ``12``). **name** is an
+                optional instance label and defaults to ``None``.
+
+        In scaled mode, **width** must satisfy
+        ``2 ** (width - 1) >= in_features + has_bias``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing operation at
         # module top would create an import cycle with module/__init__.
@@ -69,15 +103,14 @@ class linear_gaines2(napl_base):
             count_corr = self.in_features - w_spike.sum(-1)                                  # (len, out)
         else:
             w_mat = w_spike
-        self.w_mat_seq = torch.nn.Parameter(w_mat.transpose(1, 2).contiguous(), requires_grad=False)  # (len, in, out)
+        self.register_buffer('w_mat_seq', w_mat.transpose(1, 2).contiguous())  # (len, in, out)
         if self.has_bias:
             self.bias = bias
             b_seq = torch.quasirandom.SobolEngine(self.in_features + 1).draw(self.len)[:, self.in_features].type(self.ntype).to(bias.device)
             b_prob = (bias + 1) / 2 if self.polarity == 'bipolar' else bias
             b_spike = torch.gt(b_prob.type(self.ntype).unsqueeze(0), b_seq.unsqueeze(1)).type(self.ntype)  # (len, out)
             count_corr = b_spike if count_corr is None else count_corr + b_spike
-        self.count_corr_seq = None if count_corr is None else \
-            torch.nn.Parameter(count_corr, requires_grad=False)                              # (len, out)
+        self.register_buffer('count_corr_seq', count_corr)                              # (len, out)
 
         if self.scaled:
             # the scaled accumulator must hold a per-step partial sum up to `entry`; if the
@@ -94,17 +127,34 @@ class linear_gaines2(napl_base):
             # output probability, then emit whenever the accumulator leads the emitted count
             self.offset = ((self.in_features - 1) / 2 + (0.5 if self.has_bias else 0.0)) \
                 if self.polarity == 'bipolar' else 0.0
-            self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
-            self.out_accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+            self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
+            self.register_buffer('out_accumulator', torch.zeros(1, dtype=self.ntype))
 
 
     def _reset(self):
+        """Clear local accumulators used by non-scaled mode.
+
+        When **scaled** is ``False``, both the value accumulator and emitted-spike
+        accumulator return to scalar zero. Precomputed sequences are unchanged.
+        """
         if not self.scaled:
-            self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
-            self.out_accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.out_accumulator.device)
+            self.accumulator.resize_(1).zero_()
+            self.out_accumulator.resize_(1).zero_()
 
 
     def forward(self, input_spike):
+        """Process one input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``.
+
+        Returns:
+            Output spike tensor with last dimension ``out_features``.
+
+        The call selects the current precomputed weight matrix, updates the unary
+        adder or local non-scaled accumulators, and advances ``timestep_cur``.
+        """
         # input_spike: (..., in_features) spike tensor for the current timestep
         t = (self.timestep_cur - 1) % self.len
         xf = input_spike.type(self.ntype)
@@ -116,7 +166,16 @@ class linear_gaines2(napl_base):
             count = count + self.count_corr_seq[t]
         if self.scaled:
             return self.acc(count, entry=self.entry, dim=None)                  # (..., out_features)
-        self.accumulator.data = self.accumulator.add(count - self.offset)
+        delta = count.sub(self.offset)
+        if self.accumulator.shape == delta.shape:
+            self.accumulator.add_(delta)
+        else:
+            accumulator = self.accumulator.add(delta).detach()
+            self.accumulator.resize_as_(accumulator).copy_(accumulator)
         output = torch.gt(self.accumulator, self.out_accumulator).type(self.ntype)
-        self.out_accumulator.data = self.out_accumulator.add(output)
+        if self.out_accumulator.shape == output.shape:
+            self.out_accumulator.add_(output)
+        else:
+            out_accumulator = self.out_accumulator.add(output).detach()
+            self.out_accumulator.resize_as_(out_accumulator).copy_(out_accumulator)
         return output.type(self.stype)

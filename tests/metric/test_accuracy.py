@@ -63,10 +63,10 @@ def run_accuracy(input_0, input_1, device, timestep, model=None):
 
 def make_inputs(timestep):
     input_0 = gen_rand_tensor(
-        'bipolar', shape=(10000,), width=math.log2(timestep)
+        'bipolar', shape=(100, 100), width=math.log2(timestep)
     ).type(global_config.ntype)
     input_1 = gen_rand_tensor(
-        'bipolar', shape=(10000,), width=math.log2(timestep)
+        'bipolar', shape=(100, 100), width=math.log2(timestep)
     ).type(global_config.ntype)
     return input_0, input_1
 
@@ -96,13 +96,13 @@ def test_known_answer():
             assert not metric.valid
             for spike in spikes:
                 metric(spike.to(device))
-            error, max_index = metric.analyze(expected.to(device))
+            error, result = metric.analyze(expected.to(device))
             assert metric.valid
             assert metric.timestep_cur == len(spikes)
             assert error.shape == expected.shape
             assert error.dtype == expected.dtype
             assert torch.equal(error, torch.zeros_like(error))
-            assert max_index.item() == 0
+            assert result.max_absolute_index.item() == 0
 
 
 def test_scaled_reference():
@@ -115,14 +115,14 @@ def test_scaled_reference():
 
         unscaled, _ = metric.analyze(device_reference)
         unscaled = unscaled.detach().clone()
-        scaled, max_index = metric.analyze(
+        scaled, result = metric.analyze(
             device_reference,
             scale_ref=2,
         )
 
         assert torch.equal(unscaled, torch.tensor([-1.0, 0.0], device=device))
         assert torch.equal(scaled, torch.tensor([0.0, 0.5], device=device))
-        assert max_index.item() == 1
+        assert result.max_absolute_index.item() == 1
         assert torch.equal(device_reference, reference.to(device))
 
 
@@ -157,16 +157,10 @@ def test_reset():
         model.reset()
         assert not model.accuracy.valid
         assert model.accuracy.timestep_cur == 0
-        for state in (
+        assert torch.equal(
             model.accuracy.spike_count,
-            model.accuracy.spike_error,
-            model.accuracy.spike_error_abs_min,
-            model.accuracy.spike_error_abs_max,
-            model.accuracy.spike_error_avg,
-            model.accuracy.spike_error_mae,
-            model.accuracy.spike_error_rmse,
-        ):
-            assert torch.equal(state, torch.zeros_like(state))
+            torch.zeros_like(model.accuracy.spike_count),
+        )
         _, _, _, second_value, _ = run_accuracy(
             input_0, input_1, device, timestep, model
         )

@@ -8,12 +8,32 @@ from loguru import logger
 
 class div_cordiv(napl_base):
     """
-    The divivison using correlated divivison, for unipolar only
-    The dividend and divisor have to be synchronized before fed to this kernel
-    Reference:
-    1) 'Design of Division Circuits for Stochastic Computing'
-    2) 'In-Stream Stochastic Division and Square Root via Correlation'
-    3) 'In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing'
+    Divide synchronized unipolar streams by correlated division.
+
+    Use this kernel when the dividend and divisor have already been correlated,
+    for example by :class:`napl.sync_skewed`. It buffers recent quotient spikes
+    and reuses them when the divisor does not spike.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import div_cordiv
+
+        divider = div_cordiv({'depth': 2, 'generator': 'Sobol'})
+        quotient = divider(torch.tensor([1], dtype=torch.int8),
+                           torch.tensor([1], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Design of Division Circuits for Stochastic Computing*.
+
+        *In-Stream Stochastic Division and Square Root via Correlation*.
+
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
     """
     def __init__(
         self,
@@ -23,6 +43,22 @@ class div_cordiv(napl_base):
             'generator' : 'Sobol',
         }
     ):
+        """
+        Configure quotient-history sampling.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **depth**: Number of recent quotient spikes to buffer. It must be a power of two; the default is ``2``.
+              - **generator**: Number-sequence generator used to select buffered values; the default is ``"Sobol"``.
+              - **dim**: Generator dimension forwarded when the selection sequence is built; the default is ``1``.
+              - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['depth', 'generator'], polarity_required=False)
         self.hw = hw_params(pp_delay=0)
 
@@ -32,7 +68,7 @@ class div_cordiv(napl_base):
         config['width'] = self.width
 
         # rand sequence to choose q
-        self.rand_seq = torch.nn.Parameter(torch.floor(gen_num_seq(config).mul(self.depth)).type(torch.long), requires_grad=False)
+        self.register_buffer('rand_seq', torch.floor(gen_num_seq(config).mul(self.depth)).type(torch.long))
         # static list of buffer-row indices; lets forward() index buffer_q with a
         # Python int (a cheap view) instead of a device scalar tensor (a per-timestep GPU sync)
         self.rand_seq_idx = self.rand_seq.tolist()
@@ -40,18 +76,40 @@ class div_cordiv(napl_base):
         self.idx = 0
 
         # the buffer to save a few q
-        self.buffer_q = torch.nn.Parameter(torch.zeros(self.depth, dtype=self.stype), requires_grad=False)
+        self.register_buffer('buffer_q', torch.zeros(self.depth, dtype=self.stype))
 
         self.is_first_call = True
 
 
     def _reset(self):
+        """
+        Clear the quotient history and restart its selection sequence.
+        """
         self.idx = 0
-        self.buffer_q.data = torch.zeros(self.depth, dtype=self.stype, device=self.buffer_q.device)
+        self.buffer_q.resize_(self.depth).zero_()
         self.is_first_call = True
 
 
     def forward(self, dividend, divisor):
+        """
+        Divide one timestep of synchronized unipolar spikes.
+
+        Args:
+            dividend: Current 0/1 dividend spike tensor.
+            divisor: Current 0/1 divisor spike tensor, broadcast-compatible with
+                ``dividend``.
+
+        Returns:
+            A quotient spike tensor with the dividend shape. The call updates
+            the sampled quotient history and advances its sequence index.
+
+        **Example:**
+
+        .. code-block:: python
+
+            quotient = divider(torch.tensor([1], dtype=torch.int8),
+                               torch.tensor([1], dtype=torch.int8))
+        """
         if self.is_first_call:
             dividend_shape = list(dividend.shape)
             divisor_shape = list(divisor.shape)
@@ -60,7 +118,7 @@ class div_cordiv(napl_base):
             else:
                 input_shape = divisor_shape
             input_shape.insert(0, self.depth)
-            self.buffer_q.data = torch.zeros(input_shape, dtype=self.stype, device=self.buffer_q.device)
+            self.buffer_q.resize_(input_shape).zero_()
             self.is_first_call = False
 
         # generate the random number to index buffer_q
@@ -82,7 +140,7 @@ class div_cordiv(napl_base):
         # avoiding the two full [depth, *shape] allocations of the roll + where form.
         # out=buf[r] fuses the where + slice copy_ into one kernel; out fully aliases
         # input buf[r] (legal in-place), and rows are disjoint slices (no partial overlap).
-        buf = self.buffer_q.data
+        buf = self.buffer_q
         for r in range(self.depth - 1, 0, -1):
             torch.where(divisor_eq_1, buf[r - 1], buf[r], out=buf[r])
         torch.where(divisor_eq_1, quotient, buf[0], out=buf[0])

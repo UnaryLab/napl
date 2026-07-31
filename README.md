@@ -44,6 +44,17 @@ Run the full suite, which walks `tests/` and runs every `test_*.py` as a standal
 conda run -n napl python tests/sweep_test.py
 ```
 
+## Documentation
+
+The Sphinx sources live under [`docs/`](docs/). Build the design documentation
+and docstring-based API reference as static HTML with:
+
+```sh
+conda run -n napl make -C docs html
+```
+
+The output is written to `docs/_build/html/`.
+
 ## Reproducing results
 
 [`examples/`](examples/) holds three end-to-end UnarySim app ports, each with its own README and `results/*.csv` outputs: `mlp` (MLP3 on MNIST), `ubrain` (uBrain BCI CNN+RNN), and `usystolic` (uSystolic convnet).

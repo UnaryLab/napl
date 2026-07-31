@@ -1,0 +1,21 @@
+{% extends "!layout.html" %}
+
+{% block header %}
+<header class="napl-site-header">
+  <div class="napl-site-header__inner">
+    <a class="napl-site-header__brand" href="https://www.unarylab.com/">
+      <img
+        class="napl-site-header__logo"
+        src="https://www.unarylab.com/file/logo/unary-logo-black.svg"
+        alt="Unary Lab"
+      >
+      <span>Unary Lab</span>
+    </a>
+    <div class="napl-site-header__copy">
+      <div class="napl-site-header__heading">
+        <a href="{{ pathto(root_doc)|e }}">NAPL Documentation</a>
+      </div>
+    </div>
+  </div>
+</header>
+{% endblock %}

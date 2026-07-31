@@ -8,11 +8,24 @@ from loguru import logger
 
 class stability_flux(napl_base):
     """
-    Element-wise ratio of the stabilities of two spike streams:
-    flux = stability(stream 1) / stability(stream 2). flux > 1 means stream 1 is
-    more stable than stream 2. A denominator stability of 0 yields inf (raw torch
-    division semantics, deliberately not clamped). Call forward(spike_1, spike_2)
-    once per timestep, then analyze() for the final ratio.
+    Compare two spike streams through their element-wise stability ratio.
+
+    Use this metric when relative stability matters more than either absolute
+    stability. A ratio greater than ``1`` means the first stream is more stable.
+    Division follows PyTorch semantics, so a zero denominator can produce
+    ``inf`` or ``nan``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import stability_flux
+
+        metric = stability_flux(torch.ones(1), torch.ones(1))
+        for _ in range(2):
+            metric(torch.ones(1), torch.ones(1))
+        ratio, result = metric.analyze()
     """
     def __init__(
             self,
@@ -23,22 +36,81 @@ class stability_flux(napl_base):
                 'threshold': 0.05,
             }
         ):
+        """
+        Configure the two source values and their shared stability definition.
+
+        If ``config`` is supplied, it must contain both ``polarity`` and
+        ``threshold``.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **source_1** – Expected decoded-value tensor for the numerator
+              stream.
+            - **source_2** – Expected decoded-value tensor for the denominator
+              stream.
+            - **config** – Shared configuration for both stability monitors. The
+              default is ``{'polarity': 'bipolar', 'threshold': 0.05}``.
+
+              - **polarity**: Stream encoding, either ``"unipolar"`` or
+                ``"bipolar"``; the default is ``"bipolar"``.
+              - **threshold**: Maximum absolute progressive error considered
+                stable; the default is ``0.05``.
+              - **name**: Optional instance label; the default is ``None``.
+        """
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
         self.stability_1 = stability(source_1, config)
         self.stability_2 = stability(source_2, config)
 
+
+    def _reset(self):
+        """
+        Perform the class-local reset, which has no additional mutable state.
+
+        The inherited reset method resets the timestep and both child stability
+        monitors before calling this hook. This hook returns ``None``.
+        """
+        pass
+
+
     def forward(self, spike_1, spike_2):
+        """
+        Record one timestep from each spike stream.
+
+        Args:
+            spike_1: Current 0/1 spike tensor for the numerator stream.
+            spike_2: Current 0/1 spike tensor for the denominator stream.
+
+        Calling the metric increments its timestep and advances both child
+        stability monitors. The method returns ``None``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            metric(torch.ones(1), torch.ones(1))
+        """
         self.stability_1(spike_1)
         self.stability_2(spike_2)
-        # no return: readers access .flux on demand.
+        # no return: readers access .stability_flux on demand.
 
 
     @property
-    def flux(self):
+    def stability_flux(self):
         """
-        Stability ratio, computed on access from the two inner monitors.
-        Returns a fresh tensor; before any forward() it is the zeros seed.
+        Return the first stream's stability divided by the second stream's.
+
+        The result is a fresh tensor. Before the first timestep, it is all zeros.
+        Afterward, zero-denominator cases retain PyTorch's ``inf`` and ``nan``
+        results. Reading this property does not change metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            current_ratio = metric.stability_flux
         """
         if not self.valid:
             return torch.zeros_like(self.stability_1.source)
@@ -46,21 +118,35 @@ class stability_flux(napl_base):
 
 
     def analyze(self, verbose=False):
-        # return the flux and index of max abs flux
+        """
+        Summarize the current per-element stability ratios.
+
+        Call this method after at least one timestep.
+
+        Args:
+            verbose: Set to ``True`` to print the analysis summary. The default
+                is ``False``.
+
+        Returns:
+            A pair containing the per-element stability-ratio tensor and its
+            complete :class:`napl.sim.metric._shared.Analysis` summary.
+
+        This method does not change the accumulated metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            ratio, result = metric.analyze()
+        """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: flux computes from the two inner monitors on each read
-        flux = self.flux
+        # one property access: stability_flux computes from the two inner monitors on each read
+        stability_flux = self.stability_flux
         result = analyze(
-            flux,
+            stability_flux,
             verbose=verbose,
             report='Flux Stability',
             value='flux stability',
             timestep=self.timestep_cur,
         )
-        self.flux_abs_max = result.absolute_max
-        self.flux_abs_min = result.absolute_min
-        self.flux_avg = result.mean
-        self.flux_mae = result.mean_absolute
-        self.flux_rmse = result.root_mean_square
-
-        return flux, result.max_absolute_index
+        return stability_flux, result

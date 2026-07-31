@@ -71,5 +71,37 @@ def test_decoder():
     print('Test passed.')
 
 
+def test_decoder_rank2():
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 16,
+        'generator': 'sobol',
+    }
+    input_cpu = torch.tensor([[-0.75, -0.25], [0.25, 0.75]])
+
+    for device in devices():
+        spike_encoder = encoder(config).to(device)
+        spike_accuracy = accuracy(config).to(device)
+        spike_decoder = decoder(config).to(device)
+        input = input_cpu.to(device)
+
+        for _ in range(config['timestep']):
+            spike = spike_encoder(input)
+            spike_accuracy(spike)
+            spike_decoder(spike)
+
+        error, _ = spike_accuracy.analyze(input)
+        assert spike.shape == input.shape
+        assert spike_decoder.spike_value.shape == input.shape
+        assert torch.equal(
+            spike_accuracy.spike_value,
+            spike_decoder.spike_value,
+        )
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(
+            config['timestep']
+        )
+
+
 if __name__ == '__main__':
     test_decoder()
+    test_decoder_rank2()

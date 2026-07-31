@@ -6,17 +6,43 @@ from napl.sim.base import napl_base, hw_params
 
 class dff(napl_base):
     """
-    This module is for d flip flop
+    Delay a spike tensor by a fixed number of timesteps.
+
+    Use this streaming D flip-flop as a tensor-shaped delay line. The first
+    ``depth`` outputs are zeros, followed by the corresponding earlier inputs.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import dff
+
+        delay = dff({'depth': 1})
+        first = delay(torch.tensor([1], dtype=torch.int8))
+        second = delay(torch.tensor([0], dtype=torch.int8))
     """
     def __init__(
             self,
             config={'depth': 1}
         ):
+        """
+        Configure the delay length.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **depth**: Number of timesteps to delay the input; the default is ``1``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['depth'], polarity_required=False)
         self.depth = config['depth']
         self.hw = hw_params(pp_delay=self.depth)
-        # device-anchor Parameter: tracks device for .to() and lazy buffer init.
-        self.reg = torch.nn.Parameter(torch.zeros(1, dtype=self.stype), requires_grad=False)
+        # device-anchor buffer: tracks device for .to() and lazy buffer init.
+        self.register_buffer('reg', torch.zeros(1, dtype=self.stype))
         # FIFO rows held as a list of tensor references (no per-timestep copy).
         self.buf = None
         self.is_first_call = True
@@ -25,12 +51,31 @@ class dff(napl_base):
 
 
     def _reset(self):
+        """
+        Discard the local delay queue and restore its initial position.
+        """
         self.buf = None
         self.is_first_call = True
         self.head = 0
 
 
     def forward(self, input: torch.tensor):
+        """
+        Push one input timestep through the delay line.
+
+        Args:
+            input: Spike tensor for the current timestep.
+
+        Returns:
+            The tensor supplied ``depth`` calls earlier, or zeros while the
+            delay line is filling. The input is copied into local queue state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            delayed = delay(torch.tensor([1], dtype=torch.int8))
+        """
         # input is a spike tensor
         if self.is_first_call:
             zero = torch.zeros_like(input, device=self.reg.device)

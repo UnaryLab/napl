@@ -84,6 +84,14 @@ def clone_inputs(
     return tuple(value.clone().to(device) for value in inputs)
 
 
+def _multirank_inputs(inputs: Sequence[torch.Tensor]) -> InputTuple:
+    return tuple(
+        value.reshape((1,) * (2 - value.ndim) + tuple(value.shape))
+        if value.ndim < 2 else value
+        for value in inputs
+    )
+
+
 def assert_inputs_equal(
     candidate_inputs: Sequence[torch.Tensor],
     baseline_inputs: Sequence[torch.Tensor],
@@ -285,8 +293,12 @@ def _streaming_fidelity(cfg):
     timesteps = cfg['timesteps']
     tolerance = cfg['tolerance_scale'] / math.sqrt(timesteps)
     for polarity in cfg['polarities']:
-        values_cpu = cfg['make_values'](polarity)
-        reference = cfg['analytic_reference'](values_cpu, polarity).cpu()
+        raw_values = cfg['make_values'](polarity)
+        reference = cfg['analytic_reference'](raw_values, polarity).cpu()
+        values_cpu = _multirank_inputs(raw_values)
+        assert all(value.ndim >= 2 for value in values_cpu)
+        if any(value.shape != raw.shape for value, raw in zip(values_cpu, raw_values)):
+            reference = _multirank_inputs((reference,))[0]
         for device in devices():
             values = clone_inputs(values_cpu, device)
             pipeline = _make_pipeline(
@@ -445,7 +457,8 @@ def _single_shot_fidelity(cfg):
     torch.manual_seed(_SEED)
     tolerance = cfg['quantization_atol']
     candidate_cpu, reference_cpu = cfg['make_module_pair']()
-    inputs_cpu = cfg['make_inputs']()
+    inputs_cpu = _multirank_inputs(cfg['make_inputs']())
+    assert all(value.ndim >= 2 for value in inputs_cpu)
     for device in devices():
         candidate = copy.deepcopy(candidate_cpu).to(device)
         reference = copy.deepcopy(reference_cpu).to(device)

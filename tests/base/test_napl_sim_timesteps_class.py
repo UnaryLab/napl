@@ -2,6 +2,7 @@ import math
 import time
 
 import torch
+import napl
 
 from napl.sim.base import napl_base, napl_sim_timesteps
 from napl.sim.module import encoder, decoder
@@ -90,19 +91,56 @@ def test_napl_sim_timesteps_class():
     print('Test passed.')
 
 
-def test_reset_lifecycle():
-    module = reset_parent()
-    module(torch.ones(1))
-    assert module.timestep_cur == 1
-    assert module.child.timestep_cur == 1
+def test_napl_sim_timesteps_class_rank2():
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 16,
+        'generator': 'sobol',
+    }
+    input_cpu = torch.tensor([[0.1, 0.5], [0.9, -0.3]])
 
-    module.reset(verbose=True)
-    assert module.timestep_cur == 0
-    assert module.child.timestep_cur == 0
-    assert module.reset_count == 1
-    assert module.child.reset_count == 1
+    for device in devices():
+        input = input_cpu.to(device)
+        codec_inst = codec(config).to(device)
+        codec_inst(input, timesteps=config['timestep'])
+
+        error, _ = codec_inst.accuracy.analyze(input)
+        assert error.shape == input.shape
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(
+            config['timestep']
+        )
+
+
+def test_reset_lifecycle():
+    for shape in ((1,), (2, 3)):
+        module = reset_parent()
+        input = torch.ones(shape)
+        assert torch.equal(module(input), input)
+        assert module.timestep_cur == 1
+        assert module.child.timestep_cur == 1
+
+        module.reset(verbose=True)
+        assert module.timestep_cur == 0
+        assert module.child.timestep_cur == 0
+        assert module.reset_count == 1
+        assert module.child.reset_count == 1
+
+
+def test_reset_hook_format():
+    classes = {
+        value
+        for value in vars(napl).values()
+        if isinstance(value, type)
+        and issubclass(value, napl_base)
+        and value is not napl_base
+        and value.__module__.startswith('napl.sim.')
+    }
+    missing = sorted(cls.__name__ for cls in classes if '_reset' not in cls.__dict__)
+    assert missing == []
 
 
 if __name__ == '__main__':
     test_napl_sim_timesteps_class()
+    test_napl_sim_timesteps_class_rank2()
     test_reset_lifecycle()
+    test_reset_hook_format()

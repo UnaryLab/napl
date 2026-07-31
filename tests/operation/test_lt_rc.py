@@ -74,13 +74,13 @@ def _kernel_specific_checks():
         elapsed = time.perf_counter() - start
 
         r_value = (input_0 < input_1).type(global_config.ntype)
-        error, idx = lt_rc_inst.accuracy.analyze(r_value, verbose=True)
+        error, result = lt_rc_inst.accuracy.analyze(r_value, verbose=True)
         rmse = error.pow(2).mean().sqrt().item()
         bound = 2.0 / math.sqrt(codec_config1['timestep'])
         assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
 
         print(f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}, time={elapsed:.3f}s, '
-              f'max-error index={idx.item():7d}')
+              f'max-error index={result.max_absolute_index.item():7d}')
         assert lt_rc_inst.lt_rc.timestep_cur == codec_config1['timestep']
         lt_rc_inst.reset()
         assert lt_rc_inst.lt_rc.timestep_cur == 0

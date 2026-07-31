@@ -62,7 +62,7 @@ def run_measured(val, device, timestep, threshold, normstability):
 def test_fidelity():
     timestep = 256
     threshold = 0.05
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
     for device in devices():
         _, error = run_decode(val, device, timestep, threshold)

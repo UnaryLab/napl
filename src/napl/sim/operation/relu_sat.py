@@ -4,13 +4,35 @@ from napl.sim.operation import add_any
 
 class relu_sat(napl_base):
     """
-    ReLU activation by saturating the spike value to 0
-    The spike stream should always bipolar and rate coded
+    Apply ReLU to a bipolar rate-coded stream with saturating adders.
+
+    Use this streaming kernel when ReLU should be implemented as the composed
+    stochastic transform from ``[-1, 1]`` to ``[-1, 0]`` and then to
+    ``[0, 1]``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import relu_sat
+
+        operation = relu_sat()
+        output = operation(torch.tensor([0.0, 1.0]))
     """
     def __init__(
             self,
             config={}
     ):
+        """
+        Construct the fixed pair of internal saturating adders.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
+        """
         super().__init__(config, [], polarity_required=False)
         self.hw = hw_params(pp_delay=0)
 
@@ -19,7 +41,32 @@ class relu_sat(napl_base):
         self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
 
 
+    def _reset(self):
+        """
+        Reset no class-owned state; :meth:`reset` resets the child adders.
+        """
+        pass
+
+
     def forward(self, input):
+        """
+        Process one timestep of a bipolar rate-coded input stream.
+
+        The call advances both internal saturating adders and returns the ReLU
+        output spike.
+
+        Args:
+            input: Tensor of current 0/1 input spikes.
+
+        Returns:
+            Bipolar 0/1 output spike tensor with the same shape as ``input``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = operation(torch.tensor([0.0, 1.0]))
+        """
         # sub_1 moves input from [-1, 1] to [-1, 0]: the 2-row reduction sum([input, 0])
         # is just `input`, so feed the pre-reduced partial sum (dim=None) with the row
         # count as <entry> and skip the per-timestep stack alloc + sum reduction.

@@ -77,10 +77,10 @@ def _kernel_specific_checks():
 
         r_value = torch.min(input_0, input_1)
         r_value_arg = torch.argmin(torch.stack([input_0, input_1], dim=0), dim=0)
-        _, value_idx = min_rc_inst.accuracy0.analyze(r_value, verbose=True)
-        _, arg_idx = min_rc_inst.accuracy1.analyze(r_value_arg, verbose=True)
+        _, value_result = min_rc_inst.accuracy0.analyze(r_value, verbose=True)
+        _, arg_result = min_rc_inst.accuracy1.analyze(r_value_arg, verbose=True)
 
-        print(f'[{device}] value max error index: {value_idx.item():7d}; arg max error index: {arg_idx.item():7d}; time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] value max error index: {value_result.max_absolute_index.item():7d}; arg max error index: {arg_result.max_absolute_index.item():7d}; time: {elapsed * 1000:.1f} ms')
         assert min_rc_inst.min_rc.timestep_cur == codec_config1['timestep']
         min_rc_inst.reset()
         assert min_rc_inst.min_rc.timestep_cur == 0

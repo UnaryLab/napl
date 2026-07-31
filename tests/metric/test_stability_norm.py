@@ -40,7 +40,7 @@ def run_stability_norm(val, device, timestep, modules=None):
 
 def test_fidelity():
     timestep = 256
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
     results = {}
 
     for device in devices():
@@ -71,13 +71,13 @@ def test_known_answer():
             assert not stab_norm.valid
             for _ in range(timestep):
                 stab_norm(ones)
-            result, max_index = stab_norm.analyze()
+            result, analysis_result = stab_norm.analyze()
             assert stab_norm.valid
             assert stab_norm.timestep_cur == timestep
             assert result.shape == ones.shape
             assert result.dtype == ones.dtype
             assert torch.equal(result, torch.ones_like(result))
-            assert max_index.item() == 0
+            assert analysis_result.max_absolute_index.item() == 0
 
         boundary = stability_norm(
             torch.ones(1),

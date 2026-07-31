@@ -60,5 +60,35 @@ def test_napl_sim_timesteps_func():
     print('Test passed.')
 
 
+def test_napl_sim_timesteps_func_rank2():
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 16,
+        'generator': 'sobol',
+    }
+    input_cpu = torch.tensor([[0.1, 0.5], [0.9, -0.3]])
+
+    for device in devices():
+        encoder_inst = encoder(config).to(device)
+        decoder_inst = decoder(config).to(device)
+        accuracy_inst = accuracy(config).to(device)
+
+        @napl_sim_timesteps_func
+        def this_run(input, timesteps=16):
+            spike = encoder_inst(input)
+            decoder_inst(spike)
+            accuracy_inst(spike)
+
+        input = input_cpu.to(device)
+        this_run(input, timesteps=config['timestep'])
+        error, _ = accuracy_inst.analyze(input)
+
+        assert error.shape == input.shape
+        assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(
+            config['timestep']
+        )
+
+
 if __name__ == '__main__':
     test_napl_sim_timesteps_func()
+    test_napl_sim_timesteps_func_rank2()

@@ -39,7 +39,7 @@ def run_stability(val, device, timestep, modules=None):
 
 def test_fidelity():
     timestep = 256
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
     for device in devices():
         result, _, _ = run_stability(val, device, timestep)
@@ -69,14 +69,14 @@ def test_known_answer():
             assert not metric.valid
             for _ in range(timestep):
                 metric(spike.to(device))
-            result, max_index = metric.analyze()
+            result, analysis_result = metric.analyze()
             expected = torch.tensor([0.75, 0.0], device=device)
             assert metric.valid
             assert metric.timestep_cur == timestep
             assert result.shape == source.shape
             assert result.dtype == source.dtype
             assert torch.equal(result, expected)
-            assert max_index.item() == 0
+            assert analysis_result.max_absolute_index.item() == 0
 
         metric = stability(
             torch.ones(1),

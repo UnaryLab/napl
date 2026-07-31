@@ -1,9 +1,9 @@
 # Copy to tests/<subpackage>/test_<name>.py and fill in every TODO.
 # The template_ prefix keeps this file out of sweep_test.py's test_*.py glob.
 #
-# streaming_suite checks known answers, analytic fidelity, timestep state,
-# reset and replay, and performance on every device and polarity. Speedup is
-# the saved CPU runtime divided by each device runtime for the same operation.
+# streaming_suite checks known answers, rank-2-or-higher analytic fidelity,
+# timestep state, reset and replay, and performance on every device and
+# polarity. Speedup is the saved CPU runtime divided by each device runtime.
 # Use timer only for a separate unpaired elapsed measurement.
 from napl.utils._shared_test import count_readout, streaming_suite
 
@@ -14,7 +14,8 @@ def make_operation(polarity, timestep, device):
 
 
 def make_values(polarity):
-    # TODO: return pre-generated CPU input tensors as a tuple.
+    # TODO: return pre-generated CPU input tensors as a tuple. Fidelity inputs
+    # are promoted to at least rank 2 by streaming_suite.
     raise NotImplementedError('TODO: implement make_values')
 
 

@@ -11,16 +11,43 @@ from napl.sim.base import napl_base
 
 
 class mgu_hardpt(napl_base):
-    """
-    Minimal Gated Unit (MGU) cell in the binary (float) domain, PyTorch RNNCell style
+    """Apply a PyTorch-layout MGU cell with bounded hard activations.
+
+    Use this single-shot cell when parameters must follow the two-chunk
+    input-hidden and hidden-hidden layout used by PyTorch recurrent cells. It is a Minimal Gated Unit (MGU) cell in the binary (float) domain, PyTorch RNNCell style
     (separate input-hidden / hidden-hidden gate linears, chunked into forget/new gates)
     with hard activations: sigmoid -> hard sigmoid, tanh -> hard tanh, and explicit
     hard-tanh clamps so every intermediate value stays in the legal unary range.
-    Single-shot; trainable. Port of UnarySim HardMGUCellPT.
-    Refs: "Simplified Minimal Gated Unit Variations for RNNs".
+    Single-shot; trainable. Port of UnarySim ``HardMGUCellPT``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import mgu_hardpt
+
+        cell = mgu_hardpt(2, 3)
+        hidden = cell(torch.zeros(1, 2))
+
+    References
+    ----------
+    *Simplified Minimal Gated Unit Variations for RNNs*.
     """
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
+        """Construct the PyTorch-layout cell and initialize its parameters.
+
+        Args:
+            input_size: Number of input features.
+            hidden_size: Number of hidden features.
+            bias: Create input-hidden and hidden-hidden biases when ``True``.
+                Defaults to ``True``.
+            config: Configuration mapping with **hard**. ``True`` uses hard gate
+                activations; ``False`` uses ``Sigmoid`` and ``Tanh`` for the gates.
+                Explicit hard-tanh range clamps remain active. Defaults to ``True``.
+                **name** is an optional instance label and defaults to ``None``.
+        """
         super().__init__(config, [])
         self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
         self.hard = config.get('hard', True)
@@ -41,7 +68,28 @@ class mgu_hardpt(napl_base):
             if w is not None:
                 w.data = truncated_normal(w, 0.0, stdv)
 
+    def _reset(self):
+        """Reset local recurrent state.
+
+        The cell stores no hidden state between calls, so this hook returns
+        ``None`` without changing trainable parameters.
+        """
+        pass
+
     def forward(self, input, hx=None):
+        """Compute one bounded MGU recurrence.
+
+        Args:
+            input: Tensor shaped ``(batch, input_size)``.
+            hx: Optional previous hidden tensor shaped
+                ``(batch, hidden_size)``. Defaults to zeros.
+
+        Returns:
+            Next hidden tensor shaped ``(batch, hidden_size)``, bounded to
+            ``[-1, 1]``.
+
+        The call does not store ``hx`` or advance ``timestep_cur``.
+        """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
         # the explicit hard-tanh clamps (always hard): F.hardtanh directly, same math

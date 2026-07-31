@@ -51,8 +51,8 @@ def run_flux(val_1, val_2, device, timestep, modules=None):
 
 def test_fidelity():
     timestep = 256
-    val_1 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
-    val_2 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val_1 = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
+    val_2 = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
     for device in devices():
         result, expected, _, _ = run_flux(val_1, val_2, device, timestep)
@@ -77,7 +77,7 @@ def test_known_answer():
         for _ in range(timestep):
             spike = torch.ones(4, device=device)
             flux(spike, spike)
-        result, max_index = flux.analyze()
+        result, analysis_result = flux.analyze()
         assert flux.valid
         assert flux.timestep_cur == timestep
         assert flux.stability_1.timestep_cur == timestep
@@ -85,7 +85,7 @@ def test_known_answer():
         assert result.shape == source.shape
         assert result.dtype == source.dtype
         assert torch.equal(result, torch.ones(4, device=device))
-        assert max_index.item() == 0
+        assert analysis_result.max_absolute_index.item() == 0
 
         device_val = val.to(device)
         enc = encoder(
@@ -138,7 +138,7 @@ def test_reset():
         flux = modules[2]
         assert not flux.valid
         assert flux.timestep_cur == 0
-        assert flux.flux.abs().sum() == 0
+        assert flux.stability_flux.abs().sum() == 0
         assert not flux.stability_1.valid
         assert not flux.stability_2.valid
         assert (

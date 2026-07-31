@@ -5,12 +5,21 @@ from napl.sim.base import napl_base, hw_params
 
 class add_ugemm(napl_base):
     """
-    This module is uGEMM-style addition (scaled or non-scaled).
-    Scaled mode emits a carry whenever the running spike count reaches the
-    entry count along the reduced dim (output ~= mean of inputs); non-scaled
-    mode compares the offset-corrected count against the emitted-spike count
-    (output ~= clipped sum of inputs).
-    Supported polarity: unipolar/bipolar.
+    Add rate-coded streams with the uGEMM accumulator.
+
+    Use scaled mode for a stream representing the mean across the reduced
+    inputs. Use non-scaled mode for a clipped sum. Both modes accept unipolar
+    and bipolar streams and keep accumulation state across timesteps.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import add_ugemm
+
+        adder = add_ugemm({'polarity': 'unipolar', 'scaled': True})
+        output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
     """
     def __init__(
             self,
@@ -19,6 +28,19 @@ class add_ugemm(napl_base):
                 'scaled' : True,
             }
         ):
+        """
+        Configure the input encoding and scaling mode.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Input encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **scaled**: Emit a mean-like scaled stream when ``True`` or a clipped sum when ``False``; the default is ``True``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
         self.hw = hw_params(pp_delay=0)
 
@@ -29,26 +51,40 @@ class add_ugemm(napl_base):
         # per-timestep accumulation offset (non-scaled bipolar only)
         self.offset = 0
         # accumulator of the per-timestep partial counts
-        self.accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
         # count of already-emitted output spikes (non-scaled mode)
         if not self.scaled:
-            self.out_accumulator = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+            self.register_buffer('out_accumulator', torch.zeros(1, dtype=self.ntype))
         self.is_first_call = True
 
 
     def _reset(self):
         """
-        Reset the accumulators only.
+        Clear local accumulation and first-call shape state.
         """
-        self.accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.accumulator.device)
+        self.accumulator.resize_(1).zero_()
         if not self.scaled:
-            self.out_accumulator.data = torch.zeros(1, dtype=self.ntype, device=self.out_accumulator.device)
+            self.out_accumulator.resize_(1).zero_()
         self.is_first_call = True
 
 
     def forward(self, input, dim=-1):
         """
-        Accumulate one timestep. `input` is the spike tensor to reduce over `dim`.
+        Accumulate one timestep and reduce the selected dimension.
+
+        Args:
+            input: Current spike tensor containing the streams to add.
+            dim: Dimension to reduce; the default is ``-1``.
+
+        Returns:
+            A spike tensor with ``dim`` removed. The call updates the running
+            accumulator and, in non-scaled mode, the emitted-spike count.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = adder(torch.tensor([1, 0], dtype=torch.int8), dim=0)
         """
         if self.is_first_call:
             self.acc_bound = input.size()[dim]
@@ -62,7 +98,8 @@ class add_ugemm(napl_base):
         if self.accumulator.shape == acc_delta.shape:
             self.accumulator.add_(acc_delta)
         else:
-            self.accumulator.data = self.accumulator.add(acc_delta)
+            updated = self.accumulator.add(acc_delta)
+            self.accumulator.resize_as_(updated).copy_(updated.detach())
 
         # compare -> stype directly (one cast); sub_/add_ promote the int8 spike
         # to the float32 destination, so results are unchanged
@@ -75,6 +112,7 @@ class add_ugemm(napl_base):
             if self.out_accumulator.shape == output.shape:
                 self.out_accumulator.add_(output)
             else:
-                self.out_accumulator.data = self.out_accumulator.add(output)
+                updated = self.out_accumulator.add(output)
+                self.out_accumulator.resize_as_(updated).copy_(updated.detach())
 
         return output

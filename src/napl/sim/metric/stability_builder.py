@@ -9,13 +9,27 @@ from napl.sim.module.encoder import gen_num_seq
 
 class stability_builder(napl_base):
     """
-    Normalized-stability builder: generate a spike stream that encodes `source`
-    with a prescribed normalized stability. The stream is an unstable prefix of
-    `new_ns_len` spikes followed by a stable tail, each segment produced by
-    comparing its own segment value against the shared number sequence, so the
-    decoded value matches `source` while the stability metric matches the request.
-    Call forward() once per timestep. Reference: "Normalized Stability: A
-    Cross-Level Design Metric for Early Termination in Stochastic Computing".
+    Generate a spike stream with a requested normalized stability.
+
+    Use this builder to create controlled stability inputs for experiments. It
+    emits an unstable prefix followed by a stable tail while preserving the
+    configured source value over the designed stream length.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import stability_builder
+
+        builder = stability_builder(torch.tensor([0.0]))
+        spike = builder()
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*.
     """
     def __init__(
             self,
@@ -28,6 +42,36 @@ class stability_builder(napl_base):
                 'generator': 'sobol',
                 }
         ):
+        """
+        Configure the source value, stream length, and target stability.
+
+        Construction performs the stability search on CPU. Move the constructed
+        module to its execution device with :meth:`torch.nn.Module.to`. If
+        ``config`` is supplied, it must contain ``polarity``, ``threshold``,
+        ``normstability``, ``timestep``, and ``generator``.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **source** – Tensor of values to encode. Use ``[0, 1]`` for
+              unipolar encoding or ``[-1, 1]`` for bipolar encoding.
+            - **config** – Configuration mapping. The defaults are shown below.
+
+              - **polarity**: Stream encoding, either ``"unipolar"`` or
+                ``"bipolar"``; the default is ``"bipolar"``.
+              - **threshold**: Absolute decoded-value tolerance used to define
+                stability; the default is ``0.05``.
+              - **normstability**: Requested normalized stability; the default
+                is ``0.5``.
+              - **timestep**: Positive designed stream length; the default is
+                ``256``.
+              - **generator**: Number-sequence generator. Accepted values are
+                ``"sobol"``, ``"lfsr"``, ``"sys"``, ``"rc"``, ``"tc"``,
+                ``"rate"``, and ``"temporal"``; the default is ``"sobol"``.
+              - **dim**: Sobol dimension; the default is ``1``.
+              - **name**: Optional instance label; the default is ``None``.
+        """
         super().__init__(config, ['polarity', 'threshold', 'normstability', 'timestep', 'generator'], polarity_required=True)
 
         self.timestep = config['timestep']
@@ -75,21 +119,43 @@ class stability_builder(napl_base):
         src_st = (new_st_one / new_st_len).mul(seq_len).round()
 
         num_seq = gen_num_seq(config={'width': self.width, 'generator': config['generator'], 'dim': config.get('dim', 1)})
-        self.num_seq = torch.nn.Parameter(num_seq.mul(seq_len).floor(), requires_grad=False)
-        self.src_ns = torch.nn.Parameter(src_ns, requires_grad=False)
-        self.src_st = torch.nn.Parameter(src_st, requires_grad=False)
-        self.new_ns_len = torch.nn.Parameter(new_ns_len, requires_grad=False)
+        self.register_buffer('num_seq', num_seq.mul(seq_len).floor())
+        self.register_buffer('src_ns', src_ns)
+        self.register_buffer('src_st', src_st)
+        self.register_buffer('new_ns_len', new_ns_len)
         # per-segment spike counters, doubling as indices into num_seq
-        self.out_cnt_ns = torch.nn.Parameter(torch.zeros_like(val, dtype=torch.long), requires_grad=False)
-        self.out_cnt_st = torch.nn.Parameter(torch.zeros_like(val, dtype=torch.long), requires_grad=False)
+        self.register_buffer('out_cnt_ns', torch.zeros_like(val, dtype=torch.long))
+        self.register_buffer('out_cnt_st', torch.zeros_like(val, dtype=torch.long))
 
 
     def _reset(self):
-        self.out_cnt_ns.data.zero_()
-        self.out_cnt_st.data.zero_()
+        """
+        Reset both class-local segment counters to zero.
+
+        The generated sequence and segment values remain unchanged. The inherited
+        reset method resets the timestep before calling this hook. This hook
+        returns ``None``.
+        """
+        self.out_cnt_ns.zero_()
+        self.out_cnt_st.zero_()
 
 
     def forward(self):
+        """
+        Emit the next spike from the designed stream.
+
+        Returns:
+            A spike tensor with the source shape and the global spike dtype.
+
+        Calling the builder increments its timestep and advances either the
+        unstable-prefix counter or the stable-tail counter for each element.
+
+        **Example:**
+
+        .. code-block:: python
+
+            spike = builder()
+        """
         in_prefix = self.out_cnt_ns < self.new_ns_len
         # select the active segment first, then gather/compare once (exactly
         # equivalent to comparing both segments and where-selecting the spikes)
@@ -98,6 +164,6 @@ class stability_builder(napl_base):
         spike = torch.gt(src, self.num_seq[cnt]).type(self.stype)
         # in-place is safe: counters are full-shape longs from __init__ (no
         # scalar broadcast), long += bool involves no dtype promotion change
-        self.out_cnt_ns.data.add_(in_prefix)
-        self.out_cnt_st.data.add_(~in_prefix)
+        self.out_cnt_ns.add_(in_prefix)
+        self.out_cnt_st.add_(~in_prefix)
         return spike

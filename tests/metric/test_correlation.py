@@ -76,7 +76,7 @@ def run_correlation(val, device, timestep, modules=None):
 
 def test_fidelity():
     timestep = 256
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
     for device in devices():
         (_, _, scc_indep), _, _ = run_correlation(val, device, timestep)
@@ -84,8 +84,12 @@ def test_fidelity():
         print(f'[{device}] SCC independent={scc_indep.mean().item():.4f}')
 
         torch.manual_seed(0)
-        stream_1 = torch.randint(0, 2, (timestep, 1000), device=device).float()
-        stream_2 = torch.randint(0, 2, (timestep, 1000), device=device).float()
+        stream_1 = torch.randint(
+            0, 2, (timestep, 20, 50), device=device
+        ).float()
+        stream_2 = torch.randint(
+            0, 2, (timestep, 20, 50), device=device
+        ).float()
         metric = correlation().to(device)
         for spike_1, spike_2 in zip(stream_1, stream_2):
             metric(spike_1, spike_2)
@@ -113,12 +117,12 @@ def test_known_answer():
                     input_1=spike_1.to(device),
                     input_2=spike_2.to(device),
                 )
-            result, max_index = metric.analyze()
+            result, analysis_result = metric.analyze()
             assert metric.valid
             assert metric.timestep_cur == stream_1.numel()
             assert result.shape == torch.Size([1])
             assert result.item() == expected
-            assert max_index.item() == 0
+            assert analysis_result.max_absolute_index.item() == 0
 
 
 def test_reset():
@@ -133,9 +137,14 @@ def test_reset():
         assert not (corr_self.valid or corr_inv.valid or corr_indep.valid)
         for metric in (corr_self, corr_inv, corr_indep):
             assert metric.timestep_cur == 0
-            assert metric.paired_11.abs().sum() == 0
-            assert metric.sum_1.abs().sum() == 0
-            assert metric.sum_2.abs().sum() == 0
+            for state in (
+                metric.paired_11,
+                metric.sum_1,
+                metric.sum_2,
+                metric.input_1_d,
+            ):
+                assert state.shape == torch.Size([1])
+                assert state.item() == 0
         second, _, _ = run_correlation(val, device, timestep, modules)
         for before, after in zip(first, second):
             assert torch.equal(before, after), 'reset re-run diverged'

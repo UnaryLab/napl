@@ -7,21 +7,42 @@ from loguru import logger
 
 
 class linear_gaines1(napl_base):
-    """
-    Streaming Gaines fully-connected layer: gMUL + gADD. Each timestep the weights (and
+    """Apply a streaming Gaines ``gMUL + gADD`` fully connected layer.
+
+    Use this variant to reproduce the first UnarySim Gaines linear design or to
+    compare random-threshold and counter-based addition. Each timestep the weights (and
     bias) are encoded into spikes on a distinct RNG dimension from the input (so the
     operand streams are decorrelated), multiplied with the incoming input spikes (AND for
     unipolar, XNOR for bipolar), and the per-timestep parallel count is reduced to one
     output spike by a Gaines adder instead of linear's scaled accumulator:
+
     - scaled (default): the count is compared against a random level drawn from
       [0, 2**w) with w = round(log2(entry)), entry = in_features + has_bias, so the
       decoded output represents (W x + b) / 2**w for unipolar and
       (entry + W x + b) / 2**w - 1 for bipolar (= (W x + b)/entry when entry is a
       power of two).
+
     - non-scaled: unipolar emits count > 0 (an OR, accurate only for small inputs);
       bipolar drives a saturating up/down counter of `depth` bits by 2*count - entry,
       so the decoded output tracks clamp(W x + b, -1, 1).
-    Rate-coded weights. References: Gaines 1969 stochastic computing. UnarySim: GainesLinear1.
+
+    It uses rate-coded weights and matches UnarySim ``GainesLinear1``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import linear_gaines1
+
+        layer = linear_gaines1(torch.zeros(3, 2),
+                               config={"polarity": "bipolar", "timestep": 4,
+                                       "generator": "sobol", "scaled": True})
+        output_spike = layer(torch.ones(1, 2))
+
+    References
+    ----------
+    B. R. Gaines, *Stochastic Computing Systems*.
     """
     def __init__(
             self,
@@ -36,6 +57,23 @@ class linear_gaines1(napl_base):
                 'depth': 8,
             }
         ):
+        """Construct the Gaines layer from external numeric parameters.
+
+        Args:
+            weight: Numeric tensor shaped ``(out_features, in_features)``.
+            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults to
+                ``None``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"sobol"``), **dim** (weight sequence dimension,
+                default ``2``), **scaled** (random-threshold mode when ``True``,
+                default ``True``), and **depth** (non-scaled bipolar counter bits,
+                default ``8``). **name** is an optional instance label and
+                defaults to ``None``.
+
+        In scaled mode, the threshold period is
+        ``2 ** round(log2(in_features + has_bias))``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing module.encoder at
         # module top would create an import cycle once this file is wired into module/__init__.
@@ -82,17 +120,34 @@ class linear_gaines1(napl_base):
             if self.polarity == 'bipolar':
                 # saturating up/down counter; scalar that broadcasts to (..., out_features)
                 # on the first forward()
-                self.cnt = torch.nn.Parameter(
-                    torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half), requires_grad=False)
+                self.register_buffer(
+                    'cnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
 
 
     def _reset(self):
+        """Reset the local non-scaled bipolar counter.
+
+        When **scaled** is ``False`` and polarity is ``"bipolar"``, the counter
+        returns to half of its configured range. Other configurations have no
+        direct local state to reset.
+        """
         if not self.scaled and self.polarity == 'bipolar':
-            self.cnt.data = torch.zeros(
-                1, dtype=self.ntype, device=self.cnt.device).fill_(self.cnt_half)
+            self.cnt.resize_(1).fill_(self.cnt_half)
 
 
     def forward(self, input_spike):
+        """Process one input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor whose last dimension is
+                ``in_features``.
+
+        Returns:
+            Output spike tensor with last dimension ``out_features``.
+
+        The call advances weight and optional bias encoders, updates the local
+        counter in non-scaled bipolar mode, and advances ``timestep_cur``.
+        """
         # input_spike: (..., in_features) spike tensor for the current timestep
         w_spike = self.w_encoder(self.weight)   # (out_features, in_features)
         xf = input_spike.type(self.ntype)
@@ -117,9 +172,10 @@ class linear_gaines1(napl_base):
             if self.cnt.shape == delta.shape:
                 # steady state: in-place add/clamp (both ntype, no promotion; nothing
                 # aliases cnt across timesteps)
-                self.cnt.data.add_(delta).clamp_(0, self.cnt_max)
+                self.cnt.add_(delta).clamp_(0, self.cnt_max)
             else:
                 # first timestep after reset: out-of-place op broadcasts (1,) -> (..., out)
-                self.cnt.data = self.cnt.add(delta).clamp(0, self.cnt_max)
+                expanded = self.cnt.add(delta).clamp(0, self.cnt_max).detach()
+                self.cnt.resize_as_(expanded).copy_(expanded)
             output = torch.gt(self.cnt, self.cnt_half)
         return output.type(self.stype)

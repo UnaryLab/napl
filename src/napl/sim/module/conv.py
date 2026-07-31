@@ -54,15 +54,46 @@ def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, 
 
 
 class conv_fxp(napl_base):
-    """
-    Binary-domain fixed-point conv2d (im2col + linear_fxp kernel + fold). Single-shot, no
-    tick; trains via STE. Approximates nn.Conv2d within the quantization bound.
-    groups=1, zero padding only.
+    """Apply a trainable fixed-point approximation of ``torch.nn.Conv2d``.
+
+    Use this single-shot layer for quantization-aware convolution with
+    ``groups=1`` and zero padding. It lowers convolution to image columns, applies
+    the fixed-point linear kernel, and folds the result back to NCHW.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv_fxp
+
+        layer = conv_fxp(1, 2, 3, padding=1)
+        output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'widthi': 8, 'quantilei': 1, 'widthw': 8, 'quantilew': 1, 'rounding': 'round'}):
+        """Configure the convolution geometry and fixed-point approximation.
+
+        Args:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            kernel_size: Kernel size accepted as an integer or pair.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial weight shaped
+                ``(out_channels, in_channels, kernel_height, kernel_width)``.
+                Defaults to ``None``.
+            bias_ext: Optional initial bias shaped ``(out_channels,)``. Defaults
+                to ``None``.
+            config: Configuration mapping with **widthi** and **widthw** (both
+                default ``8``), **quantilei** and **quantilew** (both default
+                ``1``), and **rounding** (default ``"round"``). **name** is an
+                optional instance label and defaults to ``None``.
+        """
         super().__init__(config, [])
         self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
         self.widthi = config.get('widthi', 8)
@@ -74,7 +105,29 @@ class conv_fxp(napl_base):
         self.max_abs_w = 2 ** self.widthw
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state. Trainable parameters are
+        unchanged.
+        """
+        pass
+
     def forward(self, input):
+        """Apply fixed-point convolution.
+
+        Args:
+            input: Numeric NCHW tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Numeric NCHW tensor with ``out_channels`` and the configured output
+            geometry.
+
+        The call computes dynamic quantization shifts without changing persistent
+        state or ``timestep_cur``. Backpropagation uses a straight-through linear
+        gradient through the lowered convolution.
+        """
         rshift_i, rshift_w, _ = rshift_offset(input, self.weight, self.widthi - 1, self.widthw - 1,
                                               self.rounding, self.quantilei, self.quantilew)
         rshift_o = 0 - rshift_i - rshift_w
@@ -85,16 +138,50 @@ class conv_fxp(napl_base):
 
 
 class conv_hub(napl_base):
-    """
-    Binary-domain HUB conv2d (im2col + linear_hub value-map kernel + fold). Single-shot, no
-    tick; trains via STE. Approximates nn.Conv2d within the unary-multiplication bound.
-    groups=1, zero padding only, requires widthi==widthw.
+    """Apply a hybrid unary-binary approximation of ``torch.nn.Conv2d``.
+
+    Use this single-shot trainable layer when convolution products should use a
+    unary multiplication lookup map while the interface remains numeric. It
+    supports ``groups=1``, zero padding, and requires ``widthi == widthw``.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv_hub
+
+        layer = conv_hub(1, 2, 3, padding=1,
+                         config={"widthi": 4, "widthw": 4, "cycle": 8})
+        output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'widthi': 8, 'rngi': 'sobol', 'quantilei': 1, 'widthw': 8, 'rngw': 'sobol',
                          'quantilew': 1, 'cycle': 128, 'rounding': 'round'}):
+        """Configure the convolution geometry and HUB lookup map.
+
+        Args:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            kernel_size: Kernel size accepted as an integer or pair.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial convolution weight. Defaults to ``None``.
+            bias_ext: Optional initial bias. Defaults to ``None``.
+            config: Configuration mapping with equal **widthi** and **widthw**
+                (both default ``8``), **rngi** and **rngw** (both default
+                ``"sobol"``), **quantilei** and **quantilew** (both default
+                ``1``), **cycle** (declared default ``128``; ``None`` selects the
+                maximum), and **rounding** (default ``"round"``). **name** is an
+                optional instance label and defaults to ``None``.
+
+        **cycle** is capped at ``2 ** (widthi - 1)``. The generated lookup map is
+        persistent non-trainable state.
+        """
         super().__init__(config, [])
         self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
         self.widthi = config.get('widthi', 8)
@@ -109,10 +196,32 @@ class conv_hub(napl_base):
         self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
         cycle_cfg = config.get('cycle', None)
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
-        self.mapcbsg = torch.nn.Parameter(mapcbsg, requires_grad=False)
+        self.register_buffer('mapcbsg', mapcbsg)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state. The lookup map and
+        trainable parameters are unchanged.
+        """
+        pass
+
     def forward(self, input):
+        """Apply HUB convolution.
+
+        Args:
+            input: Numeric NCHW tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Numeric NCHW tensor with ``out_channels`` and the configured output
+            geometry.
+
+        The call reads the product lookup map and computes dynamic shifts without
+        changing persistent state or ``timestep_cur``. Backpropagation uses a
+        straight-through linear gradient.
+        """
         rshift_i, rshift_w, rshift_o = rshift_offset(input, self.weight, self.widthi - 1, self.widthw - 1,
                                                      self.rounding, self.quantilei, self.quantilew)
         fn = lambda i2d, w2d: _linear_hub_fn.apply(i2d, w2d, None, rshift_i, rshift_w, rshift_o,
@@ -122,17 +231,60 @@ class conv_hub(napl_base):
 
 
 class conv_tlut(napl_base):
-    """
-    Binary-domain temporal-LUT conv2d (im2col + linear_tlut kernel + fold), modes
+    """Apply a temporal-LUT approximation of ``torch.nn.Conv2d``.
+
+    Use this single-shot trainable layer to decompose either convolution inputs or
+    weights into temporal digits. It supports modes
     fxpfxp/fxpfp/fpfp via the (formati, formatw) pair. Single-shot; trains via STE.
     Approximates nn.Conv2d within the temporal-decomposition bound.
-    groups=1, zero padding only.
+    ``fxpfxp``, ``fxpfp``, and ``fpfp`` with ``groups=1`` and zero padding.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv_tlut
+
+        layer = conv_tlut(1, 2, 3, padding=1,
+                          config={"temporal": "i", "widtht": 4,
+                                  "formati": "fxp", "widthi": 8,
+                                  "formatw": "fxp", "widthw": 8})
+        output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'temporal': 'i', 'widtht': 4, 'formati': 'fxp', 'widthi': 8, 'quantilei': 1,
                          'formatw': 'fxp', 'widthw': 8, 'quantilew': 1, 'cycle': None, 'rounding': 'round'}):
+        """Configure convolution geometry and temporal decomposition.
+
+        Args:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            kernel_size: Kernel size accepted as an integer or pair.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            bias: Create a trainable bias when ``True``. Defaults to ``True``.
+            weight_ext: Optional initial convolution weight. Defaults to ``None``.
+            bias_ext: Optional initial bias. Defaults to ``None``.
+            config: Configuration mapping with these keys:
+
+                * **temporal** - ``"i"``/``"input"`` or ``"w"``/``"weight"``.
+                  Defaults to ``"i"``.
+                * **widtht** - Bits per temporal digit. Defaults to ``4``.
+                * **formati**, **formatw** - ``"fxp"`` or a supported floating
+                  format: ``"bfloat16"``, ``"float16"``, or ``"float32"``.
+                  Both default to ``"fxp"``.
+                * **widthi**, **widthw** - Fixed-point widths. Both default to ``8``.
+                * **quantilei**, **quantilew** - Scaling quantiles. Both default
+                  to ``1``.
+                * **cycle** - Active cycles, capped at ``2 ** widtht``. Defaults
+                  to ``None``, which selects the cap.
+                * **rounding** - Fixed-point rounding mode. Defaults to ``"round"``.
+                * **name** - Optional instance label. Defaults to ``None``.
+        """
         super().__init__(config, [])
         self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
         self.temporal = config.get('temporal', 'i').lower()
@@ -169,7 +321,28 @@ class conv_tlut(napl_base):
         self.delta = int(self.degree * self.widtht - self.width)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+    def _reset(self):
+        """Reset local execution state.
+
+        This single-shot layer has no mutable run state. Trainable parameters are
+        unchanged.
+        """
+        pass
+
     def forward(self, input):
+        """Apply temporal-LUT convolution.
+
+        Args:
+            input: Numeric NCHW tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Numeric NCHW tensor with ``out_channels`` and the configured output
+            geometry.
+
+        The call does not change persistent state or ``timestep_cur``. The
+        selected custom autograd path supplies a straight-through gradient.
+        """
         cp, cn = self.cycle_act, -self.cycle_act
         if self.mode == 'fxpfxp':
             fn = lambda i2d, w2d: _linear_tlut_fxpfxp_fn.apply(i2d, w2d, None, self.temporal, self.widthi_mag,
@@ -185,18 +358,52 @@ class conv_tlut(napl_base):
 
 
 class conv(napl_base):
-    """
-    Streaming unary conv2d, computed bit by bit. Each timestep the weights are encoded
+    """Apply a rate-coded unary convolution one timestep at a time.
+
+    Use this layer when the input is an NCHW spike stream and weights should be
+    encoded on a separate number-sequence dimension. Each timestep the weights are encoded
     into spikes on a distinct RNG dimension, multiplied (XNOR bipolar / AND unipolar) with the
     im2col'd input patches, and the partial products summed by a scaled unary adder, then
     folded back to NCHW. The decoded output represents conv2d(x, W) + b divided by `scale`
     (default in_channels*kh*kw + has_bias) to stay in unary range. Bipolar zero-padding uses a
     decorrelated rate-0.5 pad stream (a separate pad encoder), not a deterministic toggle.
-    Rate-coded weights. groups=1, zero padding only.
+    It supports rate-coded weights, ``groups=1``, and zero padding only.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv
+
+        layer = conv(torch.zeros(2, 1, 3, 3), padding=1,
+                     config={"polarity": "bipolar", "timestep": 4,
+                             "generator": "sobol"})
+        output_spike = layer(torch.ones(1, 1, 4, 4))
     """
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
                          'dim': 2, 'scale': None, 'width': 12}):
+        """Construct the streaming convolution from external numeric parameters.
+
+        Args:
+            weight: Numeric tensor shaped
+                ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
+                ``None``.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"sobol"``), **dim** (weight Sobol dimension, default
+                ``2``), **scale** (default ``None``, meaning fan-in plus bias),
+                and **width** (accumulator width, default ``12``). **name** is an
+                optional instance label and defaults to ``None``.
+
+        **width** must satisfy ``2 ** (width - 1) >= fan_in + has_bias``. Bias and
+        bipolar padding use the next number-sequence dimensions.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         from napl.sim.operation import add_any
         from napl.sim.module.encoder import encoder
@@ -242,7 +449,29 @@ class conv(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
+    def _reset(self):
+        """Reset state owned directly by the convolution.
+
+        This class has no extra local state. The inherited ``reset()`` method
+        resets the registered encoders and unary adder.
+        """
+        pass
+
     def forward(self, input_spike):
+        """Process one NCHW input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Output spike tensor shaped
+            ``(batch, out_channels, output_height, output_width)``.
+
+        The call advances the convolution and its streaming children and updates
+        the unary-adder accumulator. External weight and bias tensors are not
+        modified.
+        """
         # input_spike: (batch, in_channels, H, W) spike tensor for the current timestep
         ph, pw = self.padding
         out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)), kernel_size=self.kernel_size,

@@ -6,8 +6,10 @@ from loguru import logger
 
 
 class conv_pc(napl_base):
-    """
-    Streaming unary conv2d *parallel counter*: the per-timestep binary inner-product
+    """Return per-timestep parallel counts for a unary convolution.
+
+    Use this streaming layer when downstream logic needs raw convolution product
+    counts instead of a scaled output bitstream. It returns the per-timestep binary inner-product
     count of the im2col'd input spikes against freshly encoded weight spikes, before any
     accumulation into a bitstream. This is the `conv` partial sum without its scaled
     unary adder, the conv counterpart of `linear_pc`.
@@ -20,11 +22,43 @@ class conv_pc(napl_base):
     per output element lies in [0, entry] with entry = in*kh*kw + has_bias; accumulating the
     count over T timesteps and dividing by T recovers the unipolar conv directly, or the
     bipolar conv as 2*mean - entry. Bipolar zero-padding uses a decorrelated rate-0.5 pad
-    stream (a separate pad encoder), not a deterministic toggle. References: uGEMM.
-    UnarySim: FSUConv2dPC. groups=1, zero padding only.
+    stream. This class matches UnarySim ``FSUConv2dPC`` and supports ``groups=1``
+    with zero padding only.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv_pc
+
+        counter = conv_pc(torch.ones(2, 1, 3, 3), padding=1,
+                          config={"polarity": "unipolar", "timestep": 4,
+                                  "generator": "sobol"})
+        count = counter(torch.ones(1, 1, 4, 4))
+
+    References
+    ----------
+    *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'dim': 2}):
+        """Construct the counter from external numeric weights and bias.
+
+        Args:
+            weight: Numeric tensor shaped
+                ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
+                ``None``.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (default ``256``), **generator**
+                (default ``"sobol"``), and **dim** (weight Sobol dimension,
+                default ``2``; bias and padding use following dimensions).
+                **name** is an optional instance label and defaults to ``None``.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy import: operation.mul_csg imports module.encoder, so importing at module top would
         # create an import cycle with module/__init__.
@@ -62,7 +96,29 @@ class conv_pc(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
+    def _reset(self):
+        """Reset state owned directly by the counter.
+
+        This class has no extra local state. The inherited ``reset()`` method
+        resets its registered encoders.
+        """
+        pass
+
     def forward(self, input_spike):
+        """Count convolution spike products for one timestep.
+
+        Args:
+            input_spike: ``0``/``1`` NCHW tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Numeric count tensor shaped
+            ``(batch, out_channels, output_height, output_width)``. Values lie in
+            ``[0, kernel_fan_in + has_bias]``.
+
+        The call advances the counter and its encoders. It does not accumulate
+        counts across timesteps.
+        """
         # input_spike: (batch, in_channels, H, W) spike tensor for the current timestep
         ph, pw = self.padding
         out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)), kernel_size=self.kernel_size,

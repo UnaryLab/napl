@@ -7,57 +7,133 @@ from loguru import logger
 
 class correlation(napl_base):
     """
-    Stochastic cross-correlation (SCC) between two spike streams, accumulated over
-    timesteps. Call forward(input_1, input_2) once per timestep to accumulate the joint
-    histogram of bit pairs, then analyze() to compute the SCC. If only input_1 is given,
-    the SCC is computed between the stream and its one-step-delayed self
-    (autocorrelation). Reference: "Exploiting Correlation in Stochastic Circuit
-    Design".
+    Measure stochastic cross-correlation (SCC) between two spike streams.
+
+    Use this metric to quantify correlation from bit-pair counts accumulated over
+    time. Supplying only the first stream measures its one-timestep-delayed
+    autocorrelation.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import correlation
+
+        metric = correlation()
+        stream = torch.tensor([1.0, 1.0, 0.0, 0.0])
+        for spike in stream:
+            metric(spike, spike)
+        value, result = metric.analyze()
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Exploiting Correlation in Stochastic Circuit Design*.
     """
     def __init__(
             self,
             config={}
         ):
+        """
+        Construct an empty SCC accumulator.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Optional base configuration mapping; the default is
+              ``{}``.
+
+              - **name**: Optional instance label; the default is ``None``.
+        """
         super().__init__(config, [])
 
         # sufficient statistics for the joint bit-pair histogram (a=11, b=10, c=01, d=00):
         # the co-occurrence count and the per-stream 1-counts. b, c, d and the run length
         # are all recovered at report() from these plus timestep_cur, so each step accumulates
         # only three counts and forms one product.
-        self.paired_11 = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
-        self.sum_1 = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
-        self.sum_2 = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.register_buffer('paired_11', torch.zeros(1, dtype=self.ntype))
+        self.register_buffer('sum_1', torch.zeros(1, dtype=self.ntype))
+        self.register_buffer('sum_2', torch.zeros(1, dtype=self.ntype))
         # one-step delay buffer for the autocorrelation (single-input) case
-        self.input_1_d = torch.nn.Parameter(torch.zeros(1, dtype=self.ntype), requires_grad=False)
+        self.register_buffer('input_1_d', torch.zeros(1, dtype=self.ntype))
 
 
     def _reset(self):
+        """
+        Clear all local bit-pair counts and the autocorrelation delay value.
+
+        Each buffer returns to a scalar zero seed. The inherited reset method
+        resets the timestep before calling this hook. This hook returns ``None``.
+        """
         for p in [self.paired_11, self.sum_1, self.sum_2, self.input_1_d]:
-            p.data = torch.zeros_like(p.data)
+            p.resize_(1).zero_()
 
 
     def forward(self, input_1, input_2=None):
+        """
+        Accumulate one pair of spike-stream timesteps.
+
+        Args:
+            input_1: First 0/1 spike tensor for the current timestep.
+            input_2: Second 0/1 spike tensor with a broadcast-compatible shape.
+                When ``None``, use the one-timestep-delayed first input. The
+                default is ``None``.
+
+        Calling the metric increments its timestep and updates the joint counts.
+        In single-input mode it also stores ``input_1`` for the next call. The
+        method returns ``None``.
+
+        **Example:**
+
+        .. code-block:: python
+
+            metric(torch.tensor([1.0]), torch.tensor([0.0]))
+        """
         if input_2 is None:
             input_2 = self.input_1_d.clone().detach()
-            self.input_1_d.data = input_1.clone().detach().type(self.ntype)
+            input_1_d = input_1.detach().type(self.ntype)
+            if self.input_1_d.shape == input_1_d.shape:
+                self.input_1_d.copy_(input_1_d)
+            else:
+                self.input_1_d.resize_as_(input_1_d).copy_(input_1_d)
 
         # bool is left uncast: addcmul/add promote it to the ntype accumulator, so the
         # two per-timestep .type() casts are redundant dispatches (kept as int8/float 0/1).
         input_1_is_1 = torch.ne(input_1, 0)
         input_2_is_1 = torch.ne(input_2, 0)
 
-        # out-of-place add (assigned to .data) so the scalar accumulators broadcast up
-        # to the input shape on the first call, matching the decoder/accuracy idiom.
-        # addcmul fuses the 11-product and the add, saving one temporary per timestep.
-        self.paired_11.data = torch.addcmul(self.paired_11, input_1_is_1, input_2_is_1)
-        self.sum_1.data = self.sum_1.add(input_1_is_1)
-        self.sum_2.data = self.sum_2.add(input_2_is_1)
+        if self.paired_11.shape == input_1_is_1.shape:
+            self.paired_11.addcmul_(input_1_is_1, input_2_is_1)
+            self.sum_1.add_(input_1_is_1)
+            self.sum_2.add_(input_2_is_1)
+        else:
+            # The scalar seeds broadcast to the input shape on the first call.
+            paired_11 = torch.addcmul(self.paired_11, input_1_is_1, input_2_is_1).detach()
+            sum_1 = self.sum_1.add(input_1_is_1).detach()
+            sum_2 = self.sum_2.add(input_2_is_1).detach()
+            self.paired_11.resize_as_(paired_11).copy_(paired_11)
+            self.sum_1.resize_as_(sum_1).copy_(sum_1)
+            self.sum_2.resize_as_(sum_2).copy_(sum_2)
 
 
     @property
     def correlation(self):
         """
-        SCC, computed on access from the accumulated bit-pair counts.
+        Return the SCC computed from the accumulated bit-pair counts.
+
+        Values range from ``-1`` for fully anticorrelated streams to ``1`` for
+        fully correlated streams. Empty or degenerate counts use the guarded
+        denominators in the SCC definition. Reading this property does not
+        change metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            coefficient = metric.correlation
         """
         a = self.paired_11               # 11
         b = self.sum_1 - a               # 10 = (1-count of input_1) - 11
@@ -79,7 +155,27 @@ class correlation(napl_base):
 
 
     def analyze(self, verbose=False):
-        # return the correlation and index of max abs correlation
+        """
+        Summarize the current per-element SCC values.
+
+        Call this method after at least one timestep.
+
+        Args:
+            verbose: Set to ``True`` to print the analysis summary. The default
+                is ``False``.
+
+        Returns:
+            A pair containing the per-element SCC tensor and its complete
+            :class:`napl.sim.metric._shared.Analysis` summary.
+
+        This method does not change the accumulated metric state.
+
+        **Example:**
+
+        .. code-block:: python
+
+            value, result = metric.analyze()
+        """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         # one property access: correlation computes from the accumulated counts on each read
         correlation = self.correlation
@@ -90,10 +186,4 @@ class correlation(napl_base):
             value='correlation',
             timestep=self.timestep_cur,
         )
-        self.correlation_abs_max = result.absolute_max
-        self.correlation_abs_min = result.absolute_min
-        self.correlation_avg = result.mean
-        self.correlation_mae = result.mean_absolute
-        self.correlation_rmse = result.root_mean_square
-
-        return correlation, result.max_absolute_index
+        return correlation, result

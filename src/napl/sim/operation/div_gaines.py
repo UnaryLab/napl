@@ -6,11 +6,29 @@ from napl.sim.module import gen_num_seq
 
 class div_gaines(napl_base):
     """
-    Gaines division: a saturating up/down counter integrates the division error and
-    drives the quotient stream by comparison against an RNG sequence.
-    Unipolar computes dividend/divisor; bipolar computes the same on [-1, 1].
-    Reference:
-    1) B. R. Gaines, 'Stochastic Computing Systems', 1969
+    Divide rate-coded streams with the Gaines counter construction.
+
+    Use this stateful divider for unipolar or bipolar streams when a stochastic
+    quotient is needed directly from an error-integrating saturating counter.
+    The output has one cycle of modeled latency.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import div_gaines
+
+        divider = div_gaines({'polarity': 'unipolar', 'depth': 5,
+                              'generator': 'Sobol', 'dim': 1})
+        quotient = divider(torch.tensor([1], dtype=torch.int8),
+                           torch.tensor([1], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        B. R. Gaines, *Stochastic Computing Systems*, 1969.
     """
     def __init__(
         self,
@@ -22,6 +40,23 @@ class div_gaines(napl_base):
             'dim' : 1,
         }
     ):
+        """
+        Configure the counter and quotient number sequence.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **depth**: Counter width in bits; the default is ``5``.
+              - **generator**: Number-sequence generator for quotient thresholds; the default is ``"Sobol"``.
+              - **dim**: Generator dimension forwarded when the threshold sequence is built; the default is ``1``.
+              - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
+              - **name**: Optional instance label.
+        """
         super().__init__(config, ['polarity', 'depth', 'generator'], polarity_required=True)
         # quotient spike is a comparison against the counter register, so one-cycle latency
         self.hw = hw_params(pp_delay=1)
@@ -39,18 +74,40 @@ class div_gaines(napl_base):
         self.scnt_max = 2 ** self.depth - 1
         self.scnt_init = 2 ** (self.depth - 1)
         # saturating up/down counter; scalar that broadcasts to the input shape on the first forward
-        self.scnt = torch.nn.Parameter(torch.full((1,), float(self.scnt_init), dtype=self.ntype), requires_grad=False)
+        self.register_buffer('scnt', torch.full((1,), float(self.scnt_init), dtype=self.ntype))
         # previous divisor spike, used to decorrelate the counter feedback in bipolar mode
-        self.divisor_d = torch.nn.Parameter(torch.zeros(1, dtype=torch.int8), requires_grad=False)
+        self.register_buffer('divisor_d', torch.zeros(1, dtype=torch.int8))
 
 
     def _reset(self):
+        """
+        Restore the local counter, delayed divisor, and sequence position.
+        """
         self.idx = 0
-        self.scnt.data = torch.full((1,), float(self.scnt_init), dtype=self.ntype, device=self.scnt.device)
-        self.divisor_d.data = torch.zeros(1, dtype=torch.int8, device=self.divisor_d.device)
+        self.scnt.resize_(1).fill_(self.scnt_init)
+        self.divisor_d.resize_(1).zero_()
 
 
     def forward(self, dividend, divisor):
+        """
+        Process one dividend and divisor timestep.
+
+        Args:
+            dividend: Current 0/1 dividend spike tensor.
+            divisor: Current 0/1 divisor spike tensor, broadcast-compatible with
+                ``dividend``.
+
+        Returns:
+            A quotient spike tensor with the dividend shape. The call advances
+            the threshold sequence and updates the counter and delayed divisor.
+
+        **Example:**
+
+        .. code-block:: python
+
+            quotient = divider(torch.tensor([1], dtype=torch.int8),
+                               torch.tensor([1], dtype=torch.int8))
+        """
 
         # quotient spike from the counter state; identical for both polarities
         output = torch.gt(self.scnt, self.rng_seq[self.idx]).type(torch.int8)
@@ -72,10 +129,17 @@ class div_gaines(napl_base):
             # algebraically into inc - dec = XNOR(divisor_d^divisor^output) - (dividend^divisor)
             inc = (self.divisor_d ^ divisor_i8 ^ output) ^ 1
             dec = dividend_i8 ^ divisor_i8
-            self.divisor_d.data = divisor_i8
+            if self.divisor_d.shape == divisor_i8.shape:
+                self.divisor_d.copy_(divisor_i8.detach())
+            else:
+                self.divisor_d.resize_as_(divisor_i8).copy_(divisor_i8.detach())
 
         # saturating up/down counter; the out-of-place add broadcasts up to the input
         # shape on the first call, then sub_/clamp_ mutate that fresh tensor in place
-        self.scnt.data = self.scnt.add(inc).sub_(dec).clamp_(0, self.scnt_max)
+        if self.scnt.shape == inc.shape and self.scnt.shape == dec.shape:
+            self.scnt.add_(inc).sub_(dec).clamp_(0, self.scnt_max)
+        else:
+            updated = self.scnt.add(inc).sub_(dec).clamp_(0, self.scnt_max)
+            self.scnt.resize_as_(updated).copy_(updated.detach())
 
         return output.type(self.stype)

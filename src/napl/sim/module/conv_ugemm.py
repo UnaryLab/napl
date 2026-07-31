@@ -7,8 +7,10 @@ from loguru import logger
 
 
 class conv_ugemm(napl_base):
-    """
-    Streaming unary conv2d with uGEMM-style conditional spike generation (CSG).
+    """Apply streaming unary convolution with conditional spike generation.
+
+    Use this layer when input-driven uGEMM weight streams are preferred over the
+    free-running weight encoder used by :class:`conv`. It provides uGEMM-style conditional spike generation (CSG).
     Unlike `conv` (free-running weight encoder on a distinct RNG dimension), each
     weight bitstream index advances by the incoming input spike (the `mul_csg` idiom),
     so the input/weight products are decorrelated by construction. Per timestep the
@@ -18,12 +20,48 @@ class conv_ugemm(napl_base):
     (conv2d(x, W) + b) / scale with scale defaulting to in*kh*kw + has_bias. Bipolar
     zero-padding alternates 0/1 pads each timestep (a deterministic rate-0.5 stream =
     bipolar zero, matching the UnarySim original, unlike conv's decorrelated pad
-    encoder). Rate-coded. groups=1, zero padding, scaled output only. References:
-    uGEMM. UnarySim: FSUConv2duGEMM (scaled=True).
+    encoder). It is rate-coded, supports ``groups=1`` and zero padding, and
+    implements only the scaled UnarySim ``FSUConv2duGEMM`` mode.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl import conv_ugemm
+
+        layer = conv_ugemm(torch.zeros(2, 1, 3, 3), padding=1,
+                           config={"polarity": "bipolar", "timestep": 4,
+                                   "generator": "sobol"})
+        output_spike = layer(torch.ones(1, 1, 4, 4))
+
+    References
+    ----------
+    *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
                          'scale': None, 'width': 12}):
+        """Construct the streaming CSG convolution.
+
+        Args:
+            weight: Numeric convolution weight shaped
+                ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
+                ``None``.
+            stride: Convolution stride. Defaults to ``1``.
+            padding: Symmetric zero padding. Defaults to ``0``.
+            dilation: Kernel dilation. Defaults to ``1``.
+            config: Configuration mapping with **polarity** (default
+                ``"bipolar"``), **timestep** (positive stream length, default
+                ``256``), **generator** (default ``"sobol"``), **scale**
+                (default ``None``, meaning fan-in plus bias), and **width**
+                (accumulator width, default ``12``). **name** is an optional
+                instance label and defaults to ``None``.
+
+        **width** must satisfy ``2 ** (width - 1) >= fan_in + has_bias``.
+        Numeric weights and bias are converted to persistent spike probabilities.
+        """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # lazy imports: operation.mul_csg imports module.encoder, so importing at module top
         # would create an import cycle with module/__init__.
@@ -54,46 +92,55 @@ class conv_ugemm(napl_base):
         rng_width = math.ceil(math.log2(self.timestep))
         self.len = 2 ** rng_width
         # single RNG sequence shared by the weight/bias CSG paths (UnarySim RNG dim=1)
-        self.num_seq = gen_num_seq(config={'width': rng_width, 'generator': config['generator']})
+        self.register_buffer(
+            'num_seq',
+            gen_num_seq(config={'width': rng_width, 'generator': config['generator']}),
+        )
 
         # weight/bias as spike probabilities (bipolar maps [-1,1] -> [0,1])
         w_prob = (weight + 1) / 2 if self._is_bipolar else weight
-        self.w_prob = torch.nn.Parameter(w_prob.reshape(self.out_channels, -1).type(self.ntype),
-                                         requires_grad=False)                  # (out, K)
+        self.register_buffer(
+            'w_prob',
+            w_prob.reshape(self.out_channels, -1).type(self.ntype).detach(),
+        )                                                              # (out, K)
         if self.has_bias:
             b_prob = (bias + 1) / 2 if self._is_bipolar else bias
-            self.b_prob = torch.nn.Parameter(b_prob.type(self.ntype), requires_grad=False)
+            self.register_buffer('b_prob', b_prob.type(self.ntype).detach())
 
         # CSG seq indices, advanced by the input spike (inverse path by its complement);
         # scalar start, broadcast up to (batch*L, K) on the first forward
-        self.w_idx = torch.nn.Parameter(torch.zeros(1, dtype=torch.long), requires_grad=False)
+        self.register_buffer('w_idx', torch.zeros(1, dtype=torch.long))
         if self._is_bipolar:
-            self.w_idx_inv = torch.nn.Parameter(torch.zeros(1, dtype=torch.long), requires_grad=False)
+            self.register_buffer('w_idx_inv', torch.zeros(1, dtype=torch.long))
 
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
         self._im2col_key = None  # (shape, device) the cached gather indices were built for
 
-    def _build_im2col(self, input_spike):
-        # cache the unfold gather indices + output shape for this input geometry, so the
-        # per-timestep loop does one index_select instead of unfold + transpose + reshape
-        ph, pw = self.padding
-        self._out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)),
-                                           kernel_size=self.kernel_size, dilation=self.dilation,
-                                           pad=self.padding, stride=self.stride)
-        c, hp, wp = input_spike.size(1), input_spike.size(2) + 2 * ph, input_spike.size(3) + 2 * pw
-        # index map via unfold on an arange (float64 on CPU: exact; MPS lacks float64)
-        ar = torch.arange(c * hp * wp, dtype=torch.float64).view(1, c, hp, wp)
-        u = torch.nn.functional.unfold(ar, self.kernel_size, self.dilation, 0, self.stride)  # (1, K, L)
-        # L-major order so a flat gather yields the (P, K) layout directly
-        self._im2col_idx = u.view(self.K, -1).t().contiguous().long().view(-1).to(input_spike.device)
-        self._im2col_key = (input_spike.shape, input_spike.device)
-
     def _reset(self):
-        self.w_idx.data = torch.zeros(1, dtype=torch.long, device=self.w_idx.device)
+        """Reset the local conditional-generator indices.
+
+        The input-one path index and, for bipolar streams, the input-zero path
+        index return to scalar zero. Cached convolution geometry remains available.
+        """
+        self.w_idx.resize_(1).zero_()
         if self._is_bipolar:
-            self.w_idx_inv.data = torch.zeros(1, dtype=torch.long, device=self.w_idx_inv.device)
+            self.w_idx_inv.resize_(1).zero_()
 
     def forward(self, input_spike):
+        """Process one NCHW input-spike timestep.
+
+        Args:
+            input_spike: ``0``/``1`` tensor shaped
+                ``(batch, in_channels, height, width)``.
+
+        Returns:
+            Output spike tensor shaped
+            ``(batch, out_channels, output_height, output_width)``.
+
+        The call advances conditional RNG indices, the unary-adder state, and
+        ``timestep_cur``. It may refresh cached gather indices when input geometry
+        or device changes.
+        """
         # input_spike: (batch, in_channels, H, W) spike tensor for the current timestep
         ph, pw = self.padding
         if self._im2col_key != (input_spike.shape, input_spike.device):
@@ -119,7 +166,8 @@ class conv_ugemm(napl_base):
         if self.w_idx.shape == inp.shape:
             self.w_idx.add_(inp.type(torch.long))
         else:
-            self.w_idx.data = self.w_idx.add(inp.type(torch.long))
+            expanded = self.w_idx.add(inp.type(torch.long)).detach()
+            self.w_idx.resize_as_(expanded).copy_(expanded)
 
         if self._is_bipolar:
             # input-0 path: (1-x) & (1 - w_bit); input-1 lanes see rnd-2, below any
@@ -129,7 +177,8 @@ class conv_ugemm(napl_base):
             if self.w_idx_inv.shape == inv.shape:
                 self.w_idx_inv.add_(inv.type(torch.long))
             else:
-                self.w_idx_inv.data = self.w_idx_inv.add(inv.type(torch.long))
+                expanded = self.w_idx_inv.add(inv.type(torch.long)).detach()
+                self.w_idx_inv.resize_as_(expanded).copy_(expanded)
 
         if self.has_bias:
             # bias stream is free-running on the shared RNG (index = timestep)
@@ -140,3 +189,18 @@ class conv_ugemm(napl_base):
         # fold with a (1,1) kernel is a pure reshape; acc is already stype, no casts needed
         return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
                   .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)  # (batch, out, H, W)
+
+    def _build_im2col(self, input_spike):
+        # cache the unfold gather indices + output shape for this input geometry, so the
+        # per-timestep loop does one index_select instead of unfold + transpose + reshape
+        ph, pw = self.padding
+        self._out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)),
+                                           kernel_size=self.kernel_size, dilation=self.dilation,
+                                           pad=self.padding, stride=self.stride)
+        c, hp, wp = input_spike.size(1), input_spike.size(2) + 2 * ph, input_spike.size(3) + 2 * pw
+        # index map via unfold on an arange (float64 on CPU: exact; MPS lacks float64)
+        ar = torch.arange(c * hp * wp, dtype=torch.float64).view(1, c, hp, wp)
+        u = torch.nn.functional.unfold(ar, self.kernel_size, self.dilation, 0, self.stride)  # (1, K, L)
+        # L-major order so a flat gather yields the (P, K) layout directly
+        self._im2col_idx = u.view(self.K, -1).t().contiguous().long().view(-1).to(input_spike.device)
+        self._im2col_key = (input_spike.shape, input_spike.device)
