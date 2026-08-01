@@ -1,18 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// div_iscb_signabs -- sign/magnitude of a bipolar rate-coded spike (stateful).
-//
-// RTL counterpart of napl.sim.operation.signabs with width=3, as instantiated by
-// div_iscb's bipolar_forward (src/napl/sim/operation/signabs.py). Internal helper
-// for div_iscb_bipolar; not a standalone op.
-//
-//   acc  = clamp(acc + (2*in - 1), 0, 7)     (updated this cycle, then read)
-//   sign = (acc < 4)        1 = negative, 0 = positive
-//   abs  = sign ^ in
-//
-// Reset (active-low i_rst_n) loads the Python reset() state: acc = acc_med = 4.
-//==============================================================================
+// Fixed-width signabs helper matching Python. The current input updates acc in
+// [0,7] before sign=(acc<4) and abs=sign^input are read.
+// Active-low reset loads acc=4.
 module div_iscb_signabs (
     input  wire i_clk,
     input  wire i_rst_n,

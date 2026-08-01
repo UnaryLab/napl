@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_uni2bi(napl_base):
     def __init__(self, codec_config1, codec_config2, uni2bi_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config1)
         self.decoder = decoder(codec_config2)
         self.uni2bi = uni2bi(uni2bi_config)
@@ -23,7 +22,6 @@ class napl_uni2bi(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.uni2bi(i_spike)
         self.decoder(o_spike)
@@ -51,10 +49,8 @@ def _kernel_specific_checks():
         'width': 3,
     }
     
-    # Generate random inputs based on polarity
     input_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
 
-    # generate the napl_uni2bi instance
     for device in devices():
         input = input_cpu.to(device)
         uni2bi_inst = napl_uni2bi(codec_config1, codec_config2, uni2bi_config).to(device)

@@ -36,7 +36,7 @@ from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "gt_rc.vec"
 
-# test_gt_rc.py codec_config1/2: the two encoders feeding gt_rc, distinct dims.
+# Encoder settings mirror test_gt_rc.py and use distinct Sobol dimensions.
 CODEC0 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2}
 
@@ -47,25 +47,19 @@ def main():
 
     rows = []  # (rst_n, in_0, in_1, out)
 
-    # All representative operand pairs (corners + sweep + draws), split into two
-    # batches so a reset can be injected between them while state is dirtied.
     pairs = rep_pairs("bipolar", "bipolar")
     half = len(pairs) // 2
     batch_a, batch_b = pairs[:half], pairs[half:]
 
-    # Batch A: drive from the fresh reset above, recording each cycle.
     s0, s1 = pair_streams(CODEC0, CODEC1, batch_a)
     for a, b in zip(s0, s1):
         out = int(model(torch.tensor(a), torch.tensor(b)).item())
         rows.append((1, a, b, out))
 
-    # MID-STREAM reset: state is now dirtied by batch A. reset() returns the
-    # model to its post-reset state (dff->1, cnt->0). Emit a reset-pulse row.
+    # Reset row restores dff=1 and cnt=0 before the second segment.
     model.reset()
     rows.append((0, 0, 0, 0))
 
-    # Batch B: continue after the reset; outputs must match a model reset from a
-    # dirtied state, proving RTL i_rst_n equivalence.
     s0, s1 = pair_streams(CODEC0, CODEC1, batch_b)
     for a, b in zip(s0, s1):
         out = int(model(torch.tensor(a), torch.tensor(b)).item())

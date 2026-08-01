@@ -13,7 +13,6 @@ from napl.sim.metric import accuracy
 class napl_sqrt_gaines(napl_base):
     def __init__(self, codec_config, sqrt_gaines_config):
         super().__init__()
-        # set up encoder, decoder, sqrt, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sqrt_gaines = sqrt_gaines(sqrt_gaines_config)
@@ -22,7 +21,6 @@ class napl_sqrt_gaines(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.sqrt_gaines(i_spike)
         self.decoder(o_spike)
@@ -43,10 +41,9 @@ def run_sqrt_gaines(polarity, device):
         'dim': 4,
     }
 
-    # Generate random inputs, ensure non-negative numbers for sqrt
+    # Square root inputs are non-negative.
     input = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
-    # generate the napl_sqrt_gaines instance
     sqrt_gaines_inst = napl_sqrt_gaines(codec_config, sqrt_gaines_config).to(device)
 
     sync(device)
@@ -55,16 +52,12 @@ def run_sqrt_gaines(polarity, device):
     sync(device)
     elapsed = time.perf_counter() - start_time
 
-    # calculate the reference output
     r_value = torch.sqrt(input)
 
-    # report the error
     sqrt_gaines_inst.accuracy.analyze(r_value, verbose=True)
 
     rmse = (sqrt_gaines_inst.decoder.spike_value - r_value).pow(2).mean().sqrt().item()
-    # Gaines sqrt uses a feedback counter and is biased near zero input, so accuracy is
-    # looser than the SC bound 1/sqrt(N); bound set with headroom over measured RMSE
-    # (~0.09 unipolar, ~0.10 bipolar at T=256, matching UnarySim's GainesSqrt error profile)
+    # Feedback bias near zero requires a looser bound than 1/sqrt(N).
     bound = 0.15
     assert rmse < bound, f'RMSE {rmse} exceeds bound {bound} for {polarity} on {device}'
 

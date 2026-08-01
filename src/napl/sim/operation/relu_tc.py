@@ -37,13 +37,19 @@ class relu_tc(napl_base):
         """
         super().__init__(config, ['width'], polarity_required=False)
 
+        #: Number of temporal-code bits in one input value.
         self.width = config['width']
         assert isinstance(self.width, int) and self.width > 0, logger.error(
             f'Invalid width: <{self.width}>; legal values: a positive integer.'
         )
+        #: Midpoint cycle that separates the two temporal output phases.
         self.threshold = 2 ** (self.width - 1)
+        #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
+        #: Running sum of input bits in the current temporal codeword.
+        self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype))
+        #: Number of temporal-code bits processed since reset.
         self.cycle = 0
 
     def _reset(self):

@@ -50,7 +50,7 @@ def _kernel_specific_checks():
     """
     timestep = 1024
     in_features, out_features = 16, 8
-    bound = 3.0 / (timestep ** 0.5)   # SC bound, with slack for fan-in summation
+    bound = 3.0 / (timestep ** 0.5)  # Include slack for fan-in SC error.
 
     for device in devices():
         for polarity in ['unipolar', 'bipolar']:
@@ -79,7 +79,7 @@ def _kernel_specific_checks():
                 print(f'[{device}] {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
                 inst.reset()
 
-    # known-answer corner: unipolar all-ones input & weight => PC count == entry every step
+    # All-ones unipolar operands produce the exact population count.
     w1_cpu = torch.ones(out_features, in_features).type(global_config.ntype)
     x1_cpu = torch.ones(in_features).type(global_config.ntype)
     for device in devices():
@@ -94,8 +94,7 @@ def _kernel_specific_checks():
         inst.reset()
     print('known-answer corner passed.')
 
-    # performance: time linear_pc (no accumulator) vs linear (with scaled adder)
-    # on identical inputs; the PC kernel should not be slower than the full linear.
+    # Compare kernels on identical inputs; linear_pc omits the scaled accumulator.
     input_x_cpu = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype)
     weight_cpu = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype)
     bias_cpu = gen_rand_tensor('bipolar', shape=(out_features,), width=8).type(global_config.ntype)

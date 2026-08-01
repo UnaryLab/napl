@@ -1,27 +1,9 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// sqrt_emit_unipolar -- unipolar opportunistic-bit-inserting square root.
-//
-// RTL counterpart of napl.sim.operation.sqrt_emit (forward(), unipolar branch) in
-// src/napl/sim/operation/sqrt_emit.py. Per timestep t (one posedge i_clk):
-//
-//   in_sum  = i_input + emit_out                 // emit_out is feedback from t-1
-//   acc_add = clamp(acc + in_sum, -4, 3)      // nsadd: unipolar, scale=1, w=3
-//   o_out   = (acc_add >= 1)                   // non-scaled-add output
-//   acc'    = acc_add - o_out                  // subtract scale where output=1
-//
-//   scrambled = sr[0]                          // depth-2 shiftreg, reads oldest
-//   sr'       = { ~o_out, sr[1] }              // push (1-output) at the tail
-//   emit_out' = scrambled & o_out              // unipolar emit
-//
-// o_out is combinational in i_input given the cycle-t registers, so the input->
-// output latency is 0 (pp_delay = 0). acc, emit_out and the shift register are
-// the only clocked state.
-//
-// Reset (active-low i_rst_n) maps to the Python reset():
-//   emit_out = 0, acc = 0, shiftreg sr[i] = i % 2  (sr[0]=0, sr[1]=1).
-//==============================================================================
+// Unipolar sqrt_emit equivalent. The accumulator uses feedback from a depth-2
+// alternating shift register gated by o_out.
+// Output is combinational (pp_delay=0); state advances each posedge.
+// Active-low reset clears emit/acc and loads sr[i]=i%2.
 module sqrt_emit_unipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

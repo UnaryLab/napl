@@ -6,7 +6,7 @@ from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
-# imported directly from its module: not yet wired into module/__init__
+# This class is not exported from module/__init__.
 from napl.sim.module.linear_gaines1 import linear_gaines1
 
 
@@ -41,10 +41,10 @@ def _kernel_specific_checks():
     """
     timestep = 1024
     in_features, out_features = 16, 8
-    torch.manual_seed(42)   # gen_rand_tensor draws random values; keep the run reproducible
+    torch.manual_seed(42)  # Keep gen_rand_tensor inputs reproducible.
 
     for device in devices():
-        # scaled mode, both polarities, with/without bias
+        # Cover both polarities and bias settings in scaled mode.
         for polarity in ['unipolar', 'bipolar']:
             for has_bias in [True, False]:
                 input_x = gen_rand_tensor(polarity, shape=(in_features,), width=8).type(global_config.ntype).to(device)
@@ -68,9 +68,8 @@ def _kernel_specific_checks():
                 assert inst.linear.timestep_cur == timestep
                 inst.reset()
 
-        # non-scaled bipolar: the saturating up/down counter integrates W x + b, so at
-        # long T its output settles at sign(W x + b); assert that where |s| > 1 (near
-        # zero the counter random-walks and the steady state is not well defined).
+        # The non-scaled bipolar counter settles at sign(Wx+b) away from zero.
+        # Near zero it random-walks without a well-defined steady state.
         input_x = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype).to(device)
         weight = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype).to(device)
         codec_config = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}
@@ -85,8 +84,7 @@ def _kernel_specific_checks():
         assert err.max().item() < 0.15, f'{device}/non-scaled/bipolar: max err {err.max().item()}'
         inst.reset()
 
-    # known-answer corner: unipolar scaled, all-ones input & weight, no bias:
-    # pc == in_features == 2**w every step, so the output spikes every step (value 1.0)
+    # All-ones unipolar operands make the scaled output emit 1 every timestep.
     w1_cpu = torch.ones(out_features, in_features).type(global_config.ntype)
     x1_cpu = torch.ones(in_features).type(global_config.ntype)
     for device in devices():
@@ -102,8 +100,7 @@ def _kernel_specific_checks():
         inst.reset()
     print('known-answer corner passed.')
 
-    # performance: time linear_gaines1 vs linear on identical spike streams; the
-    # Gaines comparator adder should not be slower than the scaled accumulator adder.
+    # Compare the comparator and scaled accumulator adders on identical spikes.
     input_x_cpu = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype)
     weight_cpu = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype)
     bias_cpu = gen_rand_tensor('bipolar', shape=(out_features,), width=8).type(global_config.ntype)

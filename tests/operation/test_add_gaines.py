@@ -7,7 +7,7 @@ from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
-# direct module import: not yet wired into operation/__init__.py
+# add_gaines is not exported from operation/__init__.py.
 from napl.sim.operation.add_gaines import add_gaines
 from napl.sim.metric import accuracy
 
@@ -70,7 +70,7 @@ def _kernel_specific_checks():
     ).type(global_config.ntype) * 0.15
 
     for device in devices():
-        # scaled MUX addition, both polarities
+        # Scaled MUX addition supports both polarities.
         for polarity in ['unipolar', 'bipolar']:
             codec_config = {'polarity': polarity, 'timestep': timestep, 'generator': 'sobol', 'dim': 1}
             add_config = {'polarity': polarity, 'scaled': True, 'entry': entry,
@@ -89,7 +89,7 @@ def _kernel_specific_checks():
             inst.reset()
             assert inst.add_gaines.idx == 0
 
-            # known-answer MUX check: identical rows pass through unchanged for any select
+            # Identical rows pass through the MUX for every select value.
             mux = add_gaines(dict(add_config)).to(device)
             ones = torch.ones(entry, 4, dtype=global_config.stype, device=device)
             assert torch.equal(mux(ones, dim=0).cpu(), torch.ones(4, dtype=global_config.stype))
@@ -99,7 +99,7 @@ def _kernel_specific_checks():
 
             print(f'{device}/{polarity}/scaled: rmse {err:.4f} (bound {bound:.4f})')
 
-        # non-scaled OR addition, unipolar only, small decorrelated inputs
+        # Non-scaled OR addition uses small, decorrelated unipolar inputs.
         or_entry = 4
         codec_configs = [{'polarity': 'unipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': d + 1}
                          for d in range(or_entry)]
@@ -110,14 +110,12 @@ def _kernel_specific_checks():
         inst = napl_add_gaines_or(codec_configs, add_config).to(device)
         inst(input, timesteps=timestep)
 
-        # analytic OR of independent streams
         r_value = 1 - torch.prod(1 - input, 0)
         inst.accuracy.analyze(r_value, verbose=True)
         err = torch.sqrt((inst.decoder.spike_value - r_value).pow(2).mean()).item()
         assert err < bound, f'{device}/or: rmse {err} >= {bound}'
         inst.reset()
 
-        # known-answer OR check
         gate = add_gaines(dict(add_config)).to(device)
         a = torch.tensor([[0, 0, 1, 1], [0, 1, 0, 1]], dtype=global_config.stype, device=device)
         assert torch.equal(gate(a, dim=0).cpu(), torch.tensor([0, 1, 1, 1], dtype=global_config.stype))
@@ -125,7 +123,7 @@ def _kernel_specific_checks():
 
         print(f'{device}/unipolar/or: rmse {err:.4f} (bound {bound:.4f})')
 
-    # bipolar non-scaled is rejected
+    # Non-scaled bipolar mode is invalid.
     try:
         add_gaines({'polarity': 'bipolar', 'scaled': False})
         assert False, 'bipolar non-scaled should be rejected'
@@ -146,7 +144,7 @@ def _kernel_specific_perf():
         results = {}
 
         op = add_any({'polarity': 'unipolar', 'scale': entry, 'width': 10}).to(device)
-        op(spikes, dim=0)  # warmup
+        op(spikes, dim=0)  # Warm up before timing.
         sync(device)
         t0 = time.perf_counter()
         for _ in range(iters):
@@ -156,7 +154,7 @@ def _kernel_specific_perf():
 
         op = add_gaines({'polarity': 'unipolar', 'scaled': True, 'entry': entry,
                          'generator': 'sobol', 'dim': 5}).to(device)
-        op(spikes, dim=0)  # warmup
+        op(spikes, dim=0)  # Warm up before timing.
         sync(device)
         t0 = time.perf_counter()
         for _ in range(iters):

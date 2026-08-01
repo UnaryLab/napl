@@ -1,18 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// div_iscb_bi2uni -- bipolar-to-unipolar non-scaled add converter (stateful).
-//
-// RTL counterpart of napl.sim.operation.bi2uni with width=2, as instantiated by
-// div_iscb's bipolar_forward (src/napl/sim/operation/bi2uni.py). Internal helper
-// for div_iscb_bipolar; not a standalone op.
-//
-//   acc    = clamp(acc + (2*in - 1), -2, 1)   (updated this cycle, then read)
-//   out    = (acc >= 1)
-//   acc   -= out
-//
-// Reset (active-low i_rst_n) loads the Python reset() state: acc = 0.
-//==============================================================================
+// Fixed-width bi2uni helper matching Python: clamp acc+(2*input-1) to [-2,1],
+// emit at one, then subtract the emitted bit. Active-low reset clears acc.
 module div_iscb_bi2uni (
     input  wire i_clk,
     input  wire i_rst_n,

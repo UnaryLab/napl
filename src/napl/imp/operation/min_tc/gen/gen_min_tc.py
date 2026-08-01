@@ -22,7 +22,6 @@ def main():
     model.reset()
 
     lines = []
-    # header: column names
     lines.append("in_0 in_1 out")
     for a in (0, 1):
         for b in (0, 1):

@@ -61,7 +61,9 @@ class stability_flux(napl_base):
         """
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
+        #: Stability monitor for the numerator spike stream.
         self.stability_1 = stability(source_1, config)
+        #: Stability monitor for the denominator spike stream.
         self.stability_2 = stability(source_2, config)
 
 
@@ -94,7 +96,6 @@ class stability_flux(napl_base):
         """
         self.stability_1(spike_1)
         self.stability_2(spike_2)
-        # no return: readers access .stability_flux on demand.
 
 
     @property
@@ -140,7 +141,6 @@ class stability_flux(napl_base):
             ratio, result = metric.analyze()
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: stability_flux computes from the two inner monitors on each read
         stability_flux = self.stability_flux
         result = analyze(
             stability_flux,

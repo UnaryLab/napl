@@ -34,9 +34,8 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "shiftreg.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "shiftreg_params.vh"
 
-# test_shiftreg.py shiftreg_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_shiftreg.py.
 SHIFTREG = {"depth": 2}
-# test_shiftreg.py codec_config: the encoder feeding shiftreg.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -44,7 +43,6 @@ def main():
     model = shiftreg(config=SHIFTREG)
     model.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
     stream = []
     for v in rep_values(CODEC["polarity"]):
         stream += encode_value(CODEC, v)

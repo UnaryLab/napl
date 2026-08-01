@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "relu_shiftreg.vec"
 PARAMS = ROOT / "vec" / "relu_shiftreg_params.vh"
 
-# Mirrors tests/operation/test_relu_shiftreg.py.
+# Configuration mirrors test_relu_shiftreg.py.
 CONFIG = {"depth": 8}
 CODEC = {
     "polarity": "bipolar",

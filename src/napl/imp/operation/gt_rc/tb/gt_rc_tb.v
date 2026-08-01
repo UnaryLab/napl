@@ -1,29 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for gt_rc.
-//
-// Reads golden vectors produced by gen/gen_gt_rc.py (from the napl Python
-// model) and replays them cycle by cycle. gt_rc is stateful, so i_rst_n is
-// pulsed low first to bring dff->1 and cnt->0 (the post-reset() model state),
-// matching the generator which drives from model.reset() at t=0.
-//
-// Each vector line is "<rst_n> <in_0> <in_1> <out>". A line with rst_n==0 is a
-// reset pulse (the generator's MID-STREAM model.reset()): the TB asserts
-// i_rst_n low for that cycle (don't-care in_0/in_1/out), proving the RTL reset
-// returns dff->1 / cnt->0 from a dirtied state. Otherwise it is a normal cycle.
-//
-// Timing: the model's output at timestep t is the result register read BEFORE
-// its update at t. o_out tracks that register combinationally, so each cycle we
-// drive (in_0, in_1), check o_out against the expected column, then pulse the
-// clock to advance the state -- mirroring forward() returning the old dff then
-// updating it.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=gt_rc
-//==============================================================================
+// Python golden rows are <rst_n> <in_0> <in_1> <out>. Output is checked before
+// the posedge updates state; rst_n=0 restores result=1 and cnt=0.
+// Co-sim: make test OP=gt_rc
 module gt_rc_tb;
     reg clk, rst_n, in_0, in_1;
     wire out;
@@ -44,7 +23,6 @@ module gt_rc_tb;
         in_0  = 1'b0;
         in_1  = 1'b0;
 
-        // Pulse reset low -> dff=1, cnt=0 (post-reset() model state).
         rst_n = 1'b0;
         #1 rst_n = 1'b1;
 

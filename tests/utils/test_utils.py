@@ -9,11 +9,9 @@ from napl.utils._shared_test import devices, sync
 
 
 def test_utils():
-    # num2tuple
     assert num2tuple(3) == (3, 3)
     assert num2tuple((2, 4)) == (2, 4)
 
-    # conv2d_output_shape matches a real nn.Conv2d
     for device in devices():
         sync(device)
         start = time.perf_counter()
@@ -54,7 +52,6 @@ def test_utils():
         elapsed = time.perf_counter() - start
         print(f'[{device}] time={elapsed * 1000:.1f}ms')
 
-    # conv2d_get_padding round-trips: padding to keep 32x32 with a 3x3 stride-1 kernel is (1,1),(1,1)
     assert conv2d_get_padding((32, 32), (32, 32), 3, 1) == ((1, 1), (1, 1))
 
     print('Test passed.')

@@ -32,15 +32,7 @@ from napl.sim.operation import mul_csg
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 from _gen_common import encode_value
 
-# The op's sizing config, read ONCE here, mirrored from the TEST (the source of
-# truth). mul_csg's only numeric size key is 'timestep'; WIDTH = ceil(log2(
-# timestep)) drives every RTL bus width (counter width, ROM value width, operand
-# bus = WIDTH+1) and the ROM depth (LEN = 2**WIDTH). WIDTH is the single source of
-# truth: it builds the model AND is emitted as `GEN_WIDTH so the testbench
-# overrides the RTL parameter with the same value -> sim and RTL cannot drift. The
-# num_seq ROM is generated below from a real model instance at this config, so the
-# RTL's $readmemb-loaded table is the model's actual sequence at the inherited
-# WIDTH.
+# WIDTH derives from the model timestep and sizes counters, operands, and the ROM.
 TIMESTEP = 1024  # mirrors tests/operation/test_mul_csg.py codec_config['timestep']
 WIDTH = math.ceil(math.log2(TIMESTEP))
 LEN = 2 ** WIDTH
@@ -49,9 +41,7 @@ OUT_PATH = os.path.join(OUT_DIR, "mul_csg.vec")
 PARAMS_PATH = os.path.join(OUT_DIR, "mul_csg_params.vh")
 ROM_PATH = os.path.join(OUT_DIR, "mul_csg_rom.hex")
 
-# test_mul_csg.py encodes input_0 with a bipolar sobol encoder at timestep=1024;
-# encode the in_0 spike stream with the same sobol family at len=LEN to stay
-# bit-identical with the streams the test feeds the op.
+# input_0 uses the same bipolar Sobol encoder as test_mul_csg.py.
 CODEC_IN0 = {"polarity": "bipolar", "timestep": LEN, "generator": "sobol", "dim": 1}
 
 CFG_UNI = {"polarity": "unipolar", "timestep": LEN, "generator": "sobol"}
@@ -153,26 +143,15 @@ def write_rom():
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # Emit the sizing-param header the testbench includes to override the RTL
-    # parameter. WIDTH is the single source of truth, mirrored from the test.
     with open(PARAMS_PATH, "w") as f:
         f.write(f"`define GEN_WIDTH {WIDTH}\n")
 
-    # Emit the generated num_seq ROM the RTL $readmemb-loads (follows WIDTH).
     rom_count = write_rom()
 
     lines = ["rst in_0 in_1u out_uni in_1b out_bi"]
 
-    # The RTL operand i_input_1 is the integer round(prob*LEN); the comparison is
-    # bit-exact with the model's float gt() only when prob is an exact multiple of
-    # 1/LEN. The same real operand drives BOTH polarity modules, so it must be
-    # exact in both interpretations: unipolar prob = value, bipolar prob =
-    # (value+1)/2. Picking value = j/512 (j in [0,512], value in [0,1]) makes both
-    # probs exact multiples of 1/1024. This is the same width-bit quantization the
-    # napl test feeds via gen_rand_tensor; off-grid operands are out of contract.
+    # Both polarity mappings must land on the 1/LEN fixed-point grid.
     operands = [0.0, 1.0 / 512, 0.25, 0.5, 320.0 / 512, 0.75, 511.0 / 512, 1.0]
-    # in_0 spike stream comes from the test's bipolar sobol encoder; pair each
-    # held operand with a representative in_0 value spanning the bipolar range.
     in0_values = [-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]
 
     for in1_value, in0_value in zip(operands, in0_values):
@@ -180,11 +159,7 @@ def main():
         out_uni, out_bi = run_seq(in0_stream, in1_value)
         emit_block(lines, in0_stream, in1_value, out_uni, out_bi)
 
-    # Stateful reset-equivalence: dirty the counters on a full pre-stream, then
-    # reset() mid-stream and replay a post-stream. The emitted block is the
-    # post-reset half opened with rst=1, so the testbench pulses i_rst_n there;
-    # it must match a fresh reset() model. Proves the RTL async reset reproduces
-    # reset() from a DIRTIED counter state, not just from power-on.
+    # rst marks the first cycle after resetting both sequence counters.
     pre_stream = encode_value(CODEC_IN0, 0.5)    # walks the counters off zero
     post_val = 320.0 / 512                          # representative operand
     post_stream = encode_value(CODEC_IN0, -0.25)   # representative in_0 stream

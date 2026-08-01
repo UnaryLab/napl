@@ -40,8 +40,7 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sqrt_traceiscb.vec"
 
-# test_sqrt_traceiscb.py codec_config: bipolar encoder, but the test draws
-# unipolar-range [0,1] operands (sqrt input is non-negative).
+# The sqrt test encodes nonnegative inputs with a bipolar Sobol stream.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -51,13 +50,11 @@ def main():
     uni.reset()
     bi.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
     stream = []
     for v in rep_values(CODEC["polarity"], value_range=(0.0, 1.0)):
         stream += encode_value(CODEC, v)
 
-    # Inject a mid-stream reset once the state is thoroughly dirtied, then keep
-    # streaming so the post-reset trajectory is also checked.
+    # The midpoint reset checks the post-reset trajectory.
     reset_at = len(stream) // 2
 
     VEC.parent.mkdir(parents=True, exist_ok=True)

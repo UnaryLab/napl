@@ -58,39 +58,46 @@ class exp_n1(napl_base):
         assert self.polarity == 'unipolar', \
             logger.error(f'Invalid polarity: <{self.polarity}>; exp_n1 supports unipolar only.')
 
+        #: Requested stream length used to size the periodic coefficient sequences.
         self.timestep = config['timestep']
         assert self.timestep > 0, \
             logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two coefficient sequences.
         self.width = math.ceil(math.log2(self.timestep))
+        #: Period of each coefficient spike sequence.
         self.len = 2**self.width
         dim = config.get('dim', 1)
 
-        # combinational NAND chain input->output; the internal DFF taps only
-        # decorrelate the reused input stream, they are not pipeline stages
+        # DFF taps decorrelate the combinational NAND path without adding output latency.
+        #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
 
-        # series constants quantized to width-bit sources (round), matching the
-        # RTL constant register and UnarySim's SourceGen bit-for-bit
+        # Rounded width-bit constants match the RTL registers and UnarySim SourceGen.
         const_q = torch.tensor([0.2000, 0.2500, 0.3333, 0.5000]).mul(self.len).round().div(self.len)
-        # one decorrelated sequence per constant (dims dim..dim+3); the streams
-        # are periodic in self.len, so precompute the whole (len, 4) spike table
+        # Consecutive dimensions provide four decorrelated sequences of period self.len.
         seqs = torch.stack(
             [gen_num_seq({'width': self.width, 'generator': config['generator'], 'dim': dim + i})
              for i in range(4)], dim=1)
+        #: Four periodic constant spike streams for the series coefficients.
+        self.const_spike: torch.Tensor
         self.register_buffer(
             'const_spike',
             torch.gt(const_q.unsqueeze(0).type(self.ntype), seqs).type(torch.int8),
         )
-        # host-side copy of the constant bits: spikes are {0,1}, so a 0 bit
-        # collapses its whole NAND stage to the scalar 1 and a 1 bit makes the
-        # AND an identity, skipping the per-timestep tensor & with a constant
         self._const_bits = self.const_spike.tolist()
 
-        # input delay taps d1..d4; scalar zeros broadcast to the input shape on
-        # the first forward()
+        # Scalar delay taps broadcast to the input shape on first use.
+        #: Most recent input spike tensor in the four-stage delay line.
+        self.input_d1: torch.Tensor
         self.register_buffer('input_d1', torch.zeros(1).type(self.stype))
+        #: Input spike tensor delayed by two timesteps.
+        self.input_d2: torch.Tensor
         self.register_buffer('input_d2', torch.zeros(1).type(self.stype))
+        #: Input spike tensor delayed by three timesteps.
+        self.input_d3: torch.Tensor
         self.register_buffer('input_d3', torch.zeros(1).type(self.stype))
+        #: Input spike tensor delayed by four timesteps.
+        self.input_d4: torch.Tensor
         self.register_buffer('input_d4', torch.zeros(1).type(self.stype))
 
 
@@ -123,8 +130,7 @@ class exp_n1(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # input is a spike tensor
-        # n_k is a tensor iff its constant bit is 1, the scalar 1 otherwise
+        # A zero coefficient bit represents the corresponding NAND output as scalar 1.
         c0, c1, c2, c3 = self._const_bits[(self.timestep_cur - 1) % self.len]
         n_1 = 1 - input.type(torch.int8) if c0 else 1
         if c1:
@@ -145,9 +151,9 @@ class exp_n1(napl_base):
         d4 = self.input_d4.type(torch.int8)
         output = 1 - (n_4 & d4) if c3 else 1 - d4
         if output.shape != input.shape:
-            # d4 is still the scalar init tap: keep the input-shaped contract
+            # The scalar initial tap expands to the input shape.
             output = output.expand(input.shape)
-        # shift the delay line oldest-first
+        # Shift the delay line oldest first.
         self.input_d4.resize_as_(self.input_d3).copy_(self.input_d3.detach())
         self.input_d3.resize_as_(self.input_d2).copy_(self.input_d2.detach())
         self.input_d2.resize_as_(self.input_d1).copy_(self.input_d1.detach())

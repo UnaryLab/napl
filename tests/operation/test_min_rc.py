@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_min_rc(napl_base):
     def __init__(self, codec_config1, codec_config2, codec_config3, min_rc_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder0 = decoder(codec_config1)
@@ -26,7 +25,6 @@ class napl_min_rc(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike0 = self.encoder0(input_0)
         i_spike1 = self.encoder1(input_1)
         o_spike0, o_spike1 = self.min_rc(i_spike0, i_spike1)
@@ -61,7 +59,6 @@ def _kernel_specific_checks():
     }
     min_rc_config=codec_config1
 
-    # Generate random inputs based on polarity
     input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
     input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
 

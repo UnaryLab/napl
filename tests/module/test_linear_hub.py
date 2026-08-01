@@ -4,7 +4,27 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.module import linear_hub
+from napl.utils import pow2_rshift, rshift_offset
 from napl.utils._shared_test import devices, single_shot_suite, sync
+
+
+def test_linear_hub_truncates_scaled_magnitudes():
+    input = torch.linspace(-0.49, 0.47, 18).reshape(3, 6)
+    weight = torch.linspace(-0.46, 0.49, 24).reshape(4, 6)
+    bias = torch.tensor([0.025, -0.04, 0.075, -0.09])
+    module = linear_hub(
+        6, 4, weight_ext=weight, bias_ext=bias,
+        config={'widthi': 4, 'rngi': 'sobol', 'quantilei': 1,
+                'widthw': 4, 'rngw': 'sobol', 'quantilew': 1,
+                'cycle': 8, 'rounding': 'round'},
+    )
+    rshift_i, rshift_w, rshift_o = rshift_offset(input, weight, 3, 3, 'round')
+    input_index = pow2_rshift(input, rshift_i).abs().long().clamp(0, 7).unsqueeze(1)
+    weight_index = pow2_rshift(weight, rshift_w).abs().long().clamp(0, 7).unsqueeze(0)
+    products = module.mapcbsg[input_index, weight_index] * torch.sign(weight).unsqueeze(0)
+    reference = torch.sign(input).unsqueeze(1) @ products.transpose(1, 2)
+    reference = pow2_rshift(reference, rshift_o).squeeze(1) + bias
+    assert torch.equal(module(input), reference)
 
 
 def _kernel_specific_checks():
@@ -123,3 +143,4 @@ def test_linear_hub():
 
 if __name__ == '__main__':
     test_linear_hub()
+    test_linear_hub_truncates_scaled_magnitudes()

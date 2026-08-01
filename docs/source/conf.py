@@ -30,7 +30,7 @@ html_title = 'NAPL documentation'
 html_static_path = ['_static']
 html_css_files = ['napl.css']
 html_theme_options = {
-    'description': 'Neural Adaptive Programming Language',
+    'description': 'Neuro-Adaptive Programming Language',
     'github_repo': 'napl',
     'github_user': 'UnaryLab',
 }

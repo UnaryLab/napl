@@ -1,18 +1,9 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-// max_rc: streaming max + argmax of two rate-coded spike streams via sync_skewed.
-// One forward() timestep == one posedge i_clk. Outputs are combinational from the
-// current inputs and registered state (sync counter + argmax dff); the registers
-// hold next-state and feed back, so pp_delay = 0.
-//
-// State (post-reset()):
-//   cnt = 0   (sync_skewed width-2 saturating counter, range 0..3)
-//   dff = 0   (argmax: 0 => input_0 is max, 1 => input_1 is max)
-//
-// Matches napl.sim.operation.max_rc forward(): o_max uses the OLD dff, o_arg is the
-// NEW (post-update) dff, both available the same cycle.
-// Verify from src/napl/imp with: make test OP=max_rc
+// Rate-coded max_rc equivalent with a width-2 sync_skewed counter.
+// o_max uses the pre-update arg register; o_arg uses its next value. Both are
+// combinational (pp_delay=0). Active-low reset clears arg and cnt.
 module max_rc (
     input  wire i_clk,
     input  wire i_rst_n,
@@ -26,7 +17,7 @@ module max_rc (
     reg [1:0] cnt;
     reg       dff;
 
-    // ---- sync_skewed(input_1=i_input_0, input_2=i_input_1) -> sync_0, i_input_1 ----
+    // sync_skewed(input_1=i_input_0, input_2=i_input_1).
     wire input_01_10 = i_input_0 ^ i_input_1;              // (i_input_0 + i_input_1) == 1
     wire cnt_not_min = (cnt != 2'd0);
     wire cnt_not_max = (cnt != CNT_MAX);
@@ -53,13 +44,12 @@ module max_rc (
         (cnt_sum > $signed({2'b00, CNT_MAX})) ? CNT_MAX :
                                       cnt_sum[1:0];
 
-    // ---- max_rc logic ----
     wire d_enable  = sync_0 ^ sync_1;
     wire and_gate  = sync_1 & d_enable;
     wire dff_next  = d_enable ? and_gate : dff;
 
-    assign o_max = dff ? i_input_1 : i_input_0;   // OLD dff
-    assign o_arg = dff_next;                // NEW dff (post-update)
+    assign o_max = dff ? i_input_1 : i_input_0;   // pre-update dff
+    assign o_arg = dff_next;                       // post-update dff
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

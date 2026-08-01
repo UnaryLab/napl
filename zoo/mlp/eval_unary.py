@@ -24,13 +24,13 @@ count, which is the progressive-precision readout: it rises from chance toward t
 floating-point baseline as the streamed bit count grows.
 
 Decorrelation: operands that must be independent are on distinct Sobol dimensions. Each layer
-encodes its input on one dim and its weight/bias on the next two; the three layers use
-disjoint dim ranges (1/2/3, then 4/5/6, then 7/8/9).
+uses one dimension for its input and one for its weight/bias encoder; the three layers use
+disjoint dimension pairs (1/2, 3/4, and 5/6).
 
 Run (after train_fp.py):
-    conda run -n napl python examples/mlp/eval_unary.py
-    conda run -n napl python examples/mlp/eval_unary.py --device cpu --samples 64
-    conda run -n napl python examples/mlp/eval_unary.py --sanity
+    conda run -n napl python zoo/mlp/eval_unary.py
+    conda run -n napl python zoo/mlp/eval_unary.py --device cpu --samples 64
+    conda run -n napl python zoo/mlp/eval_unary.py --sanity
 """
 
 import argparse
@@ -42,13 +42,12 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from napl.sim.module import encoder
-from napl.sim.module.linear import linear_pc
+from napl import encoder, linear_pc, relu_hub
 
 from model import MLP3_clamp_eval
 
 BITWIDTH = 8
-TIMESTEP = 2 ** BITWIDTH          # 256 cycles
+TIMESTEP = 2 ** BITWIDTH
 POLARITY = 'bipolar'
 GENERATOR = 'sobol'
 
@@ -93,7 +92,7 @@ def stream_layer(value_in, weight, bias, in_dim, w_dim, timestep, device, record
     (the progressive-precision estimates), used to build the final-layer accuracy curve.
     """
     out_features, in_features = weight.shape
-    entry = in_features + 1   # +1 for bias
+    entry = in_features + 1  # Include the bias term.
     enc = encoder({'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': in_dim}).to(device)
     fc = linear_pc(weight.clone(), bias.clone(),
                        {'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': w_dim}).to(device)
@@ -102,7 +101,7 @@ def stream_layer(value_in, weight, bias, in_dim, w_dim, timestep, device, record
     cycle_vals = [] if record_cycles else None
     for k in range(1, timestep + 1):
         acc = acc + fc(enc(value_in))
-        # bipolar inner product from the running count: 2*mean - entry (per linear_pc)
+        # Decode the bipolar inner product from the running count.
         v = 2.0 * (acc / k) - entry
         if record_cycles:
             cycle_vals.append(v.clone())
@@ -116,15 +115,16 @@ def run_unary(model, images, labels, timestep, device, sync):
     the final (fc3) layer's progressive-precision prediction.
     """
     image_value = images.view(-1, model.in_size).clamp(-1, 1).to(device)
-    W1, b1 = model.fc1.weight.data, model.fc1.bias.data
-    W2, b2 = model.fc2.weight.data, model.fc2.bias.data
-    W3, b3 = model.fc3.weight.data, model.fc3.bias.data
+    W1, b1 = model.fc1.weight.detach(), model.fc1.bias.detach()
+    W2, b2 = model.fc2.weight.detach(), model.fc2.bias.detach()
+    W3, b3 = model.fc3.weight.detach(), model.fc3.bias.detach()
+    activation = relu_hub({'scale': 1.0}).to(device)
 
     with torch.no_grad():
         v1 = stream_layer(image_value, W1, b1, 1, 2, timestep, device)
-        a1 = torch.relu(v1.clamp(-1, 1))
+        a1 = activation(v1)
         v2 = stream_layer(a1, W2, b2, 3, 4, timestep, device)
-        a2 = torch.relu(v2.clamp(-1, 1))
+        a2 = activation(v2)
         _, c3 = stream_layer(a2, W3, b3, 5, 6, timestep, device, record_cycles=True)
 
     if sync:

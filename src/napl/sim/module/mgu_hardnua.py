@@ -4,18 +4,17 @@ import torch.nn.functional as F
 from napl.sim.base import napl_base
 from napl.sim.module.rnn import _init_mgu_params
 
-# NB: operation primitives are imported lazily inside __init__ (not at module top);
-# see napl.sim.module.rnn for the module<->operation import-cycle rationale.
+# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
 class mgu_hardnua(napl_base):
     """Apply a trainable MGU without unary-range clamps around linear stages.
 
     Use this single-shot cell to match the non-unary-aware UnarySim variant or to
-    study the effect of removing the range clamps from :class:`mgu_hard`. It is mgu_hard without the hard-tanh clamps on the
-    forget-gate linear input and on the output, so intermediates and hy may leave the
-    legal unary range. Single-shot; trainable.
-    Port of UnarySim ``HardMGUCellNUA``.
+    study the effect of removing the range clamps from :class:`mgu_hard`. The
+    forget-gate linear input and output omit the hard-tanh clamps, so
+    intermediate values and ``hy`` may leave the legal unary range. The cell is
+    single-shot and trainable.
 
     .. rubric:: Example
 
@@ -27,6 +26,7 @@ class mgu_hardnua(napl_base):
         cell = mgu_hardnua(2, 3)
         hidden = cell(torch.zeros(1, 2))
     """
+    #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the non-unary-aware cell and initialize its parameters.
@@ -41,10 +41,18 @@ class mgu_hardnua(napl_base):
                 defaults to ``None``.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether the forget and new gates include trainable biases.
+        self.bias = bias
+        #: Whether the forget and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub
+        #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
@@ -75,5 +83,4 @@ class mgu_hardnua(napl_base):
         fg = self.fg_sigmoid(F.linear(torch.cat((hx, input), 1), self.weight_f, self.bias_f))
         fg_hx = fg * hx
         ng = self.ng_tanh(F.linear(torch.cat((fg_hx, input), 1), self.weight_n, self.bias_n))
-        # hy = ng - fg*ng + fg*hx, unclamped (the NUA difference vs mgu_hard)
         return ng - fg * ng + fg_hx

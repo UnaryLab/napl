@@ -48,19 +48,25 @@ class sqrt_emit(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: Hardware latency and timing metadata for the composed square-root path.
         self.hw = hw_params(pp_delay=0)
 
+        #: Previous emission bit fed back into the next square-root step.
+        self.emit_out: torch.Tensor
         self.register_buffer('emit_out', torch.zeros(1, dtype=self.stype))
 
-        # a non-scaled add
+        #: Unipolar saturating adder used by the emission update.
         self.nsadd = add_any({'polarity': 'unipolar', 'scale': 1, 'width': 3})
+        #: Fixed delay length of the internal emission shift register.
         self.depth = 2
+        #: Delay line used by the unipolar emission path.
         self.shiftreg = shiftreg({'depth': self.depth})
 
         if self.polarity == 'bipolar':
-            # fix width to optimal 2
+            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
             self.bi2uni = bi2uni({'width': 2})
 
+        #: Whether the next call must expand :attr:`emit_out` to the input shape.
         self.is_first_call = True
 
 
@@ -98,11 +104,7 @@ class sqrt_emit(napl_base):
             self.emit_out.resize_as_(input).zero_()
             self.is_first_call = False
 
-        # the 2-element reduction nsadd would do over a [2, N] stack is just the
-        # elementwise int8 sum (both operands {0,1}, max 2, no overflow); compute it
-        # directly and feed nsadd pre-reduced (dim=None) to drop the per-timestep
-        # torch.stack allocation. nsadd re-casts to ntype, so the int8 partial is
-        # bit-identical to torch.sum(stack, dtype=ntype).
+        # Two 0/1 int8 operands sum exactly; nsadd casts the partial sum to ntype.
         in_sum = input.type(torch.int8) + self.emit_out
         output = self.nsadd(in_sum, dim=None)
         if self.polarity == 'bipolar':

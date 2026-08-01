@@ -21,6 +21,7 @@ class tanh_hub(napl_base):
         operation = tanh_hub()
         output = operation(torch.tensor([-2.0, 0.0, 2.0]))
     """
+    #: Marks this activation as a single-shot tensor operation.
     streaming = False
     def __init__(
         self,
@@ -36,6 +37,7 @@ class tanh_hub(napl_base):
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
         super().__init__(config, [])
+        #: Modeled scalar latency of the single-shot hard tanh.
         self.delay = 0
 
     def _reset(self):

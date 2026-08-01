@@ -12,3 +12,5 @@ Base API
    timing
    hw_params
    napl_base
+   napl_sim_timesteps
+   napl_sim_timesteps_func

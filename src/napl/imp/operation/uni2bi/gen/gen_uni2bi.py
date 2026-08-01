@@ -11,8 +11,8 @@ uni2bi is stateful (a signed accumulator), so a single input stream is driven
 through the model cycle by cycle from reset() and the per-cycle (input, output)
 pair is recorded. The input spikes are the SAME ones tests/operation/test_uni2bi.py
 sends the op: representative operand values encoded by the test's encoder config
-(codec_config1: unipolar / timestep=256 / sobol / dim=1), concatenated into one
-continuous stream. A MID-STREAM reset() is injected partway through to prove the
+(codec_config1: unipolar / timestep=256 / sobol / dim=1). Each scalar stream is
+an independent lane, so reset() separates the serialized streams and proves the
 RTL's active-low reset reproduces the model's reset() from a dirtied accumulator
 state, not just from t=0.
 
@@ -37,14 +37,11 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "uni2bi.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "uni2bi_params.vh"
 
-# test_uni2bi.py uni2bi_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_uni2bi.py.
 UNI2BI = {"width": 3}
-# test_uni2bi.py codec_config1: the encoder feeding uni2bi.
 CODEC = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
-# Special sentinel emitted to drive a mid-stream reset (asserts active-low reset
-# from a dirtied accumulator). It carries no (in,out) vector; the tb sees the
-# "R" marker, pulses i_rst_n low, and the model calls reset().
+# R is outside the spike alphabet and requests a matching model/RTL reset.
 RESET_MARK = "R"
 
 
@@ -58,24 +55,30 @@ def main():
     model.reset()
 
     segments = build_segments()
-    # inject a reset halfway through the segment list to dirty-then-reset the acc.
-    reset_after = len(segments) // 2
-
     VEC.parent.mkdir(parents=True, exist_ok=True)
     PARAMS.write_text(f"`define GEN_WIDTH {UNI2BI['width']}\n")
 
     rows = 0
     with VEC.open("w") as f:
+        bit = segments[0][0]
+        i_input = torch.tensor([bit], dtype=model.stype)
+        o_out = int(model(i_input).item())
+        f.write(f"{bit} {o_out}\n")
+        rows += 1
+        assert model.accumulator.ne(0).any()
+        model.reset()
+        f.write(f"{RESET_MARK}\n")
+
         for seg_idx, seg in enumerate(segments):
-            if seg_idx == reset_after:
+            if seg_idx:
                 model.reset()
                 f.write(f"{RESET_MARK}\n")
             for bit in seg:
-                i_input = torch.tensor(bit, dtype=model.stype)
+                i_input = torch.tensor([bit], dtype=model.stype)
                 o_out = int(model(i_input).item())
                 f.write(f"{bit} {o_out}\n")
                 rows += 1
-    print(f"wrote {VEC} ({rows} vectors, mid-stream reset) "
+    print(f"wrote {VEC} ({rows} vectors, {len(segments)} mid-stream resets) "
           f"and {PARAMS} (GEN_WIDTH={UNI2BI['width']})")
 
 

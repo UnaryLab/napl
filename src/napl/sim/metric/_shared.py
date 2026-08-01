@@ -22,6 +22,27 @@ def analyze(
         value=None,
         timestep=None,
     ) -> Analysis:
+    """
+    Compute per-element magnitudes and aggregate statistics for a metric tensor.
+
+    Args:
+        input: Tensor whose values are summarized.
+        verbose: Set to ``True`` to log the summary. The default is ``False``.
+        report: Label used in the verbose report heading. The default is
+            ``None``.
+        value: Label used for values in the verbose report. The default is
+            ``None``.
+        timestep: Optional timestep count shown in the verbose report. The
+            default is ``None``.
+
+    Returns:
+        An :class:`Analysis` containing the per-element absolute values, their
+        minimum and maximum, the signed mean, mean absolute value, root mean
+        square, and the flat index of the largest absolute value.
+
+    The function does not modify ``input``. When ``verbose`` is true, it logs
+    the aggregate values without changing the returned analysis.
+    """
     absolute = input.abs()
     absolute_min, absolute_max = torch.aminmax(absolute)
     result = Analysis(

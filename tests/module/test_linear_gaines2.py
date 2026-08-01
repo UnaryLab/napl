@@ -42,7 +42,7 @@ def _kernel_specific_checks():
     torch.manual_seed(0)
     timestep = 1024
     in_features, out_features = 16, 8
-    bound = 1.0 / (timestep ** 0.5)  # SC bound ~1/sqrt(N)
+    bound = 1.0 / (timestep ** 0.5)  # SC error scales as 1/sqrt(N).
 
     for device in devices():
         for polarity in ['unipolar', 'bipolar']:
@@ -53,10 +53,10 @@ def _kernel_specific_checks():
                     bias = gen_rand_tensor(polarity, shape=(out_features,), width=8).type(global_config.ntype).to(device) if has_bias else None
                     input_x = gen_rand_tensor(polarity, shape=(in_features,), width=8).type(global_config.ntype).to(device)
                     if not scaled:
-                        # keep Wx+b inside unary range for the non-scaled output stage
+                        # Keep Wx+b within the non-scaled unary output range.
                         input_x = input_x / in_features
 
-                    # input on a sobol dim beyond the weight columns (1..in) and bias (in+1)
+                    # Use an input Sobol dimension beyond all weight and bias dimensions.
                     inst = napl_linear_gaines2(
                         {'polarity': polarity, 'timestep': timestep, 'generator': 'sobol', 'dim': in_features + 2},
                         {'polarity': polarity, 'timestep': timestep, 'generator': 'sobol', 'scaled': scaled},
@@ -68,7 +68,7 @@ def _kernel_specific_checks():
                     ref = ref / inst.lin.entry if scaled else ref.clamp(lo, 1.0)
                     err = (val - ref).abs()
                     rmse = torch.sqrt(err.pow(2).mean()).item()
-                    tol = bound * 2 if scaled else bound * 4  # non-scaled Gaines converges slower
+                    tol = bound * 2 if scaled else bound * 4  # Non-scaled Gaines converges slower.
                     assert err.max().item() < tol, \
                         f'{device}/{polarity}/scaled={scaled}/bias={has_bias}: max_err={err.max().item()} >= {tol}'
                     assert inst.lin.timestep_cur == timestep
@@ -76,8 +76,7 @@ def _kernel_specific_checks():
                           f'rmse={rmse:.5f} max_err={err.max().item():.5f}')
                     inst.reset()
 
-    # known-answer corner: unipolar all-ones input & weight, scaled -> emits a spike
-    # every timestep (count == entry each step), decoded value exactly 1
+    # All-ones unipolar operands make the scaled output emit 1 every timestep.
     for device in devices():
         w1 = torch.ones(out_features, in_features).type(global_config.ntype).to(device)
         x1 = torch.ones(in_features).type(global_config.ntype).to(device)

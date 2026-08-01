@@ -1,19 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// sqrt_tracejkff_unipolar -- unipolar bit-inserting square root via JK-FF trace.
-//
-// RTL counterpart of napl.sim.operation.sqrt_tracejkff (forward(), unipolar branch)
-// in src/napl/sim/operation/sqrt_tracejkff.py. Per timestep t (one posedge i_clk):
-//
-//   output = trace | i_input           // trace is the JK-FF state from cycle t-1
-//   trace' = (~trace) & output      // JK update: J=output, K=1 => Q' = ~Q & J
-//
-// The output is combinational in i_input given the current trace register, so the
-// input->output latency is 0 (pp_delay = 0). Only the trace register is clocked.
-//
-// Reset (active-low i_rst_n) maps to the Python reset(): jkff.q = 0.
-//==============================================================================
+// Unipolar sqrt_tracejkff equivalent: output=trace|input and
+// trace_next=(~trace)&output. Output is combinational (pp_delay=0).
+// Active-low reset clears trace.
 module sqrt_tracejkff_unipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset() (trace=0)

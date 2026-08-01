@@ -1,29 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_WIDTH is emitted by gen/gen_uni2bi.py from the op config (= the test's
-// uni2bi_config), so the DUT parameter is inherited from the Python model.
-// iverilog resolves this include relative to the compile cwd (imp/).
+// Generated WIDTH mirrors the Python model configuration.
 `include "uni2bi/vec/uni2bi_params.vh"
-//==============================================================================
-// Self-checking testbench for uni2bi.
-//
-// Reads golden vectors produced by gen/gen_uni2bi.py (from the napl Python
-// model) and replays them cycle by cycle. uni2bi is a Mealy machine: o_out is
-// combinational in i_input and the accumulator, which advances on each posedge
-// i_clk. So per cycle we drive i_input, let o_out settle, check it, then clock
-// once to advance the accumulator. i_rst_n is pulsed low first to start from
-// the model's post-reset() state (acc = 0).
-//
-// A bare "R" line in the vector file marks a MID-STREAM reset: the generator
-// called model.reset() there, so the tb pulses i_rst_n low to reproduce it from
-// a dirtied accumulator, proving reset equivalence beyond t=0.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line
-// to decide the exit status.
-//
-// Run (from src/napl/imp/):
-//   make test OP=uni2bi
-//==============================================================================
+// Python golden output is checked before each posedge updates acc. R requests
+// active-low reset before replay continues.
+// Co-sim: make test OP=uni2bi
 module uni2bi_tb;
     reg  i_clk;
     reg  i_rst_n;
@@ -41,7 +22,7 @@ module uni2bi_tb;
     reg [127:0] tok;
     reg in_bit, exp_out;
 
-    // Pulse i_rst_n low across a clock edge to clear acc (Python reset()).
+    // Reset clears acc across a clock edge.
     task do_reset;
         begin
             i_rst_n = 1'b0;
@@ -64,27 +45,23 @@ module uni2bi_tb;
             $finish;
         end
 
-        // Start from the model's post-reset() state (acc = 0).
         do_reset;
 
         while (!$feof(fd)) begin
-            // Each line is either "R" (mid-stream reset) or "<in> <out>".
             code = $fscanf(fd, "%s", tok);
             if (code == 1) begin
                 if (tok == "R") begin
                     do_reset;
                 end else begin
-                    // tok holds the input bit; read the expected output next.
                     in_bit  = (tok == "1");
                     code    = $fscanf(fd, "%b", exp_out);
                     i_input    = in_bit;
-                    #1;                 // let the combinational output settle
+                    #1;
                     n = n + 1;
                     if (o_out !== exp_out) begin
                         $display("FAIL cyc=%0d i_input=%b : got %b exp %b", n, in_bit, o_out, exp_out);
                         fails = fails + 1;
                     end
-                    // advance the accumulator one step.
                     #1 i_clk = 1'b1; #1 i_clk = 1'b0; #1;
                 end
             end

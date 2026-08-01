@@ -35,8 +35,8 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
     `relu_hub`/`tanh_hub` (float domain, trainable) == UnarySim `model_fp`.
   - `Cascade_CNN_RNN_HUB`: `conv_hub` / `linear_hub` + `mgu_hub` +
     `relu_hub`/`tanh_hub` (hybrid unary-binary inference) == UnarySim `model_hub`.
-  - `build_hub_from_fp(fp_model, width, rng)`: builds a HUB model that **shares
-    the FP model's weights** (conv/linear `nn.weight` -> HUB `weight_ext`;
+  - `build_hub_from_fp(fp_model, width, rng)`: builds a HUB model initialized from
+    the FP model's weights (conv/linear `nn.weight` -> HUB `weight_ext`;
     `mgu_hard.weight_f/weight_n` -> `mgu_hub.weight_f/weight_n`), so the two are
     directly comparable.
 - **`run_fp.py`** - FP forward on EEG-shaped random input on CPU and MPS, plus a
@@ -53,7 +53,6 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
 | `ScaleReLU`         | `relu_hub`                   |
 | `nn.Hardtanh`       | `tanh_hub`                   |
 | `truncated_normal`  | `napl.utils.truncated_normal`|
-| `ProgError`/RMSE    | `napl.sim.metric.accuracy`         |
 
 `mgu_hub` internally encodes its inputs, streams the `mgu` cell over
 `2**width` cycles, and decodes via the progressive-error metric.
@@ -83,9 +82,8 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
 > `KMP_DUPLICATE_LIB_OK=TRUE` (benign on macOS).
 
 ```sh
-cd examples/ubrain
-conda run -n napl python run_fp.py
-conda run -n napl python eval_hub_fidelity.py
+conda run -n napl python zoo/ubrain/run_fp.py
+conda run -n napl python zoo/ubrain/eval_hub_fidelity.py
 ```
 
 ## Real numbers obtained

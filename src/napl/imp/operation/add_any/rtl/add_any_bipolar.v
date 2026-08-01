@@ -1,41 +1,19 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// add_any_bipolar -- bipolar any-scale accumulating adder (stateful).
-//
-// RTL counterpart of napl.sim.operation.add_any (src/napl/sim/operation/add_any.py), bipolar
-// variant. Per timestep the model does:
-//   acc += (partial - offset); clamp(acc, acc_min, acc_max);
-//   out  = (acc >= scale);     acc -= scale*out
-// where partial is the reduced input partial sum (the model's dim=None path),
-// offset = (entry - scale)/2, acc_max = 2^(width-1)-1, acc_min = -2^(width-1).
-//
-// Because the offset (entry-scale)/2 can be a half-integer, the accumulator is
-// kept at 2x scale (A = 2*acc, always integer):
-//   A += 2*partial - (ENTRY-SCALE);  clamp(A, -2^WIDTH, 2^WIDTH-2);
-//   o_out = (A >= 2*SCALE);          A -= 2*SCALE*o_out
-//   TWO_OFS = ENTRY-SCALE,  TWO_SCL = 2*SCALE,  A in [ACC_LO,ACC_HI] = [-2^WIDTH, 2^WIDTH-2].
-//
-// SCALE, WIDTH, ENTRY are Verilog parameters inherited from the Python model's
-// config (scale/width and the reduction dim ENTRY): the testbench overrides them
-// with `GEN_SCALE / `GEN_WIDTH / `GEN_ENTRY (emitted by gen/gen_add_any.py from
-// the same config test_add_any.py uses), so the verified hardware always tracks
-// the simulator. The defaults here are only a standalone-elaboration fallback.
-// Every bus width and magic constant below is derived from these parameters.
-//
-// Output is combinational from the current accumulator state (same cycle as the
-// input), so pp_delay = 0. One Python forward() timestep == one posedge i_clk;
-// active-low i_rst_n reproduces reset() (accumulator = 0).
-//==============================================================================
+// Bipolar napl.sim.operation.add_any with an ENTRY-lane spike input.
+// A adds 2*partial-(ENTRY-SCALE), clamps to [-2^WIDTH, 2^WIDTH-2], fires at
+// values above 2*SCALE, and subtracts 2*SCALE on a fire. Parameters mirror Python.
+// Output is combinational (pp_delay=0); each posedge advances one timestep.
+// Active-low reset clears the accumulator to match reset().
 module add_any_bipolar #(
-    parameter integer SCALE = 128,   // inherited from config['scale']; tb overrides via `GEN_SCALE
+    parameter integer SCALE = 8,     // inherited from config['scale']; tb overrides via `GEN_SCALE
     parameter integer WIDTH = 20,    // inherited from config['width']; tb overrides via `GEN_WIDTH
-    parameter integer ENTRY = 128    // # addends (reduction dim);   tb overrides via `GEN_ENTRY
+    parameter integer ENTRY = 8      // # addends (reduction dim);   tb overrides via `GEN_ENTRY
 ) (
     input  wire                  i_clk,
     input  wire                  i_rst_n,
-    input  wire [IN_W-1:0]       i_input,     // per-timestep partial sum, range [0, ENTRY]
-    output wire                  o_out     // bipolar rate-coded output spike
+    input  wire [ENTRY-1:0]      i_input,
+    output wire                  o_out
 );
     // ---- ceil(log2(x)) constant function (Verilog-2001) ----
     function integer clog2;
@@ -54,8 +32,7 @@ module add_any_bipolar #(
     localparam integer ACC_HI  = (2 ** WIDTH) - 2;   // 2*(2^(WIDTH-1)-1)
     localparam integer ACC_LO  = -(2 ** WIDTH);      // 2*(-2^(WIDTH-1))
 
-    // input port holds partial in [0, ENTRY] (unsigned).
-    localparam integer IN_W  = clog2(ENTRY + 1);
+    localparam integer COUNT_W = clog2(ENTRY + 1);
     // A = 2*acc; signed reg of width WIDTH+1 covers [-2^WIDTH, 2^WIDTH-1] ⊇ state.
     localparam integer ACC_W = WIDTH + 1;
     // pre-clamp sum |value| <= 2^WIDTH + 2*ENTRY + |TWO_OFS| <= 2^WIDTH + 3*ENTRY;
@@ -63,6 +40,17 @@ module add_any_bipolar #(
     localparam integer SUM_W = clog2((2 ** WIDTH) + 3 * ENTRY + 1) + 1;
 
     reg signed [ACC_W-1:0] acc;
+
+    wire [COUNT_W-1:0] partial_count [0:ENTRY];
+    assign partial_count[0] = {COUNT_W{1'b0}};
+
+    genvar lane;
+    generate
+        for (lane = 0; lane < ENTRY; lane = lane + 1) begin : g_count
+            assign partial_count[lane+1] = partial_count[lane]
+                + {{(COUNT_W-1){1'b0}}, i_input[lane]};
+        end
+    endgenerate
 
     // Signed constants sized to the datapath so every compare/add is signed-vs-signed
     // (slice the 32-bit integer localparam down to SUM_W, sign preserved).
@@ -72,13 +60,14 @@ module add_any_bipolar #(
     wire signed [SUM_W-1:0] s_ofs = TWO_OFS[SUM_W-1:0];
 
     // ---- combinational: this cycle's output and next-cycle accumulator state ----
-    // 2*partial as a signed value (i_input in [0,ENTRY]): zero-extend to SUM_W, then <<1.
-    wire signed [SUM_W-1:0] in_ext = $signed({{(SUM_W-IN_W){1'b0}}, i_input});
+    // 2*partial as a signed value: popcount the spike lanes, then zero-extend.
+    wire signed [SUM_W-1:0] in_ext =
+        $signed({{(SUM_W-COUNT_W){1'b0}}, partial_count[ENTRY]});
     wire signed [SUM_W-1:0] two_p  = in_ext <<< 1;
     wire signed [SUM_W-1:0] sum   = $signed(acc) + two_p - s_ofs;   // + 2*partial - 2*offset
     wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi :
                                     (sum < s_lo) ? s_lo : sum;
-    wire                    fire  = (clmp >= s_scl);
+    wire                    fire  = (clmp > s_scl);
     // clmp is in [ACC_LO,ACC_HI] so it fits ACC_W signed; nxt = fired? clmp-TWO_SCL : clmp
     // stays within [ACC_LO, ACC_HI], also ACC_W signed.
     wire signed [ACC_W-1:0] nxt   = fire ? (clmp[ACC_W-1:0] - s_scl[ACC_W-1:0])

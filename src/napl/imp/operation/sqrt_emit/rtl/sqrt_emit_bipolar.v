@@ -1,32 +1,9 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// sqrt_emit_bipolar -- bipolar opportunistic-bit-inserting square root.
-//
-// RTL counterpart of napl.sim.operation.sqrt_emit (forward(), bipolar branch) in
-// src/napl/sim/operation/sqrt_emit.py. The nsadd accumulator path and the o_out compute
-// are IDENTICAL to the unipolar variant (nsadd is fixed unipolar in __init__),
-// only the emit feedback differs: bipolar scrambles by AND-ing with bi2uni(out)
-// rather than out directly. Per timestep t (one posedge i_clk):
-//
-//   in_sum  = i_input + emit_out                 // emit_out is feedback from t-1
-//   acc_add = clamp(acc + in_sum, -4, 3)      // nsadd: unipolar, scale=1, w=3
-//   o_out   = (acc_add >= 1)
-//   acc'    = acc_add - o_out
-//
-//   scrambled = sr[0]                          // depth-2 shiftreg, reads oldest
-//   sr'       = { ~o_out, sr[1] }              // push (1-output) at the tail
-//   // bi2uni (width 2): acc_b' = clamp(acc_b + 2*o_out - 1, -2, 1)
-//   out_uni   = (acc_b_add >= 1)
-//   acc_b'    = acc_b_add - out_uni
-//   emit_out' = scrambled & out_uni            // bipolar emit
-//
-// o_out is combinational in i_input given the cycle-t registers, so the input->
-// output latency is 0 (pp_delay = 0).
-//
-// Reset (active-low i_rst_n) maps to the Python reset():
-//   emit_out = 0, acc = 0, bi2uni acc_b = 0, shiftreg sr[i] = i % 2.
-//==============================================================================
+// Bipolar sqrt_emit equivalent. The unipolar accumulator path uses feedback
+// from a depth-2 alternating shift register gated by bi2uni(o_out).
+// Output is combinational (pp_delay=0); state advances each posedge.
+// Active-low reset clears emit/accumulators and loads sr[i]=i%2.
 module sqrt_emit_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

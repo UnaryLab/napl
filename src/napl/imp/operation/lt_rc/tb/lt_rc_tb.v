@@ -1,24 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for lt_rc.
-//
-// Replays golden vectors produced by gen/gen_lt_rc.py (from the napl Python
-// model). Each line is:  <rst> <in_0> <in_1> <out>.
-//
-// lt_rc is stateful and its output is the *registered* dff value (the state
-// before this cycle's update), so for each vector:
-//   1. if rst==1 this is the first cycle of a new reset segment -> pulse
-//      i_rst_n low so cnt<=0, dff<=0 (the post-reset() state),
-//   2. drive i_input_0/i_input_1 for the timestep,
-//   3. o_out already holds the pre-edge dff (== model output), so compare it,
-//   4. pulse i_clk to advance the registered state to the next timestep.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=lt_rc
-//==============================================================================
+// Python golden rows are <rst> <in_0> <in_1> <out>. Output is checked before
+// the posedge updates state; rst=1 first clears result and cnt.
+// Co-sim: make test OP=lt_rc
 module lt_rc_tb;
     reg  i_clk;
     reg  i_rst_n;

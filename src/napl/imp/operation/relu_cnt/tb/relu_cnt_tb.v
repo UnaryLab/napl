@@ -1,28 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_WIDTH is emitted by gen/gen_relu_cnt.py from the op config (= the test's
-// relu_cnt_config), so the DUT parameter is inherited from the Python model.
-// iverilog resolves this include relative to the compile cwd (imp/).
+// Generated WIDTH mirrors the Python model configuration.
 `include "relu_cnt/vec/relu_cnt_params.vh"
-//==============================================================================
-// Self-checking testbench for relu_cnt.
-//
-// Reads golden vectors produced by gen/gen_relu_cnt.py (from the napl Python
-// model) and replays them cycle by cycle. relu_cnt is stateful: i_rst_n is
-// pulsed low to bring acc to its post-reset() value (HALF), then each vector's
-// input is driven, the combinational output checked, and the clock edged to
-// advance acc.
-//
-// Each vector carries a third column `rst`: rst=1 marks a MID-STREAM reset (the
-// model called reset() before that cycle). The tb pulses i_rst_n low across a
-// posedge at that cycle so the RTL reloads acc = HALF, proving reset equivalence
-// from a dirtied state.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=relu_cnt
-//==============================================================================
+// Python golden output is checked before each posedge updates acc. The reset
+// column requests active-low reset to HALF before its row.
+// Co-sim: make test OP=relu_cnt
 module relu_cnt_tb;
     localparam WIDTH = `GEN_WIDTH;
 
@@ -39,7 +21,7 @@ module relu_cnt_tb;
     integer fd, code, n, fails;
     reg a, exp_out, rst;
 
-    // Free-running clock.
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
@@ -76,8 +58,6 @@ module relu_cnt_tb;
                     @(negedge clk);
                     rst_n = 1'b1;
                 end
-                // Drive input while clock is low; output is combinational in
-                // i_input and the current acc register.
                 in = a;
                 #1;
                 n = n + 1;
@@ -85,7 +65,6 @@ module relu_cnt_tb;
                     $display("FAIL t=%0d in=%b : got %b exp %b", n, a, out, exp_out);
                     fails = fails + 1;
                 end
-                // Posedge advances acc to acc_next.
                 @(posedge clk);
             end
         end

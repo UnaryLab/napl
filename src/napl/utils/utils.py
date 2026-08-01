@@ -145,6 +145,16 @@ def create_dir(directory):
 
 
 def create_subdir(path: str, subdir_list: list):
+    """Create each named subdirectory below a parent path.
+
+    Args:
+        path: Parent directory for the requested subdirectories.
+        subdir_list: Subdirectory names. Leading and trailing ``/`` characters
+            are ignored.
+
+    Returns:
+        ``None``.
+    """
     for subdir in subdir_list:
         subdir_path = os.path.join(path, subdir.strip('/'))
         if not os.path.exists(subdir_path):
@@ -152,6 +162,14 @@ def create_subdir(path: str, subdir_list: list):
 
 
 def read_yaml(file):
+    """Load one YAML file with the ordered safe loader.
+
+    Args:
+        file: Path to the YAML file.
+
+    Returns:
+        The Python object decoded from the YAML document.
+    """
     return yaml.load(open(file), Loader=SafeLoader)
 
 
@@ -170,6 +188,17 @@ def write_yaml(file, content):
 
 
 def check_repeated_key(full_dict: OrderedDict, key:str, val: OrderedDict):
+    """Find an earlier mapping entry whose value equals a target value.
+
+    Args:
+        full_dict: Ordered mapping to search.
+        key: Current key, which limits the search to preceding entries.
+        val: Value to compare with each preceding entry.
+
+    Returns:
+        A ``(repeated, key)`` pair. The key is the first matching earlier key,
+        or ``None`` when no match exists.
+    """
     key_index = list(full_dict.keys()).index(key)
     key_list = list(full_dict.keys())[0 : key_index]
     for key in key_list:
@@ -178,10 +207,6 @@ def check_repeated_key(full_dict: OrderedDict, key:str, val: OrderedDict):
     return False, None
 
 
-# The following interpolate_oneD_linear and interpolate_oneD_quadratic are adapted from accelergy
-# ===============================================================
-# useful helper functions that are commonly used in estimators
-# ===============================================================
 def interpolate_oneD_linear(desired_x, known):
     """
     utility function that performs 1D linear interpolation with a known energy value
@@ -189,7 +214,7 @@ def interpolate_oneD_linear(desired_x, known):
     :param known: list of dictionary [{x: <value>, y: <energy>}]
     :return energy value with desired attribute/argument
     """
-    # assume E = ax + c where x is a hardware attribute
+    # E = ax + c, where x is a hardware attribute.
     ordered_list = []
     if known[1]['x'] < known[0]['x']:
         ordered_list.append(known[1])
@@ -209,7 +234,7 @@ def interpolate_oneD_quadratic(desired_x, known):
     :param known: list of dictionary [{x: <value>, y: <energy>}]
     :return energy value with desired attribute/argument
     """
-    # assume E = ax^2 + c where x is a hardware attribute
+    # E = ax^2 + c, where x is a hardware attribute.
     ordered_list = []
     if known[1]['x'] < known[0]['x']:
         ordered_list.append(known[1])
@@ -223,6 +248,16 @@ def interpolate_oneD_quadratic(desired_x, known):
 
 
 def get_input_tuple(input, size=2):
+    """Normalize a scalar or tuple argument to a fixed-size tuple.
+
+    Args:
+        input: Existing tuple or value to repeat.
+        size: Required tuple length. Defaults to ``2``.
+
+    Returns:
+        The original tuple, or a tuple containing ``input`` repeated ``size``
+        times.
+    """
     if isinstance(input, tuple):
         assert len(input) == size, logger.error('Invalid input size: ' + str(len(input)) + '!=' + str(size))
         return input
@@ -232,6 +267,14 @@ def get_input_tuple(input, size=2):
 
 
 def get_path(path):
+    """Resolve an existing path to its absolute real path.
+
+    Args:
+        path: Path to resolve.
+
+    Returns:
+        Absolute path with symbolic links resolved.
+    """
     path = os.path.abspath(path)
     path = os.path.realpath(path)
     assert os.path.exists(path), logger.error('Invalid path: ' + path)
@@ -239,49 +282,121 @@ def get_path(path):
 
 
 def uniquify_list(sequence):
+    """Remove duplicate hashable values while preserving their first occurrence.
+
+    Args:
+        sequence: Iterable of hashable values.
+
+    Returns:
+        List containing each distinct value once in input order.
+    """
     seen = set()
     return [x for x in sequence if not (x in seen or seen.add(x))]
 
 
 def get_dict(input_dict: OrderedDict):
+    """Convert a mapping to JSON-compatible built-in containers.
+
+    Args:
+        input_dict: Mapping whose keys and values are JSON serializable.
+
+    Returns:
+        Dictionary produced by a JSON encode-and-decode round trip.
+    """
     return json.loads(json.dumps(input_dict))
 
 
 def check_dict_in_list(input_dict, input_list):
+    """Check whether a normalized mapping occurs in a list.
+
+    Args:
+        input_dict: Mapping to normalize with :func:`get_dict`.
+        input_list: Candidate list of dictionaries.
+
+    Returns:
+        ``True`` when the normalized mapping is present; otherwise ``False``.
+    """
     return get_dict(input_dict) in input_list
 
 
 def check_dict_equal(input_dict0, input_dict1):
+    """Compare two mappings after JSON-compatible normalization.
+
+    Args:
+        input_dict0: First mapping.
+        input_dict1: Second mapping.
+
+    Returns:
+        ``True`` when both normalized dictionaries are equal; otherwise
+        ``False``.
+    """
     return get_dict(input_dict0) == get_dict(input_dict1)
 
 
 def get_prod(input_array):
+    """Compute the product of values after converting them to a NumPy array.
+
+    Args:
+        input_array: Array-like values to multiply.
+
+    Returns:
+        NumPy scalar containing the product of all values.
+    """
     return np.prod(np.array(input_array))
 
 
 def check_yaml_header(input_dict: OrderedDict, header: str, yaml_path: str):
+    """Require a top-level key in a loaded YAML mapping.
+
+    Args:
+        input_dict: Loaded YAML mapping.
+        header: Required top-level key.
+        yaml_path: Source path included in the error message.
+
+    Returns:
+        ``None``.
+    """
     assert header in input_dict.keys(), logger.error(f'Missing header <{header}> in .{header}.yaml at <{yaml_path}>.')
 
 
 def check_yaml_cfg(input_dict: OrderedDict, key: str, yaml_path: str):
+    """Require a configuration key in a loaded YAML mapping.
+
+    Args:
+        input_dict: Configuration mapping.
+        key: Required key.
+        yaml_path: Source path included in the error message.
+
+    Returns:
+        ``None``.
+    """
     assert key in input_dict.keys(), logger.error(f'Missing key <{key}> in the configuration at <{yaml_path}>.')
 
 
 def call_func_from_yaml(yaml_path: str=None, header: str=None, func_name: str=None, py_path: str=None, **kwargs):
+    """Load a YAML configuration and call its selected factory module.
+
+    Args:
+        yaml_path: Path to the YAML configuration.
+        header: Top-level mapping passed to the factory.
+        func_name: Key whose lowercase value names the factory directory.
+        py_path: Parent directory containing ``<name>/<name>.py`` factories.
+        **kwargs: Extra keyword arguments passed to the factory's ``create()``
+            function.
+
+    Returns:
+        Value returned by the selected module's ``create()`` function.
+    """
     full_path = get_path(yaml_path)
     load_cfg = read_yaml(full_path)
 
-    # check yaml header
     check_yaml_header(load_cfg, header, full_path)
 
-    # get config
     load_cfg = load_cfg[header]
 
-    # func_name has to be specified
     check_yaml_cfg(load_cfg, func_name, full_path)
     func = load_cfg[func_name].lower()
 
-    # find proper func_name to create the header
     dst_file = os.path.join(py_path, func, func + '.py')
     spec = importlib.util.spec_from_file_location(f'create_{header}_with_{func}', dst_file)
     module_py = importlib.util.module_from_spec(spec)
@@ -292,6 +407,19 @@ def call_func_from_yaml(yaml_path: str=None, header: str=None, func_name: str=No
 
 
 def call_func_from_cfg(cfg: dict, header: str, func_name: str, py_path: str, **kwargs):
+    """Call a factory module selected by an in-memory configuration.
+
+    Args:
+        cfg: Configuration mapping passed to the factory.
+        header: Name used to identify the dynamically loaded module.
+        func_name: Key whose lowercase value names the factory directory.
+        py_path: Parent directory containing ``<name>/<name>.py`` factories.
+        **kwargs: Extra keyword arguments passed to the factory's ``create()``
+            function.
+
+    Returns:
+        Value returned by the selected module's ``create()`` function.
+    """
     check_yaml_cfg(cfg, func_name, '<in-memory>')
     func = cfg[func_name].lower()
 
@@ -375,9 +503,7 @@ def rshift_offset(input, weight, widthi, widthw, rounding="round", quantilei=1, 
     plus the output offset that undoes both.
     """
     def _mag(x, q):
-        # Magnitude of x clipped to its central q-quantile. q==1 is the full range,
-        # i.e. plain min/max -- short-circuit it so we skip torch.quantile (which sorts
-        # and rejects tensors with > 2**24 elements) on the common default path.
+        # q=1 bypasses torch.quantile, which rejects tensors larger than 2**24 elements.
         if q == 1:
             return x.abs().max()
         lower = torch.quantile(x, 0.5 + q / 2)
@@ -398,8 +524,7 @@ def rshift_offset(input, weight, widthi, widthw, rounding="round", quantilei=1, 
             imax_int = imax_int.ceil()
             wmax_int = wmax_int.ceil()
 
-        # all-zero / degenerate operands give scale 0, so log2 -> -inf; treat that as a
-        # zero offset so the quantized result is a finite zero instead of NaN.
+        # Zero-magnitude operands map log2(0) to a zero offset, keeping results finite.
         imax_int = torch.nan_to_num(imax_int, nan=0.0, neginf=0.0, posinf=0.0)
         wmax_int = torch.nan_to_num(wmax_int, nan=0.0, neginf=0.0, posinf=0.0)
 
@@ -454,8 +579,8 @@ class NN_SC_Weight_Clipper(object):
     """
     def __init__(self, frequency=1, mode="bipolar", method="clip", bitwidth=8):
         self.frequency = frequency
-        self.mode = mode        # "unipolar" or "bipolar"
-        self.method = method    # "clip" or "norm"
+        self.mode = mode
+        self.method = method
         self.scale = 2 ** bitwidth
 
     def __call__(self, module):

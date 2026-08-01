@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_signabs(napl_base):
     def __init__(self, codec_config, signabs_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder_sign = decoder(codec_config)
         self.decoder_abs = decoder(codec_config)
@@ -25,7 +24,6 @@ class napl_signabs(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike_sign, o_spike_abs = self.signabs(i_spike)
         self.decoder_sign(o_spike_sign)
@@ -48,7 +46,6 @@ def _kernel_specific_checks():
         'width': 3
     }
 
-    # Generate random inputs based on polarity
     input_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
     for device in devices():

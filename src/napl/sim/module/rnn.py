@@ -6,9 +6,7 @@ from napl.utils import *
 from napl.sim.base import napl_base
 from loguru import logger
 
-# NB: operation primitives are imported lazily inside __init__ (not at module top),
-# because napl.sim.operation.mul_csg imports napl.sim.module.encoder, so a top-level import here
-# creates a circular import when napl.sim.operation is loaded before napl.sim.module.
+# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
 def _init_mgu_params(module, input_size, hidden_size, bias):
@@ -48,6 +46,7 @@ class mgu_hard(napl_base):
     ----------
     *Simplified Minimal Gated Unit Variations for RNNs*.
     """
+    #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the MGU cell and initialize its trainable parameters.
@@ -64,11 +63,20 @@ class mgu_hard(napl_base):
                 defaults to ``None``.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether the forget and new gates include trainable biases.
+        self.bias = bias
+        #: Whether the forget and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub
-        self.htanh = tanh_hub()        # the explicit hard-tanh clamps (always hard)
+        #: Hard-tanh operator that bounds intermediate and output values.
+        self.htanh = tanh_hub()
+        #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
@@ -97,15 +105,12 @@ class mgu_hard(napl_base):
         """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
-        # forget gate
         fg_ug_in = torch.cat((hx, input), 1)
         fg_in = self.htanh(F.linear(fg_ug_in, self.weight_f, self.bias_f))
         fg = self.fg_sigmoid(fg_in)
-        # new gate
         fg_hx = fg * hx
         ng_ug_in = torch.cat((fg_hx, input), 1)
         ng = self.ng_tanh(F.linear(ng_ug_in, self.weight_n, self.bias_n))
-        # output: hy = hardtanh(ng*(1-fg) + fg*hx)
         fg_ng = fg * ng
         return self.htanh(ng - fg_ng + fg_hx)
 
@@ -128,6 +133,7 @@ class mgu_hardfxp(napl_base):
                                         "intwidth": 3, "fracwidth": 4})
         hidden = cell(torch.zeros(1, 2))
     """
+    #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True, 'intwidth': 3, 'fracwidth': 4}):
         """Construct the fixed-point MGU and initialize trainable parameters.
@@ -147,12 +153,22 @@ class mgu_hardfxp(napl_base):
                 * **name** - Optional instance label. Defaults to ``None``.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether the forget and new gates include trainable biases.
+        self.bias = bias
+        #: Whether the forget and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub, round_fxp
+        #: Hard-tanh operator that bounds intermediate and output values.
         self.htanh = tanh_hub()
+        #: Fixed-point quantizer applied to recurrent operands and parameters.
         self.trunc = round_fxp({'intwidth': config.get('intwidth', 3), 'fracwidth': config.get('fracwidth', 4)})
+        #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
@@ -182,9 +198,6 @@ class mgu_hardfxp(napl_base):
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
         t = self.trunc
-        # round_fxp is a pure (deterministic STE) function of its input, so each operand is
-        # truncated once and the result reused across consumers (halves the redundant
-        # quantizations vs. recomputing t(hx)/t(input)/t(fg)/t(fg_hx)/t(ng) at every use).
         t_hx, t_input = t(hx), t(input)
         fg_ug_in = torch.cat((t_hx, t_input), 1)
         fg_in = self.htanh(F.linear(t(fg_ug_in), t(self.weight_f), t(self.bias_f)))
@@ -203,12 +216,12 @@ class mgu(napl_base):
     """Evaluate a bipolar rate-coded MGU cell one timestep at a time.
 
     Use this class as the streaming inner cell for :class:`mgu_hub`, or directly
-    when input and hidden spike streams are already available. The two gate linears use a
-    saturating scale-1 unary adder (which realizes linear + hard tanh in the unary domain);
-    the forget-gate hard sigmoid is the scaled add (x+1)/2; fg*hx uses conditional-spike-
-    generation multiply (hx is a fixed value), fg*ng uses XNOR multiply, and the output is a
-    scale-1 unary add of [ng, 1-fg*ng, fg*hx] (= hard tanh of ng*(1-fg)+fg*hx). hx is the
-    fixed hidden value for this streaming run.
+    when input and hidden spike streams are already available. The two gate linears
+    use a saturating ``scale=1`` unary adder, which realizes ``linear + hard tanh``
+    in the unary domain. The forget-gate hard sigmoid computes ``(x + 1) / 2``;
+    ``fg * hx`` uses conditional-spike generation with fixed ``hx``; ``fg * ng``
+    uses XNOR multiplication; and the output applies the same adder to
+    ``[ng, 1 - fg * ng, fg * hx]``. The ``hx`` value remains fixed for the run.
 
     .. rubric:: Example
 
@@ -252,16 +265,23 @@ class mgu(napl_base):
 
         ts, gen = config['timestep'], config['generator']
         width = config.get('width', 12)
+        #: Fixed numeric hidden value used by conditional-spike multiplication.
         self.hx_value = hx_value
-        # gate linears on distinct weight rng dims; scale=1 makes the adder saturate (hard tanh)
+        # Distinct RNG dimensions decorrelate the gates; scale 1 implements hard tanh.
         def lin(w, b, d):
             return linear(w, b, {'polarity': 'bipolar', 'timestep': ts, 'generator': gen,
                                      'dim': d, 'scale': 1, 'width': width})
+        #: Streaming linear and hard-tanh block for the forget gate.
         self.fg_ug_tanh = lin(weight_f, bias_f, 3)
+        #: Streaming linear and hard-tanh block for the candidate hidden state.
         self.ng_ug_tanh = lin(weight_n, bias_n, 5)
+        #: Hard-sigmoid block applied to the forget-gate stream.
         self.fg_sigmoid = sigmoid_hard({'polarity': 'bipolar'})
-        self.fg_hx_mul = mul_csg({'polarity': 'bipolar', 'timestep': ts, 'generator': gen})  # fg (spike) * hx (value)
-        self.fg_ng_mul = mul_and({'polarity': 'bipolar'})                                     # fg (spike) * ng (spike)
+        #: Conditional-spike multiplier for the forget gate and fixed hidden value.
+        self.fg_hx_mul = mul_csg({'polarity': 'bipolar', 'timestep': ts, 'generator': gen})
+        #: XNOR multiplier for the forget-gate and candidate streams.
+        self.fg_ng_mul = mul_and({'polarity': 'bipolar'})
+        #: Saturating unary adder that forms the next hidden-state stream.
         self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
 
     def _reset(self):
@@ -293,9 +313,7 @@ class mgu(napl_base):
         ng = self.ng_ug_tanh(torch.cat((fg_hx, input_spike), dim=1))
         fg_ng = self.fg_ng_mul(fg, ng)
         fg_ng_inv = 1 - fg_ng.type(torch.int8)
-        # feed the pre-reduced 3-operand sum directly (entry=3 matches the stack size along
-        # dim=0), avoiding materializing the stacked tensor; the 0/1 spikes sum to <=3 so the
-        # integer add is exact and equals torch.sum(stack, 0, dtype=ntype).
+        # Three 0/1 operands sum exactly in ntype, and entry=3 matches their fan-in.
         return self.hy_add(ng + fg_ng_inv + fg_hx, dim=None, entry=3)
 
 
@@ -304,10 +322,10 @@ class mgu_hub(napl_base):
 
     Use this hybrid unary-binary cell when callers provide numeric tensors but
     the MGU computation should run through spike encoders, a streaming
-    :class:`mgu`, and progressive decoding. It internally encodes input and hx into spike
-    streams, runs mgu over 2**width cycles, and decodes the output with the accuracy
-    (progressive-error) metric. Corresponds to mgu_hard with hard activations. Weights are
-    external.
+    :class:`mgu`, and progressive decoding. It internally encodes ``input`` and
+    ``hx`` into spike streams, runs :class:`mgu` for ``2 ** width`` cycles, and
+    decodes the output with the ``accuracy`` metric. Its gate equations match
+    :class:`mgu_hard` with hard activations, using caller-provided weights.
 
     .. rubric:: Example
 
@@ -322,6 +340,7 @@ class mgu_hub(napl_base):
                                "generator": "sobol"})
         hidden = cell(torch.zeros(1, 2))
     """
+    #: Whether calls process one stream timestep; this wrapper is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True,
                  weight_f=None, bias_f=None, weight_n=None, bias_n=None,
@@ -346,13 +365,27 @@ class mgu_hub(napl_base):
         does not create trainable parameters.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether gate fan-in includes a bias term.
+        self.bias = bias
+        #: Base-two exponent of the internal unary stream length.
         self.width = config.get('width', 8)
+        #: Number-sequence generator used by the internal encoders.
         self.generator = config.get('generator', 'sobol')
-        self.weight_f, self.bias_f = weight_f, bias_f
-        self.weight_n, self.bias_n = weight_n, bias_n
-        # accumulator width for the inner linears must hold the fan-in (hidden+input+bias)
+        #: Caller-provided forget-gate weight tensor.
+        self.weight_f = weight_f
+        #: Caller-provided forget-gate bias tensor, or ``None``.
+        self.bias_f = bias_f
+        #: Caller-provided candidate-gate weight tensor.
+        self.weight_n = weight_n
+        #: Caller-provided candidate-gate bias tensor, or ``None``.
+        self.bias_n = bias_n
+        # The inner accumulator must hold the hidden, input, and optional bias fan-in.
         entry = hidden_size + input_size + (1 if bias else 0)
+        #: Accumulator width used by each internal streaming linear layer.
         self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
 
     def _reset(self):

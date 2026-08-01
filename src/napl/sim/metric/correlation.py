@@ -50,14 +50,18 @@ class correlation(napl_base):
         """
         super().__init__(config, [])
 
-        # sufficient statistics for the joint bit-pair histogram (a=11, b=10, c=01, d=00):
-        # the co-occurrence count and the per-stream 1-counts. b, c, d and the run length
-        # are all recovered at report() from these plus timestep_cur, so each step accumulates
-        # only three counts and forms one product.
+        # These three counts determine the full 11/10/01/00 pair histogram.
+        #: Running count of timesteps where both input streams contain one.
+        self.paired_11: torch.Tensor
         self.register_buffer('paired_11', torch.zeros(1, dtype=self.ntype))
+        #: Running count of one-valued spikes in the first input stream.
+        self.sum_1: torch.Tensor
         self.register_buffer('sum_1', torch.zeros(1, dtype=self.ntype))
+        #: Running count of one-valued spikes in the second input stream.
+        self.sum_2: torch.Tensor
         self.register_buffer('sum_2', torch.zeros(1, dtype=self.ntype))
-        # one-step delay buffer for the autocorrelation (single-input) case
+        #: Previous first-input spike tensor used in single-input autocorrelation mode.
+        self.input_1_d: torch.Tensor
         self.register_buffer('input_1_d', torch.zeros(1, dtype=self.ntype))
 
 
@@ -100,8 +104,7 @@ class correlation(napl_base):
             else:
                 self.input_1_d.resize_as_(input_1_d).copy_(input_1_d)
 
-        # bool is left uncast: addcmul/add promote it to the ntype accumulator, so the
-        # two per-timestep .type() casts are redundant dispatches (kept as int8/float 0/1).
+        # addcmul and add promote bool inputs to the accumulator dtype exactly.
         input_1_is_1 = torch.ne(input_1, 0)
         input_2_is_1 = torch.ne(input_2, 0)
 
@@ -110,7 +113,7 @@ class correlation(napl_base):
             self.sum_1.add_(input_1_is_1)
             self.sum_2.add_(input_2_is_1)
         else:
-            # The scalar seeds broadcast to the input shape on the first call.
+            # Scalar seeds broadcast to the input shape on the first call.
             paired_11 = torch.addcmul(self.paired_11, input_1_is_1, input_2_is_1).detach()
             sum_1 = self.sum_1.add(input_1_is_1).detach()
             sum_2 = self.sum_2.add(input_2_is_1).detach()
@@ -135,11 +138,12 @@ class correlation(napl_base):
 
             coefficient = metric.correlation
         """
-        a = self.paired_11               # 11
-        b = self.sum_1 - a               # 10 = (1-count of input_1) - 11
-        c = self.sum_2 - a               # 01 = (1-count of input_2) - 11
-        n = self.timestep_cur            # run length == number of forward() calls
-        d = n - a - b - c                # 00: the pairs accounted for nowhere else
+        # Pair counts are a=11, b=10, c=01, and d=00; n is the run length.
+        a = self.paired_11
+        b = self.sum_1 - a
+        c = self.sum_2 - a
+        n = self.timestep_cur
+        d = n - a - b - c
         ad_minus_bc = a * d - b * c
         ad_gt_bc = torch.gt(ad_minus_bc, 0).type(self.ntype)
         ad_le_bc = 1 - ad_gt_bc
@@ -148,7 +152,7 @@ class correlation(napl_base):
         a_minus_d = a - d
         zeros = torch.zeros_like(a)
         ones = torch.ones_like(a)
-        # SCC denominator differs by the sign of (ad - bc); max(., 1) guards div-by-0.
+        # The SCC denominator depends on the sign of ad-bc and is clamped away from zero.
         corr_gt = ad_minus_bc.div(torch.max(torch.min(a_plus_b, a_plus_c) * n - a_plus_b * a_plus_c, ones))
         corr_le = ad_minus_bc.div(torch.max(a_plus_b * a_plus_c - torch.max(a_minus_d, zeros) * n, ones))
         return ad_gt_bc * corr_gt + ad_le_bc * corr_le
@@ -177,7 +181,6 @@ class correlation(napl_base):
             value, result = metric.analyze()
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: correlation computes from the accumulated counts on each read
         correlation = self.correlation
         result = analyze(
             correlation,

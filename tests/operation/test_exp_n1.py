@@ -13,7 +13,6 @@ from napl.sim.metric import accuracy
 class napl_exp_n1(napl_base):
     def __init__(self, codec_config, exp_n1_config):
         super().__init__()
-        # set up encoder, decoder, op, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
@@ -22,7 +21,6 @@ class napl_exp_n1(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.exp_n1(i_spike)
         self.decoder(o_spike)
@@ -39,7 +37,7 @@ def _kernel_specific_checks():
         'polarity': 'unipolar',
         'timestep': timestep,
         'generator': 'sobol',
-        'dim': 5,   # distinct from the op's internal dims 1..4
+        'dim': 5,  # Distinct from the operation's internal dimensions 1..4.
     }
     exp_n1_config={
         'polarity': 'unipolar',
@@ -48,9 +46,9 @@ def _kernel_specific_checks():
         'dim': 1,
     }
 
-    # identical inputs on every device: generate once on CPU
+    # Generate once on CPU for identical inputs across devices.
     input_cpu = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(timestep)).type(global_config.ntype)
-    # known-answer corners: exp(0)=1, exp(-1)=0.3679
+    # Include exp(0)=1 and exp(-1) known-answer cases.
     input_cpu[0] = 0.0
     input_cpu[1] = 1.0
 
@@ -64,18 +62,16 @@ def _kernel_specific_checks():
         sync(device)
         elapsed = time.perf_counter() - start
 
-        # calculate the reference output
         r_value = torch.exp(-input)
 
-        # report the error
         exp_n1_inst.accuracy.analyze(r_value, verbose=True)
 
         out = exp_n1_inst.decoder.spike_value.cpu()
         ref = r_value.cpu()
         rmse = (out - ref).pow(2).mean().sqrt().item()
-        bound = 1.5 / math.sqrt(timestep)   # SC bound; series truncation < 0.002
+        bound = 1.5 / math.sqrt(timestep)  # Series truncation stays below 0.002.
         assert rmse < bound, f'[{device}] RMSE {rmse:.4f} exceeds bound {bound:.4f}'
-        # known-answer corners within the SC bound
+        # Known-answer cases use the same SC bound.
         assert abs(out[0].item() - 1.0) < bound
         assert abs(out[1].item() - math.exp(-1)) < bound
 
@@ -83,7 +79,7 @@ def _kernel_specific_checks():
         exp_n1_inst.reset()
         assert exp_n1_inst.exp_n1.timestep_cur == 0
 
-        # performance: streaming kernel vs the single-shot float reference
+        # Compare the streaming kernel with the single-shot float reference.
         sync(device)
         start_ref = time.perf_counter()
         torch.exp(-input)

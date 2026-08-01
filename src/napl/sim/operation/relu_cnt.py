@@ -39,12 +39,18 @@ class relu_cnt(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational ReLU output.
         self.hw = hw_params(pp_delay=0)
 
+        #: Saturating accumulator width in bits.
         self.width = config['width']
 
+        #: Largest value retained by the ReLU accumulator.
         self.buf_max = 2**self.width - 1
+        #: Half-scale value that represents bipolar zero.
         self.buf_half = 2**(self.width - 1)
+        #: Saturating bipolar accumulator that controls the emitted ReLU spike.
+        self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(2**(self.width - 1)))
 
 
@@ -74,13 +80,10 @@ class relu_cnt(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # below_half is the complement of (acc >= half); lt avoids the extra (1 - ge) step.
         below_half = torch.lt(self.acc, self.buf_half)
-        # only when input is 0 and flag is 1, output 0; otherwise 1
-        # int8 | bool yields int8, so below_half needs no separate cast
+        # Bitwise OR promotes the boolean threshold mask to int8.
         output = input.type(torch.int8) | below_half
-        # update the accumulator based on output, thus acc update is after output generation
-        # acc += 2*output - 1, then clamp; fused/in-place to avoid per-timestep intermediate allocations
+        # Output uses the accumulator state before this timestep's update.
         if self.acc.shape == output.shape:
             self.acc.add_(output, alpha=2).sub_(1).clamp_(0, self.buf_max)
         else:

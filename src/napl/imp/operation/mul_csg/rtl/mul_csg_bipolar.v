@@ -1,28 +1,9 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-// mul_csg_bipolar -- unary multiply by conditional spike generation (bipolar).
-//
-// Bit-serial port of napl mul_csg.forward() (bipolar branch). i_input_1 is the
-// fixed-point operand round((in_1+1)/2 * 2**WIDTH) in [0, 2**WIDTH] (WIDTH+1 bits:
-// prob 1.0 maps to 2**WIDTH); i_input_0 is the 1-bit input spike. Two independent
-// ROM-walking counters (WIDTH-bit ROM values in [0, 2**WIDTH-1]) drive the paths:
-//   spike     = (i_input_1 > num_seq[seq_idx]);     path     = i_input_0 & spike
-//   spike_inv = (i_input_1 > num_seq[seq_idx_inv]); path_inv = ~i_input_0 & ~spike_inv
-//   o_out = path | path_inv
-//   seq_idx advances by i_input_0, seq_idx_inv by ~i_input_0 (their enables).
-// Output is combinational in the CURRENT counters (pp_delay = 0); both counters
-// are registered on posedge i_clk and cleared to 0 by i_rst_n (matching reset()).
-//
-// WIDTH (= ceil(log2(timestep))) is a Verilog parameter inherited from the
-// Python model's config: the testbench overrides it with `GEN_WIDTH (emitted by
-// gen/gen_mul_csg.py from the config), so the verified hardware tracks the
-// simulator. WIDTH sizes both seq-index counters, the ROM value width, and the
-// i_input_1 operand bus (WIDTH+1 bits). The num_seq ROM is GENERATED from the model
-// for the inherited WIDTH and loaded via $readmemb from vec/mul_csg_rom.hex; the
-// bipolar branch reuses the SAME table at both indices, so one ROM file serves
-// both read ports.
-// Verify from src/napl/imp with: make test OP=mul_csg
+// Bipolar mul_csg equivalent. The WIDTH+1 operand spans [0,2**WIDTH]; two
+// input-gated counters address the Python-generated number-sequence ROM.
+// Output is combinational (pp_delay=0); active-low reset clears both counters.
 module mul_csg_bipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (

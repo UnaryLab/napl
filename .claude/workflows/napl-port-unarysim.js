@@ -17,41 +17,31 @@ export const meta = {
 const REPO = '/Users/diwu/Projects/napl'
 const SRC = `${REPO}/src/napl`
 const SUBPACKAGES = ['operation', 'module', 'metric', 'structure', 'algorithm']
-// Single source of truth: done-state lives in the per-skill reports under reports/, NOT in
-// separate workflow ledgers. The workflow's serialized recorders write to these same reports
-// (using the skills' own recorders) and ledger_status.py reads them back for idempotency.
+// Per-skill reports are the single source of truth for idempotent done-state checks.
 const REPORTS = `${REPO}/reports`
-const VALIDATION_LEDGER = `${REPORTS}/napl-validate-unarysim-report.md`   // napl-validate-unarysim skill
-const RTL_LEDGER = `${REPORTS}/napl-gen-rtl-report.md`                     // napl-gen-rtl skill
-const IMPROVE_LEDGER = `${REPORTS}/napl-opt-sim-report.md`                 // napl-opt-sim skill
-const GENSIM_LEDGER = `${REPORTS}/napl-gen-sim-report.md`                  // napl-gen-sim skill
-// The workflow's own outputs (class inventory, run summary, gap-analysis plan) also live under
-// reports/ with the workflow-name prefix, matching the per-skill report naming.
+const VALIDATION_LEDGER = `${REPORTS}/napl-validate-unarysim-report.md`
+const RTL_LEDGER = `${REPORTS}/napl-gen-rtl-report.md`
+const IMPROVE_LEDGER = `${REPORTS}/napl-opt-sim-report.md`
+const GENSIM_LEDGER = `${REPORTS}/napl-gen-sim-report.md`
 const COMPONENTS = `${REPORTS}/napl-port-unarysim-component-report.md`
 const SUMMARY = `${REPORTS}/napl-port-unarysim-summary-report.md`
-// Each phase records with the SAME recorder its skill uses, so workflow rows and standalone
-// skill rows share one schema per report.
+// Workflow and standalone skill rows share each report's recorder and schema.
 const VALIDATE_RECORDER = `${REPO}/.claude/skills/napl-validate-unarysim/scripts/record_validation.py`
 const GENRTL_RECORDER = `${REPO}/.claude/skills/napl-gen-rtl/scripts/record_gen_rtl.py`
 const OPT_RECORDER = `${REPO}/.claude/skills/napl-opt-sim/scripts/record_opt.py`
 const GENSIM_RECORDER = `${REPO}/.claude/skills/napl-gen-sim/scripts/record_gen_sim.py`
-const MAPPING = `${REPO}/.claude/skills/napl-validate-unarysim/references/mapping.md`  // napl<->UnarySim name map
+const MAPPING = `${REPO}/.claude/skills/napl-validate-unarysim/references/mapping.md`
 const RECORDER = VALIDATE_RECORDER
 const RTL_RECORDER = GENRTL_RECORDER
 const IMPROVE_RECORDER = OPT_RECORDER
 const WF_SCRIPTS = `${REPO}/.claude/workflows/napl-port-unarysim-scripts`
-// Deterministic done-detection parser: prints JSON of what is already done (validated module ids,
-// rtl verified/skipped/failed class names, improve Source->git-hash map) by reading the reports,
-// so done-detection is exact set membership in JS, not an agent eyeballing markdown tables.
+// Done-state is parsed from reports and checked by exact set membership.
 const LEDGER_STATUS = `${WF_SCRIPTS}/ledger_status.py`
 const STATUS_CMD =
   `conda run -n napl python ${LEDGER_STATUS} --validation ${VALIDATION_LEDGER} ` +
   `--rtl ${RTL_LEDGER} --improve ${IMPROVE_LEDGER}`
 
-// ----------------------------------------------------------------------------
-// Run scoping (args). {phases, subpackages, classes} - each optional; absent
-// means "all". phases gates the Improve/Validate/RTL fan-outs.
-// ----------------------------------------------------------------------------
+// Optional phases, subpackages, and classes arguments scope fan-out work.
 
 const opts = args && typeof args === 'object' && !Array.isArray(args) ? args : {}
 const phaseSel = Array.isArray(opts.phases) ? opts.phases : null
@@ -61,33 +51,22 @@ const wantPhase = (p) => !phaseSel || phaseSel.includes(p)
 const inScope = (c) =>
   (!subSel || subSel.includes(c.subpackage)) && (!clsSel || clsSel.includes(c.name))
 
-// ----------------------------------------------------------------------------
-// Helpers (shared so each phase stays consistent)
-// ----------------------------------------------------------------------------
-
-// Path relative to the src/napl root, used for compact agent labels (e.g. operation/mul_and.py).
 const relPath = (f) => f.replace(SRC + '/', '')
-// Path relative to the repo root (e.g. src/napl/sim/operation/mul_and.py) - the key form used in the
-// improve ledger and in `git hash-object` output, so hashes line up across runs.
+// Improve-ledger keys and content hashes use repo-relative paths.
 const repoRel = (f) => f.replace(REPO + '/', '')
 
-// Group classes by their defining file. Per-file agents avoid the concurrent-
-// edit / concurrent-validate hazards that per-class agents would hit on a
-// shared file.
+// Per-file agents serialize work on classes that share a source file.
 function groupByFile(classes) {
   const by = {}
   for (const c of classes) (by[c.file] ??= []).push(c)
   return by
 }
 
-// Every fan-out agent returns data and leaves ledger writes to a single
-// recorder per phase - parallel writes to one markdown file would corrupt it.
+// Fan-out agents return data; one recorder per phase serializes ledger writes.
 const NO_LEDGER =
   'Do NOT write any ledger file yourself - concurrent agents would corrupt a shared file; ' +
   'the workflow records results centrally afterward.'
 
-// Guarded, serialized ledger write: spawn one recorder agent for `items`, or
-// no-op (with a log line) when there is nothing new.
 async function recordLedger({ items, noun, label, phase, prompt }) {
   if (!items.length) {
     log(`No new ${noun} to record.`)
@@ -97,13 +76,9 @@ async function recordLedger({ items, noun, label, phase, prompt }) {
   return agent(prompt, { label, phase, schema: RECORD_SCHEMA })
 }
 
-// ----------------------------------------------------------------------------
 // Schemas
-// ----------------------------------------------------------------------------
 
-// Discover returns the raw class inventory plus the verbatim ledger-status JSON and a
-// File->git-hash map; the workflow computes every done-flag in JS by exact set membership,
-// so no agent ever decides "already done" by reading a markdown table.
+// Discovery returns raw inventory, verbatim ledger status, and current file hashes.
 const DISCOVERY_SCHEMA = {
   type: 'object',
   required: ['classes', 'ledger_status', 'file_hashes'],
@@ -170,8 +145,7 @@ const IMPROVE_SCHEMA = {
   },
 }
 
-// Independent post-Improve gate: the sweep exits non-zero and lists the failing
-// files, and the agent reports them alongside the printed output + log.
+// The post-Improve sweep reports every failing file.
 const SWEEP_SCHEMA = {
   type: 'object',
   required: ['files', 'passed', 'all_pass', 'failing', 'notes'],
@@ -184,9 +158,7 @@ const SWEEP_SCHEMA = {
   },
 }
 
-// One Validate agent handles one FILE and returns one ledger row per class it
-// validated. Row fields mirror record_validation.py's arguments exactly so the
-// recorder can pass them straight through.
+// Validation rows mirror record_validation.py arguments.
 const VALIDATE_FILE_SCHEMA = {
   type: 'object',
   required: ['file', 'rows', 'notes'],
@@ -213,8 +185,7 @@ const VALIDATE_FILE_SCHEMA = {
   },
 }
 
-// Independent re-check of a single reported disagreement (agree=false). A false disagreement
-// reads as "the port is broken", so each is re-validated from scratch before it is recorded.
+// Each reported disagreement is independently re-validated before recording.
 const DISAGREE_VERIFY_SCHEMA = {
   type: 'object',
   required: ['module', 'agree', 'bitexact', 'agreement', 'notes'],
@@ -246,8 +217,7 @@ const RTL_SCHEMA = {
   },
 }
 
-// Independent re-verification of generated RTL: one agent per op (re-runs make
-// test for that op), so this is the single-op result schema.
+// RTL re-verification returns one result per operation.
 const RTL_VERIFY_ONE_SCHEMA = {
   type: 'object',
   required: ['op', 'pass', 'notes'],
@@ -287,7 +257,7 @@ const FINALIZE_SCHEMA = {
   },
 }
 
-// GenSim scan: every UnarySim class with no napl counterpart, classified for porting.
+// GenSim gaps are UnarySim classes with no napl counterpart.
 const GENSIM_SCAN_SCHEMA = {
   type: 'object',
   required: ['missing'],
@@ -310,8 +280,7 @@ const GENSIM_SCAN_SCHEMA = {
   },
 }
 
-// One GenSim port agent handles one class; fields mirror record_gen_sim.py's arguments.
-// module_file/class_name are what the serialized wiring agent needs to export it.
+// GenSim rows mirror record_gen_sim.py arguments and include wiring metadata.
 const GENSIM_PORT_SCHEMA = {
   type: 'object',
   required: ['napl', 'unarysim', 'status', 'test', 'validated', 'module_file', 'class_name', 'notes'],
@@ -327,7 +296,7 @@ const GENSIM_PORT_SCHEMA = {
   },
 }
 
-// The single serialized wiring agent reports how it stitched the parallel ports in.
+// One serialized wiring agent exports all parallel ports.
 const GENSIM_WIRE_SCHEMA = {
   type: 'object',
   required: ['wired', 'import_ok', 'notes'],
@@ -338,14 +307,7 @@ const GENSIM_WIRE_SCHEMA = {
   },
 }
 
-// ----------------------------------------------------------------------------
-// Phase 0 - GenSim. Port UnarySim classes napl is still missing BEFORE Discover,
-// so newly-ported classes flow through Improve/Validate/RTL in the SAME run. The
-// gap is computed by scanning UnarySim vs napl, so it is idempotent: an already-
-// ported class exists in napl and is no longer a gap. Ports edit shared files
-// (subpackage __init__.py, mapping.md), so they run SERIALIZED, and the phase is a
-// barrier before Discover.
-// ----------------------------------------------------------------------------
+// Phase 0: port missing UnarySim classes before discovery.
 
 let gensimPorted = []
 let gensimSkipped = []
@@ -370,11 +332,7 @@ if (wantPhase('gensim')) {
   gensimSkipped = gaps.filter((m) => m.skip_reason)
   log(`GenSim: ${gaps.length} gap class(es) in scope; porting ${toPort.length}, skipping ${gensimSkipped.length} non-port(s).`)
 
-  // Ports run in PARALLEL: each agent writes ONLY its own new module file + test and
-  // validates by importing the class directly from its module path - it does NOT touch
-  // the shared subpackage __init__.py or mapping.md (those would race across agents).
-  // A single serialized wiring agent below then exports every new class and updates
-  // mapping.md in one pass, so the shared files get exactly one writer.
+  // Port agents write isolated module and test files; shared exports and mappings are wired later.
   gensimPorted = (
     await parallel(
       toPort.map((m) => () =>
@@ -401,9 +359,7 @@ if (wantPhase('gensim')) {
     )
   ).filter(Boolean)
 
-  // Serialized wiring: ONE agent stitches every parallel port into the shared files
-  // (subpackage __init__.py exports + mapping.md) and smoke-checks the package imports,
-  // so the new classes are importable before Discover and the downstream phases run.
+  // A single agent updates shared exports and mappings before downstream phases.
   const portedOk = gensimPorted.filter((r) => r.status === 'ported' && r.module_file && r.class_name)
   if (portedOk.length) {
     const wired = await agent(
@@ -443,12 +399,7 @@ if (wantPhase('gensim')) {
   log('GenSim phase skipped (not in args.phases).')
 }
 
-// ----------------------------------------------------------------------------
-// Phase 1 - Discover all classes, capture the ledger-status JSON + current file
-// hashes, and write napl-port-unarysim-component-report.md. Always runs; it catalogs everything regardless
-// of scope. Done-detection is computed in JS from the parser output (below), not
-// by the agent reading markdown tables.
-// ----------------------------------------------------------------------------
+// Phase 1: discover all classes and capture ledger status and file hashes.
 
 phase('Discover')
 
@@ -486,7 +437,7 @@ const allClasses = discovery.classes
 const ledgerStatus = discovery.ledger_status
 const fileHashes = discovery.file_hashes || {}
 
-// Compute every done-flag in JS by exact set membership against the parser output.
+// Done flags use exact set membership against parsed ledger state.
 const validatedSet = new Set(ledgerStatus.validated || [])
 const rtlVerifiedSet = new Set(ledgerStatus.rtl_verified || [])
 const rtlSkippedSet = new Set(ledgerStatus.rtl_skipped || [])
@@ -495,14 +446,12 @@ for (const c of allClasses) {
   c.validation_done = validatedSet.has(`${c.subpackage}.${c.name}`)
   c.rtl_done = rtlVerifiedSet.has(c.name)
   c.rtl_skipped = rtlSkippedSet.has(c.name)
-  // improve_done: the file is in the napl-opt-sim report AND its recorded hash equals the current hash.
+  // Improve is done only while the recorded content hash matches.
   const rel = repoRel(c.file)
   c.improve_done = !!improvedHashes[rel] && !!fileHashes[rel] && improvedHashes[rel] === fileHashes[rel]
 }
 
-// napl-port-unarysim-component-report.md catalogs everything; the fan-out skips placeholders and
-// torch.autograd.Function STE helpers (backward shims, not napl_base modules),
-// and respects the run's scope.
+// Fan-out excludes placeholders and autograd helpers, then applies run scope.
 const realClasses = allClasses.filter(
   (c) => !c.is_placeholder && !c.is_autograd_function && inScope(c),
 )
@@ -513,11 +462,7 @@ log(
     `${autogradHelpers.length} autograd.Function helpers: ${autogradHelpers.map((c) => c.name).join(', ') || 'none'}).`,
 )
 
-// ----------------------------------------------------------------------------
-// Phase 2 - Improve implementations (CPU/GPU speedup), grouped BY FILE, then an
-// INDEPENDENT test-sweep gate. Barrier after this phase: Validate and RTL read
-// the improved code. A file Improve changed forces re-validation of its classes.
-// ----------------------------------------------------------------------------
+// Phase 2: improve by file, run an independent test sweep, then revalidate changed files.
 
 let improved = []
 let revalidated = 0
@@ -527,8 +472,7 @@ let improveSkipped = 0
 if (wantPhase('improve')) {
   phase('Improve')
 
-  // #1 - skip files already improved at their current content (napl-opt-sim report hash matches);
-  // a changed file (or one never improved) falls through and is re-examined.
+  // Skip files whose current content hash is already recorded.
   const improveByFile = groupByFile(realClasses.filter((c) => !c.improve_done))
   const improveFiles = Object.keys(improveByFile)
   improveSkipped = new Set(realClasses.filter((c) => c.improve_done).map((c) => c.file)).size
@@ -565,8 +509,7 @@ if (wantPhase('improve')) {
     )
   ).filter(Boolean)
 
-  // #1 - a file Improve changed may have altered an already-validated class's
-  // behavior; clear its validation_done so Validate re-checks it.
+  // Changed files must be validated again.
   const changedFiles = new Set(improved.filter((r) => r.changed).map((r) => r.file))
   if (changedFiles.size) {
     for (const c of realClasses) {
@@ -578,9 +521,7 @@ if (wantPhase('improve')) {
     log(`Improve changed ${changedFiles.size} file(s); forcing re-validation of ${revalidated} previously-validated class(es).`)
   }
 
-  // #2 - independent post-Improve gate. The sweep exits non-zero and lists the
-  // failing files; per-file Improve agents can miss cross-file/downstream
-  // breakage this catches.
+  // The sweep gates downstream phases after all per-file changes.
   sweep = await agent(
     `Run the napl test sweep ONCE as an independent post-Improve gate: from ${REPO} run ` +
       `\`conda run -n napl python tests/sweep_test.py\`. It prints one "Running: <path>" line per test file, exits ` +
@@ -596,10 +537,7 @@ if (wantPhase('improve')) {
       `Continuing (Validate vs UnarySim is an independent check); see napl-port-unarysim-summary-report.md.`)
   }
 
-  // #1 - record the post-edit hash of every examined file so the next run can skip
-  // unchanged files. The opt-sim report is per-kernel, so emit one row per (file, class)
-  // carrying the file's content_hash; ledger_status builds the Source->Hash idempotency map
-  // from the source+hash columns.
+  // Record one row per file and class with the post-edit content hash.
   const improveRows = improved
     .filter((r) => r.content_hash)
     .flatMap((r) =>
@@ -630,12 +568,7 @@ if (wantPhase('improve')) {
   log('Improve phase skipped (not in args.phases).')
 }
 
-// ----------------------------------------------------------------------------
-// Phase 3 - Validate against UnarySim. ONE AGENT PER FILE, for every un-validated
-// (or re-validation-forced) class - the Validate agent (not Discover's guess)
-// decides whether a UnarySim counterpart exists. Reported disagreements are
-// independently re-checked before recording. A single recorder appends rows.
-// ----------------------------------------------------------------------------
+// Phase 3: validate each file against UnarySim and re-check disagreements before recording.
 
 let validatedFiles = []
 let validationRows = []
@@ -644,9 +577,7 @@ let disagreeRechecked = []
 if (wantPhase('validate')) {
   phase('Validate')
 
-  // #6 - do NOT pre-filter on Discover's best-guess counterpart (that drops classes
-  // whose counterpart the discovery agent failed to name). Pass every un-validated
-  // in-scope class; the skill omits any class that genuinely has no counterpart.
+  // Validation, not discovery, determines whether a counterpart exists.
   const validateByFile = groupByFile(realClasses.filter((c) => !c.validation_done))
   const validateFiles = Object.keys(validateByFile)
   log(`Validating ${validateFiles.length} files with un-validated classes (rest already in the ledger).`)
@@ -679,8 +610,7 @@ if (wantPhase('validate')) {
 
   validationRows = validatedFiles.flatMap((r) => r.rows || [])
 
-  // #3 - independently re-check every reported disagreement before recording it; a
-  // false agree=false reads as "the port is broken". One fresh validator per module.
+  // Re-check each disagreement with a fresh validator.
   const disagreements = validationRows.filter((r) => r.agree === false)
   if (disagreements.length) {
     log(`Re-checking ${disagreements.length} reported disagreement(s) with an independent validator before recording.`)
@@ -703,8 +633,7 @@ if (wantPhase('validate')) {
         ),
       )
     ).filter(Boolean)
-    // Overwrite the recorded verdict with the re-checked one (keeps the disagreement
-    // only if it survives a second independent validation).
+    // Record the independently re-checked verdict.
     const byModule = Object.fromEntries(disagreeRechecked.map((v) => [v.module, v]))
     validationRows = validationRows.map((r) => {
       const v = r.agree === false && byModule[r.module]
@@ -741,13 +670,7 @@ if (wantPhase('validate')) {
   log('Validate phase skipped (not in args.phases).')
 }
 
-// ----------------------------------------------------------------------------
-// Phase 4 - RTL. ONLY the `operation` subpackage, ONE AGENT PER CLASS, skipping
-// classes already VERIFIED or recorded as SKIPPED in the RTL ledger (failed ops
-// are retried). Generated RTL is INDEPENDENTLY re-verified (make test); the
-// outcome of EVERY attempt (verified/skipped/failed) is recorded so by-design
-// skips are not re-attempted forever. A single recorder appends rows.
-// ----------------------------------------------------------------------------
+// Phase 4: generate RTL per operation class and independently re-verify each operation.
 
 let rtl = []
 let rtlVerified = []
@@ -758,8 +681,7 @@ if (wantPhase('rtl')) {
   phase('RTL')
 
   const operationClasses = realClasses.filter((c) => c.subpackage === 'operation')
-  // #2 - skip both verified (rtl_done) and previously-skipped (no sound gate-level
-  // mapping) classes; a `failed` row is NOT skipped, so failures are retried.
+  // Verified and skipped classes are done; failed classes are retried.
   const toRtl = operationClasses.filter((c) => !c.rtl_done && !c.rtl_skipped)
   rtlAttempted = toRtl.length
   const rtlSkippedCount = operationClasses.filter((c) => c.rtl_skipped).length
@@ -783,8 +705,7 @@ if (wantPhase('rtl')) {
     `return status "skipped" (pipeline_delay null) rather than forcing an unsound design.\n\n` +
     `Return {class, op, status, rtl_path, make_test, pipeline_delay, notes}. ${NO_LEDGER}`
 
-  // #6 - group by op directory (== class name) so any classes targeting the
-  // same dir run sequentially instead of racing on the same files.
+  // Serialize classes that target the same operation directory.
   const rtlByOp = {}
   for (const c of toRtl) (rtlByOp[c.name] ??= []).push(c)
   const dupeOps = Object.entries(rtlByOp).filter(([, cs]) => cs.length > 1).map(([op]) => op)
@@ -806,15 +727,11 @@ if (wantPhase('rtl')) {
     .flat()
     .filter(Boolean)
 
-  // #3 - independently re-validate each op the agents claim passed, via the
-  // napl-validate-sim-rtl skill (test-driven inputs + reset equivalence, a stronger
-  // gate than a bare make-test re-run), before trusting/recording it.
+  // Independently validate every operation claimed to pass before recording it.
   const rtlClaimed = rtl.filter((r) => r.status === 'generated' || r.status === 'verified')
   rtlVerified = rtlClaimed
   if (rtlClaimed.length) {
-    // One agent per op, in parallel. `make test OP=<op>` namespaces gen/vec/build
-    // under <op>/, and the skill edits only the per-op gen_<op>.py, so the per-op
-    // re-verifications do not collide on shared files.
+    // Per-operation paths isolate parallel verification work.
     const rtlVerifyPrompt = (op) =>
       `Independently re-validate the RTL just generated for op \`${op}\`, using the project's ` +
       `\`napl-validate-sim-rtl\` skill. Invoke the skill (Skill tool) and execute its Steps DIRECTLY (you are the ` +
@@ -841,16 +758,13 @@ if (wantPhase('rtl')) {
     }
   }
 
-  // #2/#5 - record the outcome of EVERY attempt via the napl-gen-rtl recorder (keyed by
-  // class, last-write-wins): verified (passed re-verify), skipped (no sound mapping), or
-  // failed (claimed but failed re-verify, or self-reported failed). Delay is recorded only
-  // for verified ops; skipped ops stop being re-attempted on the next run.
+  // Record every attempt by class; verified rows alone carry pipeline delay.
   const verifiedOps = new Set(rtlVerified.map((r) => r.op))
   const rtlRecordRows = rtl.map((r) => {
     let status
     if (r.status === 'skipped') status = 'skipped'
     else if (r.status === 'failed') status = 'failed'
-    else status = verifiedOps.has(r.op) ? 'verified' : 'failed' // generated/verified claim, gated on re-verify
+    else status = verifiedOps.has(r.op) ? 'verified' : 'failed'
     return {
       class: r.class,
       rtl: r.op,
@@ -879,15 +793,7 @@ if (wantPhase('rtl')) {
   log('RTL phase skipped (not in args.phases).')
 }
 
-// ----------------------------------------------------------------------------
-// Phase 5 - Finalize. (a) Sync self.hw.pp_delay for EVERY operation class in the
-// napl-gen-rtl report from its pp_delay column (idempotent, complete across runs). RTL agents
-// returned the delay instead of editing Python - operation classes share files
-// (e.g. compare.py), so a single serialized agent applies all edits without
-// racing. pp_delay lives in the class's `self.hw = hw_params(...)` contract (it
-// supersedes the legacy scalar self.delay per CLAUDE.md). (b) Refresh
-// napl-port-unarysim-component-report.md's Validated?/RTL? columns from the ledgers.
-// ----------------------------------------------------------------------------
+// Phase 5: serialize pipeline-delay updates, then refresh component status from the ledgers.
 
 let delays = null
 let finalize = null
@@ -944,10 +850,7 @@ if (wantPhase('validate') || wantPhase('rtl')) {
   log('Finalize skipped (no Validate/RTL this run).')
 }
 
-// ----------------------------------------------------------------------------
-// Phase 6 - Summary. Write a human-readable report of every subagent's result
-// to napl-port-unarysim-summary-report.md (the structured run data the orchestrator already holds).
-// ----------------------------------------------------------------------------
+// Phase 6: write the run summary.
 
 phase('Summary')
 
@@ -1002,10 +905,6 @@ await agent(
     `Return one sentence confirming the file was written.`,
   { label: 'write:napl-port-unarysim-summary-report.md', phase: 'Summary' },
 )
-
-// ----------------------------------------------------------------------------
-// Return value
-// ----------------------------------------------------------------------------
 
 return {
   scope: report.scope,

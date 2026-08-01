@@ -39,14 +39,20 @@ class dff(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['depth'], polarity_required=False)
+        #: Number of timesteps between an input and its delayed output.
         self.depth = config['depth']
+        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
         self.hw = hw_params(pp_delay=self.depth)
-        # device-anchor buffer: tracks device for .to() and lazy buffer init.
+        # This buffer anchors lazy state to the module device.
+        #: Device and spike-dtype anchor used when the delay queue is initialized.
+        self.reg: torch.Tensor
         self.register_buffer('reg', torch.zeros(1, dtype=self.stype))
-        # FIFO rows held as a list of tensor references (no per-timestep copy).
+        # FIFO rows hold tensor references and are overwritten through a circular index.
+        #: Circular list of delayed tensor snapshots, allocated on first use.
         self.buf = None
+        #: Whether the delay queue must be allocated for the next input shape.
         self.is_first_call = True
-        # circular-buffer index of the oldest stored row (the next one to emit)
+        #: Circular index of the oldest delayed tensor to emit and replace.
         self.head = 0
 
 
@@ -76,14 +82,12 @@ class dff(napl_base):
 
             delayed = delay(torch.tensor([1], dtype=torch.int8))
         """
-        # input is a spike tensor
         if self.is_first_call:
             zero = torch.zeros_like(input, device=self.reg.device)
             self.buf = [zero.clone() for _ in range(self.depth)]
             self.is_first_call = False
 
-        # FIFO via circular buffer: emit the oldest row and snapshot this
-        # timestep's input in that slot without reallocating the full buffer.
+        # Emit the oldest row before replacing it with the current input snapshot.
         output = self.buf[self.head]
         self.buf[self.head] = input.detach().clone()
         self.head += 1

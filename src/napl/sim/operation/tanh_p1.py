@@ -58,19 +58,21 @@ class tanh_p1(napl_base):
         assert self.polarity == 'unipolar', \
             logger.error(f'Invalid polarity: <{self.polarity}>; combinational tanh_p1 needs unipolar mode.')
 
+        #: Requested stream length used to size the coefficient sequences.
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two coefficient sequences.
         self.width = math.ceil(math.log2(self.timestep))
+        #: Lowercase name of the configured number-sequence generator.
         self.generator = config['generator'].lower()
+        #: Period of each coefficient spike sequence.
         self.len = 2**self.width
 
-        # combinational input->output path (AND/NAND cascade); the internal DFF
-        # delay lines are decorrelators holding state, not pipeline stages.
+        # DFF delay lines decorrelate the combinational path without adding output latency.
+        #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
 
-        # four constant spike streams on consecutive decorrelated dims, quantized
-        # to self.width bits (round(c*len) vs floor(rng*len)) so the bits match
-        # the hardware bit-stream generator exactly.
+        # Width-bit quantization on consecutive dimensions matches the hardware generator.
         dim = config.get('dim', 1)
         coef_seq = []
         for i, coef in enumerate([62/153, 17/42, 2/5, 1/3]):
@@ -79,17 +81,22 @@ class tanh_p1(napl_base):
                                           'dim': dim + i})
             coef_bin = torch.tensor(coef, dtype=self.ntype).mul(self.len).round()
             coef_seq.append(torch.gt(coef_bin, num_seq.mul(self.len).floor()).type(torch.int8))
+        #: Four periodic coefficient spike streams used by the polynomial stages.
+        self.coef_seq: torch.Tensor
         self.register_buffer('coef_seq', torch.stack(coef_seq))
-        # per-timestep coefficient bits as Python ints: avoids a 4-way tensor
-        # index (and its GPU launches) in the hot path, and lets forward()
-        # constant-fold the NAND stages whose bit is 0.
+        #: Timestep-major Python view of :attr:`coef_seq` used by the hot path.
         self.coef_bits = [tuple(bits) for bits in zip(*(seq.tolist() for seq in coef_seq))]
 
-        # DFF delay lines: input tapped at depth 4 and 8, n_1 at depth 1, 2, 3
+        # Input taps are at depths 4 and 8; n_1 taps are at depths 1, 2, and 3.
+        #: First four-timestep delay segment for the input spike path.
         self.input_dff_4 = dff({'depth': 4})
+        #: Second four-timestep delay segment, producing an eight-timestep input delay.
         self.input_dff_8 = dff({'depth': 4})
+        #: One-timestep delay segment for the first polynomial intermediate.
         self.n_1_dff_1 = dff({'depth': 1})
+        #: Second one-timestep delay segment for the first polynomial intermediate.
         self.n_1_dff_2 = dff({'depth': 1})
+        #: Third one-timestep delay segment for the first polynomial intermediate.
         self.n_1_dff_3 = dff({'depth': 1})
 
 
@@ -119,22 +126,19 @@ class tanh_p1(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # input is a spike tensor
         in_i8 = input.type(torch.int8)
         c2, c3, c4, c5 = self.coef_bits[(self.timestep_cur - 1) % self.len]
 
         in_d4 = self.input_dff_4(in_i8)
         in_d8 = self.input_dff_8(in_d4)
 
-        # delay lines always advance, independent of the coefficient bits
+        # Delay lines advance independently of the coefficient bits.
         n_1 = in_i8 & in_d4
         n_1_d1 = self.n_1_dff_1(n_1)
         n_1_d2 = self.n_1_dff_2(n_1_d1)
         n_1_d3 = self.n_1_dff_3(n_1_d2)
 
-        # NAND cascade with the coefficient bits folded as Python 0/1
-        # constants: a stage whose bit is 0 outputs the constant-1 stream,
-        # represented as None so it costs no tensor kernel.
+        # A zero coefficient bit represents the corresponding NAND stage as constant 1 (None).
         n_2 = (1 - n_1) if c2 else None
         n_3 = (1 - (n_1_d1 if n_2 is None else n_2 & n_1_d1)) if c3 else None
         n_4 = (1 - (n_1_d2 if n_3 is None else n_3 & n_1_d2)) if c4 else None

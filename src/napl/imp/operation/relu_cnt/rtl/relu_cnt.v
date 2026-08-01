@@ -1,20 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// relu_cnt -- counter-based bipolar rate-coded ReLU (stateful).
-//
-// RTL counterpart of napl.sim.operation.relu_cnt (src/napl/sim/operation/relu_cnt.py).
-// One input spike per cycle; an up/down saturating counter `acc` tracks the
-// running bipolar value and clamps the output toward bipolar 0.
-//
-//   below_half = (acc < HALF)          // HALF = 2^(WIDTH-1)
-//   o_out      = i_input | below_half     // force 1 unless input 0 and acc>=HALF
-//   acc       <= clamp(acc + (o_out ? +1 : -1), 0, MAX)   // MAX = 2^WIDTH - 1
-//
-// Output is combinational in i_input and the current acc (pp_delay = 0); acc
-// advances on each posedge i_clk. Active-low i_rst_n reloads acc = HALF, the
-// model's reset() state.
-//==============================================================================
+// Bipolar relu_cnt equivalent with a WIDTH-bit saturating accumulator.
+// Output is combinational (pp_delay=0); each posedge updates acc by the emitted
+// spike. Active-low reset loads HALF=2**(WIDTH-1).
 module relu_cnt #(
     parameter integer WIDTH = 3  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

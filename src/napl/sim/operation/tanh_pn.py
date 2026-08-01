@@ -45,13 +45,19 @@ class tanh_pn(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['depth'], polarity_required=False)
+        #: Hardware latency and timing metadata for the registered tanh output.
         self.hw = hw_params(pp_delay=1)
 
+        #: Width of the saturating tanh state counter in bits.
         self.depth = config['depth']
 
+        #: Largest value retained by the tanh state counter.
         self.cnt_max = 2**self.depth - 1
+        #: Half-scale counter value restored by :meth:`_reset`.
         self.cnt_half = 2**(self.depth - 1)
-        # scalar state; broadcasts up to the input shape on the first forward()
+        # The scalar initial counter broadcasts to the input shape on first use.
+        #: Saturating state counter that drives the bipolar tanh output.
+        self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
 
 
@@ -82,10 +88,8 @@ class tanh_pn(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # output looks at the state before this timestep's update
+        # Output reflects the pre-update counter state.
         output = torch.ge(self.cnt, self.cnt_half).type(self.stype).expand_as(input)
-        # cnt += 2*input - 1, then clamp; in-place once shape matches (first call
-        # broadcasts (1,) -> input shape out-of-place)
         if self.cnt.shape == input.shape:
             self.cnt.add_(input, alpha=2).sub_(1).clamp_(0, self.cnt_max)
         else:

@@ -39,24 +39,19 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "square_dff.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "square_dff_params.vh"
 
-# test_square_dff.py square_dff_config: the sizing param the op is built with.
-# (depth is consumed by square_dff's embedded dff to size the delay line.)
+# Sizing and encoder settings mirror test_square_dff.py.
+# DEPTH sizes the embedded DFF delay line.
 SQUARE_DFF = {"polarity": "bipolar", "depth": 1}
-# test_square_dff.py codec_config: the encoder feeding square_dff.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
-# Representative operands, encoded with the test's exact codec. We split the
-# operands into two halves; a mid-stream reset is injected at the boundary so the
-# delay line is dirty when reset() fires, proving reset equivalence.
+# Split the encoded operands to reset after the delay line has changed.
 _VALUES = rep_values(CODEC["polarity"])
 _MID = len(_VALUES) // 2
 
-# Build the (reset_flag, spike) drive list.
 DRIVE = []
 for _i, _v in enumerate(_VALUES):
     _seg = encode_value(CODEC, _v)
     for _j, _s in enumerate(_seg):
-        # First cycle of the mid-point segment: reset before driving.
         _rst = 1 if (_i == _MID and _j == 0) else 0
         DRIVE.append((_rst, _s))
 
@@ -78,7 +73,6 @@ def main():
     out_bi = run("bipolar")
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     model = square_dff(config=dict(SQUARE_DFF))
     PARAMS.write_text(
         f"`define GEN_DEPTH {SQUARE_DFF['depth']}\n"

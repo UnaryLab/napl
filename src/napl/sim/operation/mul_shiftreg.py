@@ -53,11 +53,14 @@ class mul_shiftreg(napl_base):
             config, ['polarity', 'width', 'generator'], polarity_required=True
         )
 
+        #: Address width of the random sequence and shift register.
         self.width = config['width']
         assert isinstance(self.width, int) and self.width > 0, logger.error(
             f'Invalid width: <{self.width}>; legal values: a positive integer.'
         )
+        #: Number of random-sequence values and shift-register entries.
         self.depth = 2**self.width
+        #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
 
         rng_config = {
@@ -65,20 +68,32 @@ class mul_shiftreg(napl_base):
             'generator': config['generator'],
             'dim': config.get('dim', 1),
         }
+        #: Periodic stochastic comparison levels over the register-count range.
+        self.rng_seq: torch.Tensor
         self.register_buffer('rng_seq',
             torch.floor(gen_num_seq(rng_config).mul(self.depth)),
         )
+        #: Per-element random-sequence index for the direct input path.
+        self.rng_idx: torch.Tensor
         self.register_buffer('rng_idx', torch.zeros(1, dtype=torch.long))
         if self.polarity == 'bipolar':
+            #: Per-element random-sequence index for the complemented input path.
+            self.rng_idx_inv: torch.Tensor
             self.register_buffer('rng_idx_inv', torch.zeros(1, dtype=torch.long))
 
+        #: Circular register of recent spikes from the first multiplicand.
+        self.reg: torch.Tensor
         self.register_buffer('reg',
             torch.tensor(
                 [index % 2 for index in range(self.depth)], dtype=self.stype
             ),
         )
+        #: Per-element number of one-spikes currently stored in :attr:`reg`.
+        self.count: torch.Tensor
         self.register_buffer('count', torch.zeros(1, dtype=torch.long))
+        #: Circular index of the register row replaced on the next call.
         self.head = 0
+        #: Whether the register and index tensors must be expanded for the input shape.
         self.is_first_call = True
 
     def _reset(self):

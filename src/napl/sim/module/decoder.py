@@ -47,10 +47,13 @@ class decoder(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep'], polarity_required=True)
 
-        # initialize timestep and spike count
+        #: Maximum number of spike timesteps accepted by this decoder.
         self.timestep = config['timestep']
+        #: Bit width needed to count through the configured stream length.
         self.width = math.ceil(math.log2(self.timestep))
 
+        #: Per-element count of received one-valued spikes.
+        self.spike_count: torch.Tensor
         self.register_buffer('spike_count', torch.zeros(1, dtype=self.ntype))
 
 
@@ -76,20 +79,16 @@ class decoder(napl_base):
         The call adds ``spike`` to ``spike_count`` and advances
         ``timestep_cur``. It rejects calls beyond the configured **timestep**.
         """
-        # get the spike value at the current timestep
         assert self.timestep_cur <= self.timestep, \
             logger.error(f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.')
-        # float accumulator avoids overflow; the 0/1 spike promotes exactly, so no cast.
+        # A float accumulator avoids overflow, and 0/1 spikes promote exactly.
         sc = self.spike_count
-        # shape-guarded: first forward broadcasts the (1,) seed up to spike's shape
-        # out-of-place; steady state accumulates in place to drop a per-timestep alloc.
+        # The scalar seed broadcasts once; matching shapes then accumulate in place.
         if sc.shape == spike.shape:
             sc.add_(spike)
         else:
             expanded = sc.add(spike).detach()
             self.spike_count.resize_as_(expanded).copy_(expanded)
-        # no return: evaluating the spike_value property here would redo the div
-        # every timestep; readers access .spike_value on demand instead.
 
 
     @property
@@ -112,7 +111,7 @@ class decoder(napl_base):
         """
         if self.timestep_cur == 0:
             return torch.zeros_like(self.spike_count)
-        # sv is the fresh div result, so the in-place bipolar rescale leaves spike_count untouched.
+        # Division returns a fresh tensor, so bipolar rescaling cannot alter the count.
         sv = self.spike_count.div(self.timestep_cur)
         if self.polarity == 'bipolar':
             sv.mul_(2).sub_(1)

@@ -13,7 +13,6 @@ from napl.sim.metric import accuracy
 class napl_sync_skewed_int(napl_base):
     def __init__(self, codec_config1, codec_config2, sync_skewed_int_config):
         super().__init__()
-        # set up encoder, decoder, and accuracy
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder0 = decoder(codec_config1)
@@ -25,7 +24,6 @@ class napl_sync_skewed_int(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike0 = self.encoder0(input_0)
         i_spike1 = self.encoder1(input_1)
         o_spike0, o_spike1 = self.sync_skewed_int(i_spike0, i_spike1)
@@ -58,8 +56,7 @@ def _kernel_specific_checks():
     }
     timestep = codec_config1['timestep']
 
-    # Generate random inputs based on polarity; keep input_0 <= input_1 so all input_0 spikes
-    # are released (residual cnt <= cnt_max bounds the error)
+    # Keep input_0 <= input_1 so all input_0 spikes are released within the residual bound.
     input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(timestep)).type(global_config.ntype)
     input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(timestep)).type(global_config.ntype)
     input_mask = input_0 < input_1
@@ -82,11 +79,11 @@ def _kernel_specific_checks():
         elapsed = time.perf_counter() - start
         print(f'[{device}] {timestep} timesteps x {in_0.numel()} elems: {elapsed:.3f} s')
 
-        # numerical check: output 1 conserves input 0's spikes up to the counter residual
+        # Output 1 conserves input 0 up to the counter residual.
         inst.accuracy0.analyze(in_0, verbose=True)
         err0 = (inst.decoder0.spike_value - in_0).abs().max().item()
         assert err0 <= (cnt_max + 1) / timestep, f'[{device}] output_1 error {err0} exceeds bound'
-        # output 2 is a bit-exact pass-through of input 2
+        # Output 2 passes input 2 through bit-exactly.
         error1, _ = inst.accuracy1.analyze(in_1, verbose=True)
         err1 = error1.abs().max().item()
         assert err1 == 0, f'[{device}] output_2 not a pass-through (err {err1})'
@@ -95,8 +92,7 @@ def _kernel_specific_checks():
         inst.reset()
         assert inst.sync_skewed_int.timestep_cur == 0
 
-        # known-answer aggregation: input 1 spikes every step, input 2 every other step,
-        # so output 1 must release integer digits of 2 on input 2's spikes
+        # Alternating input 2 spikes make output 1 release integer digits of 2.
         op = sync_skewed_int(sync_skewed_int_config).to(device)
         one = torch.ones(4, dtype=global_config.stype, device=device)
         zero = torch.zeros(4, dtype=global_config.stype, device=device)

@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_sigmoid_hard(napl_base):
     def __init__(self, codec_config, sigmoid_hard_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sigmoid_hard = sigmoid_hard(sigmoid_hard_config)
@@ -23,7 +22,6 @@ class napl_sigmoid_hard(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.sigmoid_hard(i_spike)
         self.decoder(o_spike)
@@ -45,11 +43,8 @@ def _kernel_specific_checks():
         'polarity': 'bipolar',
     }
     
-    # Generate random inputs based on polarity, ensure positive numbers
     input_cpu = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
-    # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
-    # generate the napl_sigmoid_hard instance
     for device in devices():
         input = input_cpu.to(device)
         sigmoid_hard_inst = napl_sigmoid_hard(codec_config, sigmoid_hard_config).to(device)
@@ -103,5 +98,19 @@ def test_sigmoid_hard():
     streaming_suite(CONFIG)
 
 
+def test_sigmoid_hard_matches_unarysim_carry_sequence():
+    input_values = [1, 1, 0]
+    expected = torch.tensor([0, 1, 1], dtype=global_config.stype)
+
+    for polarity in ('unipolar', 'bipolar'):
+        operation = sigmoid_hard({'polarity': polarity})
+        output = torch.stack([
+            operation(torch.full((2, 3), value, dtype=global_config.stype))
+            for value in input_values
+        ])
+        assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
+
+
 if __name__ == '__main__':
     test_sigmoid_hard()
+    test_sigmoid_hard_matches_unarysim_carry_sequence()

@@ -58,34 +58,40 @@ class mul_csg(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
+        #: Requested stream length used to size the conditional number sequence.
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two conditional number sequence.
         self.width = math.ceil(math.log2(self.timestep))
+        #: Lowercase name of the configured number-sequence generator.
         self.generator = config['generator'].lower()
+        #: Period of the conditional number sequence.
         self.len = 2**self.width
 
-        # combinational output; internal seq-index counter(s) are self.width-bit
-        # registers that hold no output latency (pp_delay=0). RTL must reset them
-        # to 0 to match reset() and instance decorrelated RNGs per polarity path.
+        # Output is combinational; RTL sequence-index registers reset to zero.
+        #: Hardware latency and timing metadata for the combinational multiplier.
         self.hw = hw_params(pp_delay=0)
 
-        # generate the number sequence
-        # the sequence is used to compare with the input data
-        # this is ntype tensor
+        #: Periodic number sequence used to generate conditional operand spikes.
+        self.num_seq: torch.Tensor
         self.register_buffer(
             'num_seq',
             gen_num_seq(config={'width': self.width,
                                 'generator': self.generator}),
         )
 
-        # seq_idx is used later as an enable signal, get update every cycled
+        #: Per-element index of the next number-sequence value for input-one events.
+        self.seq_idx: torch.Tensor
         self.register_buffer('seq_idx', torch.zeros(1, dtype=torch.long))
-        # Generate two seperate spike generators and two enable signals for bipolar polarity
         if self.polarity == 'bipolar':
+            #: Per-element index for the complementary bipolar input-zero path.
+            self.seq_idx_inv: torch.Tensor
             self.register_buffer('seq_idx_inv', torch.zeros(1, dtype=torch.long))
 
-        # only compute the prob of input_1 once in the first call
+        # input_1 is cached until reset.
+        #: Numeric probability tensor cached from the first multiplicand input.
         self.in_1_prob = None
+        #: Whether the next call must cache the first multiplicand probability.
         self.is_first_call = True
 
 
@@ -120,23 +126,15 @@ class mul_csg(napl_base):
             output = multiply(torch.tensor([1], dtype=torch.int8),
                               torch.tensor([0.5]))
         """
-        # input_0 is a spike tensor
-        # input_1 is a binary tensor
         if self.is_first_call is True:
             assert input_1 is not None, logger.error('input_1 is None, please provide a valid input_1 tensor.')
-            # cache once as ntype so the per-timestep compare below skips the recast
             self.in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)
             self.is_first_call = False
 
-        # reuse the same int8 view of input_0 across both polarity paths;
-        # long.add(int8) promotes to long, so the seq-index counters stay long
-        # indices without a separate per-timestep int8->long cast.
+        # int8 inputs promote to long in the sequence-index update.
         in_0_i8 = input_0.type(torch.int8)
-        # generate the conditional spike; kept as bool (int8 & bool promotes to
-        # int8), skipping a per-timestep bool->int8 cast on each polarity path
         spike_csg = torch.gt(self.in_1_prob, self.num_seq[self.seq_idx])
         path = in_0_i8 & spike_csg
-        # conditional update for seq index when input_0 is 1, which simulates the enable signal.
         if self.seq_idx.shape == in_0_i8.shape:
             self.seq_idx.add_(in_0_i8)
         else:
@@ -146,11 +144,9 @@ class mul_csg(napl_base):
         if self.polarity == 'unipolar':
             return path.type(self.stype)
         else:
-            # generate the conditional spike (bool, as above)
             spike_csg = torch.gt(self.in_1_prob, self.num_seq[self.seq_idx_inv])
             inv_in_0_i8 = in_0_i8 ^ 1
             path_inv = inv_in_0_i8 & ~spike_csg
-            # conditional update for seq_idx_inv
             if self.seq_idx_inv.shape == inv_in_0_i8.shape:
                 self.seq_idx_inv.add_(inv_in_0_i8)
             else:

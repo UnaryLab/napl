@@ -49,13 +49,16 @@ class sqrt_tracejkff(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: Hardware latency and timing metadata for the composed square-root path.
         self.hw = hw_params(pp_delay=0)
 
+        #: JK flip-flop that stores the square-root trace state.
         self.jkff = jkff()
-        # constant K=1 input to the jkff, cached to avoid a per-timestep ones_like alloc
+        # K is a shape-, device-, and dtype-matched constant-one tensor cached until reset.
+        #: Constant-one JK input tensor cached for the current input shape.
         self.jkff_k = None
         if self.polarity == 'bipolar':
-            # fix width to optimal 2
+            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
             self.bi2uni = bi2uni({'width': 2})
 
 
@@ -88,14 +91,13 @@ class sqrt_tracejkff(napl_base):
             output = operation(torch.tensor([0.0, 1.0]))
         """
         trace = self.jkff.q
-        # for trace, input in {0,1}, ((1-trace) & input) + trace == trace | input:
-        # one fused OR instead of sub/and/add temporaries per timestep
+        # For 0/1 values, ((1 - trace) & input) + trace == trace | input.
         output = (trace | input.type(torch.int8)).type(self.stype)
         if self.polarity == 'unipolar':
-            # P_trace = P_out/(P_out+1)
+            # P_trace = P_out / (P_out + 1).
             self.unipolar_trace(output)
         else:
-            # P_trace = (P_out*2-1)/((P_out*2-1)+1)
+            # P_trace = (2 * P_out - 1) / ((2 * P_out - 1) + 1).
             out = self.bi2uni(output)
             self.unipolar_trace(out)
         return output

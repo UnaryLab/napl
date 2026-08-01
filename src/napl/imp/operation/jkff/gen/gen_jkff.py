@@ -24,28 +24,21 @@ from napl.sim.operation import jkff
 VEC = Path(__file__).resolve().parent.parent / "vec" / "jkff.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "jkff_params.vh"
 
-# test_jkff.py feeds the op raw (j, k) spike vectors directly (no encoder), so the
-# faithful "same input as the test" is those exact j/k sequences. The test drives
-# j=[0,0,1,1] k=[0,1,0,1] then j=[1,1,0,0] k=[1,0,1,0]; we lead with those, then
-# continue with a stream that visits both q states under every (j, k) input so the
-# full transition table is also exercised.
+# The prefix matches test_jkff.py's raw inputs; the suffix covers both q states.
 STREAM = [
-    # test_jkff.py sequence 1: (j,k) zipped from [0,0,1,1] / [0,1,0,1]
     (0, 0), (0, 1), (1, 0), (1, 1),
-    # test_jkff.py sequence 2: (j,k) zipped from [1,1,0,0] / [1,0,1,0]
     (1, 1), (1, 0), (0, 1), (0, 0),
-    # exhaustive transition coverage across both q states.
-    (0, 0),  # q:0->0  (J=0)
-    (1, 0),  # q:0->1  (set)
-    (0, 0),  # q:1->1  (K=0)
-    (0, 1),  # q:1->0  (reset)
-    (1, 1),  # q:0->1  (toggle from 0)
-    (1, 1),  # q:1->0  (toggle from 1)
-    (1, 0),  # q:0->1
-    (1, 1),  # q:1->0
-    (0, 1),  # q:0->0
-    (1, 0),  # q:0->1
-    (0, 0),  # q:1->1
+    (0, 0),
+    (1, 0),
+    (0, 0),
+    (0, 1),
+    (1, 1),
+    (1, 1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (1, 0),
+    (0, 0),
     (0, 1),  # q:1->0
 ]
 

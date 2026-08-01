@@ -38,10 +38,13 @@ class max_rc(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational maximum output.
         self.hw = hw_params(pp_delay=0)
 
+        #: Previous selection decision used to route the synchronized maximum stream.
+        self.dff: torch.Tensor
         self.register_buffer('dff', torch.zeros(1, dtype=torch.int8))
-        # default to optimal width
+        #: Skew synchronizer that correlates the two input streams before selection.
         self.sync = sync_skewed({'width': 2})
 
 
@@ -72,26 +75,18 @@ class max_rc(napl_base):
             spike, index = maximum(torch.tensor([1], dtype=torch.int8),
                                    torch.tensor([0], dtype=torch.int8))
         """
-        # sync input_0 to input_1
         sync_0, sync_1 = self.sync(input_0, input_1)
         sync_0_i8 = sync_0.type(torch.int8)
         sync_1_i8 = sync_1.type(torch.int8)
-        # if sync_0/1 is 01 or 10, enable dff update
         d_enable = sync_0_i8 ^ sync_1_i8
 
-        # generate output before the dff update
-        # if self.dff == 1, input_1 is larger, and max is 1
-        # mux(dff, input_1, input_0) with fewer elementwise ops (dff is {0,1})
+        # Output uses the prior selection state; the returned index uses the updated state.
         output = input_0 + self.dff * (input_1 - input_0)
 
-        # update the dff if d_enable is 1: mux(d_enable, sync_1, dff)
-        # sync_0/1 is 01, meaning input_0 < input_1
-        # this dff value also indicates argmax
         if self.dff.shape == d_enable.shape:
             self.dff.add_(d_enable * (sync_1_i8 - self.dff))
         else:
             updated = self.dff + d_enable * (sync_1_i8 - self.dff)
             self.dff.resize_as_(updated).copy_(updated.detach())
 
-        # if self.dff == 1, input_1 is larger, and max is 1
         return output.type(self.stype), self.dff.type(self.stype)

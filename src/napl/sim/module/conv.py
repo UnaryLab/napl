@@ -10,7 +10,7 @@ from loguru import logger
 
 
 def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext):
-    """Give `module` nn.Conv2d-style learnable weight/bias (or adopt external tensors)."""
+    """Give ``module`` ``nn.Conv2d``-style trainable parameters."""
     kh, kw = num2tuple(kernel_size)
     module.weight = torch.nn.Parameter(torch.empty(out_channels, in_channels, kh, kw))
     torch.nn.init.kaiming_uniform_(module.weight, a=math.sqrt(5))
@@ -33,21 +33,19 @@ def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weig
 def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, linear_fn):
     """
     Run a binary-domain conv2d by im2col + a 2D linear kernel + fold: unfold the input to
-    patches, apply `linear_fn(patches_2d, weight_2d)` (one of the M2 binary linear autograd
+    patches, apply ``linear_fn(patches_2d, weight_2d)`` through a binary linear autograd
     Functions), then fold the result back to NCHW. Bias is added after folding. The unfold/
     fold are differentiable, so the linear Function's STE gradient flows through to weight
     and input.
     """
     out_hw = conv2d_output_shape((input.size(2), input.size(3)), kernel_size=kernel_size,
                                  dilation=dilation, pad=padding, stride=stride)
-    im2col = torch.nn.functional.unfold(input, kernel_size, dilation, padding, stride)   # (b, K, L)
-    inp2d = im2col.transpose(1, 2).reshape(-1, im2col.size(1))                            # (b*L, K)
-    w2d = weight.view(weight.size(0), -1)                                                 # (out, K)
-    mm = linear_fn(inp2d, w2d)                                                            # (b*L, out)
-    mm = mm.reshape(input.size(0), -1, mm.size(-1)).transpose(1, 2)                       # (b, out, L)
-    # fold with a (1,1) kernel is exactly a row-major reshape of L -> (H, W); reshape is
-    # cheaper and has the identical (unfold==reshape) gradient
-    out = mm.reshape(input.size(0), mm.size(1), out_hw[0], out_hw[1])                     # (b, out, H, W)
+    im2col = torch.nn.functional.unfold(input, kernel_size, dilation, padding, stride)
+    inp2d = im2col.transpose(1, 2).reshape(-1, im2col.size(1))
+    w2d = weight.view(weight.size(0), -1)
+    mm = linear_fn(inp2d, w2d)
+    mm = mm.reshape(input.size(0), -1, mm.size(-1)).transpose(1, 2)
+    out = mm.reshape(input.size(0), mm.size(1), out_hw[0], out_hw[1])
     if bias is not None:
         out = out + bias.view(1, -1, 1, 1)
     return out
@@ -95,14 +93,28 @@ class conv_fxp(napl_base):
                 optional instance label and defaults to ``None``.
         """
         super().__init__(config, [])
-        self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
+        #: Spatial height and width of the convolution kernel.
+        self.kernel_size = kernel_size
+        #: Spatial step between adjacent convolution windows.
+        self.stride = stride
+        #: Symmetric zero padding applied to the input.
+        self.padding = padding
+        #: Spacing between kernel elements.
+        self.dilation = dilation
+        #: Fixed-point width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Fixed-point width used for weight values.
         self.widthw = config.get('widthw', 8)
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during fixed-point conversion.
         self.rounding = config.get('rounding', 'round').lower()
-        self.max_abs_i = 2 ** self.widthi
-        self.max_abs_w = 2 ** self.widthw
+        #: Largest positive input magnitude represented by the quantized kernel.
+        self.max_abs_i = 2 ** (self.widthi - 1)
+        #: Largest positive weight magnitude represented by the quantized kernel.
+        self.max_abs_w = 2 ** (self.widthw - 1)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
     def _reset(self):
@@ -132,7 +144,7 @@ class conv_fxp(napl_base):
                                               self.rounding, self.quantilei, self.quantilew)
         rshift_o = 0 - rshift_i - rshift_w
         fn = lambda i2d, w2d: _linear_fxp_fn.apply(i2d, w2d, None, rshift_i, rshift_w, rshift_o,
-                                                   self.max_abs_i, self.max_abs_w)
+                                                   self.max_abs_i, self.max_abs_w, True)
         return _conv2d_binary(input, self.weight, self.bias, self.kernel_size, self.stride,
                               self.padding, self.dilation, fn)
 
@@ -183,19 +195,37 @@ class conv_hub(napl_base):
         persistent non-trainable state.
         """
         super().__init__(config, [])
-        self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
+        #: Spatial height and width of the convolution kernel.
+        self.kernel_size = kernel_size
+        #: Spatial step between adjacent convolution windows.
+        self.stride = stride
+        #: Symmetric zero padding applied to the input.
+        self.padding = padding
+        #: Spacing between kernel elements.
+        self.dilation = dilation
+        #: Quantization width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Quantization width used for weight values.
         self.widthw = config.get('widthw', 8)
         assert self.widthi == self.widthw, \
             logger.error(f'conv_hub requires widthi == widthw (got {self.widthi}, {self.widthw}).')
+        #: Number-sequence generator used for input values.
         self.rngi = config.get('rngi', 'sobol').lower()
+        #: Number-sequence generator used for weight values.
         self.rngw = config.get('rngw', 'sobol').lower()
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during quantization.
         self.rounding = config.get('rounding', 'round').lower()
+        #: Maximum cycle count supported by the unary product map.
         self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
         cycle_cfg = config.get('cycle', None)
+        #: Cycle count used for each unary product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
+        #: Lookup map used to evaluate unary products.
+        self.mapcbsg: torch.Tensor
         self.register_buffer('mapcbsg', mapcbsg)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
@@ -286,38 +316,65 @@ class conv_tlut(napl_base):
                 * **name** - Optional instance label. Defaults to ``None``.
         """
         super().__init__(config, [])
-        self.kernel_size, self.stride, self.padding, self.dilation = kernel_size, stride, padding, dilation
+        #: Spatial height and width of the convolution kernel.
+        self.kernel_size = kernel_size
+        #: Spatial step between adjacent convolution windows.
+        self.stride = stride
+        #: Symmetric zero padding applied to the input.
+        self.padding = padding
+        #: Spacing between kernel elements.
+        self.dilation = dilation
+        #: Operand decomposed into temporal digits.
         self.temporal = config.get('temporal', 'i').lower()
+        #: Number of bits represented by each temporal digit.
         self.widtht = config.get('widtht', 4)
+        #: Numeric format used for input values.
         self.formati = config.get('formati', 'fxp').lower()
+        #: Numeric format used for weight values.
         self.formatw = config.get('formatw', 'fxp').lower()
+        #: Fixed-point width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Fixed-point width used for weight values.
         self.widthw = config.get('widthw', 8)
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during fixed-point conversion.
         self.rounding = config.get('rounding', 'round').lower()
         assert self.temporal in ('i', 'input', 'w', 'weight'), \
             logger.error(f"conv_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}.")
 
         if self.formati == 'fxp' and self.formatw == 'fxp':
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fxpfxp'
         elif self.formati != 'fxp' and self.formatw != 'fxp':
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fpfp'
         else:
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fxpfp'
 
+        #: Maximum number of temporal cycles per product.
         self.cycle_max = 2 ** self.widtht
         cycle_cfg = config.get('cycle', None)
+        #: Number of temporal cycles used per product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
+        #: Input magnitude width excluding its sign bit.
         self.widthi_mag = self.widthi - 1
+        #: Weight magnitude width excluding its sign bit.
         self.widthw_mag = self.widthw - 1
         if self.temporal in ('i', 'input'):
             fmt = self.formati
+            #: Bit width of the operand decomposed into temporal digits.
             self.width = self.widthi - 1 if fmt == 'fxp' else _TLUT_FP_WIDTH[fmt]
         else:
             fmt = self.formatw
+            #: Bit width of the operand decomposed into temporal digits.
             self.width = self.widthw - 1 if fmt == 'fxp' else _TLUT_FP_WIDTH[fmt]
+        #: Number of temporal digits required for the selected operand.
         self.degree = int(math.ceil(self.width / self.widtht))
+        #: Leading padding bits in the temporal decomposition.
         self.delta = int(self.degree * self.widtht - self.width)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
@@ -364,8 +421,9 @@ class conv(napl_base):
     encoded on a separate number-sequence dimension. Each timestep the weights are encoded
     into spikes on a distinct RNG dimension, multiplied (XNOR bipolar / AND unipolar) with the
     im2col'd input patches, and the partial products summed by a scaled unary adder, then
-    folded back to NCHW. The decoded output represents conv2d(x, W) + b divided by `scale`
-    (default in_channels*kh*kw + has_bias) to stay in unary range. Bipolar zero-padding uses a
+    folded back to NCHW. The decoded output represents
+    ``conv2d(x, W) + b`` divided by ``scale``, which defaults to
+    ``in_channels * kh * kw + has_bias``, to stay in the unary range. Bipolar zero-padding uses a
     decorrelated rate-0.5 pad stream (a separate pad encoder), not a deterministic toggle.
     It supports rate-coded weights, ``groups=1``, and zero padding only.
 
@@ -409,16 +467,30 @@ class conv(napl_base):
         from napl.sim.module.encoder import encoder
 
         assert weight.dim() == 4, logger.error(f'conv weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
-        self.weight = weight
-        self.out_channels, self.in_channels = weight.shape[0], weight.shape[1]
+        #: Trainable numeric convolution kernel encoded into a spike stream.
+        self.weight = torch.nn.Parameter(weight)
+        #: Optional trainable numeric bias encoded on its own sequence.
+        self.bias = torch.nn.Parameter(bias) if bias is not None else None
+        #: Number of convolution output channels.
+        self.out_channels = weight.shape[0]
+        #: Number of convolution input channels.
+        self.in_channels = weight.shape[1]
+        #: Spatial height and width of the convolution kernel.
         self.kernel_size = (weight.shape[2], weight.shape[3])
-        self.stride, self.dilation = stride, dilation
+        #: Spatial step between adjacent convolution windows.
+        self.stride = stride
+        #: Spacing between kernel elements.
+        self.dilation = dilation
+        #: Symmetric padding represented as a height-width pair.
         self.padding = num2tuple(padding)
+        #: Whether an encoded bias contributes to each output sum.
         self.has_bias = bias is not None
-        self.weight_flat = weight.view(self.out_channels, -1)                 # (out, K)
-        self.K = self.weight_flat.shape[1]                                    # in*kh*kw
+        #: Number of weight products in one convolution output.
+        self.K = weight[0].numel()
+        #: Unary-adder fan-in, including the bias when present.
         self.entry = self.K + (1 if self.has_bias else 0)
         scale = config.get('scale', None)
+        #: Divisor implemented by the streaming unary adder.
         self.scale = self.entry if scale is None else scale
 
         width = config.get('width', 12)
@@ -432,21 +504,23 @@ class conv(napl_base):
 
         dim = config.get('dim', 2)
         cfg = {'polarity': self.polarity, 'timestep': config['timestep'], 'generator': config['generator']}
+        #: Encoder that converts the numeric convolution kernel to spikes.
         self.w_encoder = encoder({**cfg, 'dim': dim})
+        #: Streaming unary adder that reduces each convolution product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
         if self.has_bias:
-            self.bias = bias
+            #: Encoder that converts the optional numeric bias to spikes.
             self.b_encoder = encoder({**cfg, 'dim': dim + 1})
-        # decorrelated rate-0.5 pad stream for bipolar zero-padding
+        # Bipolar zero-padding uses a decorrelated rate-0.5 stream.
         if self.polarity == 'bipolar' and self.padding != (0, 0):
+            #: Encoder supplying a decorrelated bipolar-zero padding stream.
             self.pad_encoder = encoder({**cfg, 'dim': dim + 2})
-            # The pad bit feeds F.pad's scalar `value`, so it must be a Python float; taking
-            # .item() of a fresh encoder spike every timestep forces a per-step device->host
-            # sync (costly on GPU). The bit (rate-0.5 spike of input 0) is a deterministic
-            # function of timestep, so precompute the full period to plain floats once.
+            # Python float pad bits avoid a device-to-host synchronization in F.pad.
+            #: Period of the precomputed padding spike sequence.
             self.pad_len = self.pad_encoder.len
             pad_seq = torch.gt(torch.tensor(0.5, dtype=self.ntype),
                                self.pad_encoder.num_seq.detach()).type(self.stype)
+            #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
     def _reset(self):
@@ -472,30 +546,25 @@ class conv(napl_base):
         the unary-adder accumulator. External weight and bias tensors are not
         modified.
         """
-        # input_spike: (batch, in_channels, H, W) spike tensor for the current timestep
         ph, pw = self.padding
         out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)), kernel_size=self.kernel_size,
                                      dilation=self.dilation, pad=self.padding, stride=self.stride)
-        # unfold/fold are not implemented for int8 spikes; cast to float (spikes are 0/1, exact)
+        # unfold requires floating input; converting 0/1 spikes is exact.
         xf = input_spike.type(self.ntype)
         if self.polarity == 'bipolar' and self.padding != (0, 0):
-            # pad with a decorrelated rate-0.5 spike (bipolar 0), then unfold with no extra padding
+            # A decorrelated rate-0.5 pad stream represents bipolar zero.
             pad_bit = self.pad_bits[(self.timestep_cur - 1) % self.pad_len]
             xf = torch.nn.functional.pad(xf, (pw, pw, ph, ph), value=pad_bit)
             im2col = torch.nn.functional.unfold(xf, self.kernel_size, self.dilation, 0, self.stride)
         else:
             im2col = torch.nn.functional.unfold(xf, self.kernel_size, self.dilation, self.padding, self.stride)
-        w_spike = self.w_encoder(self.weight_flat)                           # (out, K)
+        w_spike = self.w_encoder(self.weight.view(self.out_channels, -1))
         wf = w_spike.type(self.ntype)
-        # partial sum of the AND (unipolar) / XNOR (bipolar) spike products, without
-        # materializing the (batch, out, K, L) elementwise product; bit-exact (small
-        # integers, exact in float under any reduction order). Batched (out,K)@(batch,K,L)
-        # avoids transposing/copying the big im2col tensor.
-        psum = torch.matmul(wf, im2col)                                      # (batch, out, L)
+        # Small integer AND/XNOR counts are exact in the floating accumulator.
+        psum = torch.matmul(wf, im2col)
         if self.polarity == 'bipolar':
             psum = 2 * psum - im2col.sum(1, keepdim=True) - wf.sum(-1).unsqueeze(-1) + self.K
         if self.has_bias:
-            psum = psum + self.b_encoder(self.bias).type(self.ntype).unsqueeze(-1)  # bias spike joins the sum
-        acc = self.acc(psum, entry=self.entry, dim=None)                     # (batch, out, L) spikes
-        # fold with a (1,1) kernel is exactly a row-major reshape of L -> (H, W)
-        return acc.reshape(input_spike.size(0), acc.size(1), out_hw[0], out_hw[1])  # (batch, out, H, W)
+            psum = psum + self.b_encoder(self.bias).type(self.ntype).unsqueeze(-1)
+        acc = self.acc(psum, entry=self.entry, dim=None)
+        return acc.reshape(input_spike.size(0), acc.size(1), out_hw[0], out_hw[1])

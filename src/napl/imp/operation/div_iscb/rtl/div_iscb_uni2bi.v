@@ -1,18 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// div_iscb_uni2bi -- unipolar-to-bipolar scaled add converter (stateful).
-//
-// RTL counterpart of napl.sim.operation.uni2bi with width=3, as instantiated by
-// div_iscb's bipolar_forward (src/napl/sim/operation/uni2bi.py). Internal helper
-// for div_iscb_bipolar; not a standalone op.
-//
-//   acc    = clamp(acc + (in + 1), -4, 3)     (updated this cycle, then read)
-//   out    = (acc >= 2)
-//   acc   -= 2*out
-//
-// Reset (active-low i_rst_n) loads the Python reset() state: acc = 0.
-//==============================================================================
+// Fixed-width uni2bi helper matching Python: clamp acc+(input+1) to [-4,3],
+// emit at two, then subtract twice the emitted bit. Active-low reset clears acc.
 module div_iscb_uni2bi (
     input  wire i_clk,
     input  wire i_rst_n,

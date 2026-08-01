@@ -1,9 +1,7 @@
-# Global configuration for NAPL
 global_config:
 
-    # spike data type for simulation
+    # Spike streams use an integer representation.
     spike_type: 'torch.int8'
-    
-    # non-spike data type for simulation
-    # for both number sequence and accumulation buffer
+
+    # Number sequences and accumulation buffers share this type.
     non_spike_type: 'torch.float32'

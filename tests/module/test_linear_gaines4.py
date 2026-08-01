@@ -43,13 +43,10 @@ def _kernel_specific_checks():
 
     out_features = 8
 
-    # scaled mode: entry a power of two so the Gaines threshold scale is exact.
-    # Reference is the idealized Gaines scaled add y/(L-1) (lfsr thresholds {1..L-1},
-    # compare >=). The real mechanism carries an O(1/L) systematic offset on top of the
-    # SC noise (threshold table has a duplicated state, count clips at L-1; identical
-    # quirks in UnarySim GainesLinear4), so the bounds are sized for entry = 16, not
-    # 1/sqrt(T). The input codec is lfsr (the Gaines flavor): a sobol dim-1 input
-    # phase-locks with the L-periodic threshold table and biases the result.
+    # A power-of-two entry count makes the Gaines threshold scale exact. The
+    # duplicated threshold state and clipped count add an O(1/L) offset, so bounds
+    # target entry=16 rather than 1/sqrt(T). LFSR input avoids phase-locking with
+    # the periodic threshold table.
     for device in devices():
         for polarity in ['unipolar', 'bipolar']:
             for has_bias in [True, False]:
@@ -67,7 +64,7 @@ def _kernel_specific_checks():
                 inst(input_x, timesteps=timestep)
 
                 y = weight @ input_x + (bias if has_bias else 0)
-                L = entry  # entry is a power of two here, so scale_len == entry
+                L = entry  # The power-of-two entry count equals scale_len.
                 if polarity == 'bipolar':
                     ref = (entry + y) / (L - 1) - 1
                 else:
@@ -86,8 +83,7 @@ def _kernel_specific_checks():
 
     in_features = 16
 
-    # non-scaled bipolar: the saturating counter rails to sign(W x); +/-0.5 everywhere
-    # gives a clearly positive (first half) / negative (second half) sum per output row
+    # The non-scaled bipolar counter rails to sign(Wx); these rows stay away from zero.
     w_sign_cpu = torch.cat([torch.full((out_features // 2, in_features), 0.5),
                             torch.full((out_features - out_features // 2, in_features), -0.5)]
                            ).type(global_config.ntype)
@@ -122,7 +118,7 @@ def _kernel_specific_checks():
         inst.reset()
     print('non-scaled unipolar zero-input corner passed.')
 
-    # performance: time linear_gaines4 vs linear on identical spike streams
+    # Compare linear_gaines4 and linear on identical spikes.
     input_x_cpu = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype)
     weight_cpu = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype)
     for device in devices():

@@ -1,28 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_WIDTH is emitted by gen/gen_sync_skewed.py from the op config (= the test's
-// sync_skewed_config), so the DUT parameter is inherited from the Python model.
-// iverilog resolves this include relative to the compile cwd (imp/).
+// Generated WIDTH mirrors the Python model configuration.
 `include "sync_skewed/vec/sync_skewed_params.vh"
-//==============================================================================
-// Self-checking testbench for sync_skewed.
-//
-// Reads golden vectors produced by gen/gen_sync_skewed.py (from the napl Python
-// model) and asserts the skewed synchronizer reproduces them cycle by cycle.
-//
-// Timing contract (matches the Python forward()): at timestep t the outputs are
-// combinational in (i_input_1, i_input_2, cnt) where cnt is the value BEFORE this
-// timestep's update. So per cycle we (1) drive this cycle's inputs, (2) let the
-// combinational outputs settle and check them against the current register
-// state, then (3) pulse one posedge i_clk to perform the counter update.
-// i_rst_n is held low first so the co-sim starts from the exact post-reset()
-// state (cnt = 0).
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=sync_skewed
-//==============================================================================
+// Python golden outputs use the pre-update counter and are checked before each
+// posedge. RST requests active-low reset before replay continues.
+// Co-sim: make test OP=sync_skewed
 module sync_skewed_tb;
     reg  clk;
     reg  rst_n;
@@ -42,7 +24,7 @@ module sync_skewed_tb;
     reg a, b, exp_1, exp_2;
     reg [8*8-1:0] tag;
 
-    // Free-running clock: 10ns period.
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
@@ -50,14 +32,12 @@ module sync_skewed_tb;
         in_1 = 1'b0;
         in_2 = 1'b0;
 
-        // Assert active-low reset across a clock edge to load cnt = 0 (the async
-        // reset fires on the posedge while rst_n is low), then release it on a
-        // negedge so no spurious posedge updates cnt before the first check.
+        // Release reset on a negedge so no update precedes the first check.
         rst_n = 1'b0;
         @(negedge clk);
-        @(posedge clk);   // async reset loads cnt = 0 here
+        @(posedge clk);
         @(negedge clk);
-        rst_n = 1'b1;     // released; next posedge (inside the loop) is the update
+        rst_n = 1'b1;
 
         fd = $fopen("vec/sync_skewed.vec", "r");
         if (fd == 0) begin
@@ -68,28 +48,17 @@ module sync_skewed_tb;
         n = 0;
         fails = 0;
         while (!$feof(fd)) begin
-            // Each line is either four spike bits or the literal "RST" marking a
-            // mid-stream reset (emitted by gen after model.reset()). Peek the
-            // first whitespace token: if it is "RST" we re-assert i_rst_n to
-            // reproduce the model's reset() from a dirtied counter; otherwise the
-            // line carries (in_1 in_2 exp_1 exp_2).
+            // Rows are "in_1 in_2 exp_1 exp_2" or the reset sentinel "RST".
             code = $fscanf(fd, "%s", tag);
             if (code != 1) begin
-                // no more tokens (trailing newline / EOF)
             end else if (tag == "RST") begin
-                // Async reset across a posedge to clear cnt = 0, released on a
-                // negedge so no spurious posedge updates cnt before the next check.
                 rst_n = 1'b0;
                 @(posedge clk);
                 @(negedge clk);
                 rst_n = 1'b1;
             end else begin
-                // tag holds the in_1 bit; read the remaining three on this line.
                 a = (tag == "1");
                 code = $fscanf(fd, "%b %b %b\n", b, exp_1, exp_2);
-                // On a negedge: registers are stable. Drive this cycle's inputs,
-                // let the combinational outputs settle, then check before the
-                // posedge updates cnt.
                 in_1 = a;
                 in_2 = b;
                 #1;
@@ -102,8 +71,8 @@ module sync_skewed_tb;
                     $display("FAIL cyc=%0d in_1=%b in_2=%b : out_2 got %b exp %b", n, a, b, out_2, exp_2);
                     fails = fails + 1;
                 end
-                @(posedge clk);   // update cnt
-                @(negedge clk);   // settle for the next check
+                @(posedge clk);
+                @(negedge clk);
             end
         end
         $fclose(fd);

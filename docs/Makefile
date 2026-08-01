@@ -1,4 +1,4 @@
-SPHINXOPTS ?= -W --keep-going
+SPHINXOPTS ?= -E -a -W --keep-going
 SPHINXBUILD ?= sphinx-build
 SOURCEDIR = source
 BUILDDIR = _build

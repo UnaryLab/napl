@@ -50,14 +50,14 @@ The Sphinx sources live under [`docs/`](docs/). Build the design documentation
 and docstring-based API reference as static HTML with:
 
 ```sh
-conda run -n napl make -C docs html
+conda run -n napl python -m sphinx -E -a -W --keep-going -b html docs/source docs/_build/html
 ```
 
 The output is written to `docs/_build/html/`.
 
 ## Reproducing results
 
-[`examples/`](examples/) holds three end-to-end UnarySim app ports, each with its own README and `results/*.csv` outputs: `mlp` (MLP3 on MNIST), `ubrain` (uBrain BCI CNN+RNN), and `usystolic` (uSystolic convnet).
+[`zoo/`](zoo/) holds three end-to-end applications implemented with NAPL's public API, each with its own README and `results/*.csv` outputs: `mlp` (MLP3 on MNIST), `ubrain` (uBrain BCI CNN+RNN), and `usystolic` (uSystolic convnet).
 
 ## Configuration
 

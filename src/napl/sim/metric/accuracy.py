@@ -55,6 +55,8 @@ class accuracy(napl_base):
         """
         super().__init__(config, ['polarity'])
 
+        #: Running count of one-valued spikes for each observed stream element.
+        self.spike_count: torch.Tensor
         self.register_buffer('spike_count', torch.zeros(1))
 
 
@@ -85,17 +87,14 @@ class accuracy(napl_base):
 
             metric(torch.tensor([1.0, 0.0]))
         """
-        # float accumulator avoids overflow; the 0/1 spike promotes exactly, so no cast.
+        # A float accumulator avoids overflow, and 0/1 spikes promote exactly.
         sc = self.spike_count
-        # shape-guarded: first forward broadcasts the (1,) seed up to spike's shape
-        # out-of-place; steady state accumulates in place to drop a per-timestep alloc.
+        # The scalar seed broadcasts once; matching shapes then accumulate in place.
         if sc.shape == spike.shape:
             sc.add_(spike)
         else:
             expanded = sc.add(spike).detach()
             self.spike_count.resize_as_(expanded).copy_(expanded)
-        # no return: evaluating the spike_value property here would redo the div
-        # every timestep; readers access .spike_value on demand instead.
 
 
     @property
@@ -115,7 +114,7 @@ class accuracy(napl_base):
         """
         if self.timestep_cur == 0:
             return torch.zeros_like(self.spike_count)
-        # sv is the fresh div result, so the in-place bipolar rescale leaves spike_count untouched.
+        # Division returns a fresh tensor, so bipolar rescaling cannot alter the count.
         sv = self.spike_count.div(self.timestep_cur)
         if self.polarity == 'bipolar':
             sv.mul_(2).sub_(1)
@@ -152,7 +151,6 @@ class accuracy(napl_base):
 
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: spike_value computes from spike_count on each read
         spike_value = self.spike_value
         progressive_error = spike_value.sub(reference.div(scale_ref)).detach()
         result = analyze(

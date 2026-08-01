@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_relu_sat(napl_base):
     def __init__(self, codec_config, relu_sat_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.relu_sat = relu_sat(relu_sat_config)
@@ -23,7 +22,6 @@ class napl_relu_sat(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.relu_sat(i_spike)
         self.decoder(o_spike)
@@ -43,11 +41,8 @@ def _kernel_specific_checks():
     }
     relu_sat_config={}
     
-    # Generate random inputs based on polarity, ensure positive numbers
     input_cpu = gen_rand_tensor('bipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
-    # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
-    # generate the napl_relu_sat instance
     for device in devices():
         input = input_cpu.to(device)
         relu_sat_inst = napl_relu_sat(codec_config, relu_sat_config).to(device)

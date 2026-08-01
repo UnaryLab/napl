@@ -19,9 +19,9 @@ This module provides two faithful forms of that network built from napl kernels:
     Cascade_CNN_RNN_HUB  conv_hub / linear_hub + mgu_hub + relu_hub/tanh_hub
                          (hybrid unary-binary inference; == UnarySim model_hub).
 
-The HUB form takes its weights from an FP instance (build_hub_from_fp), so the
-two share identical parameters and the HUB output can be compared against the FP
-output as a fidelity check.
+The HUB form copies its initial weights from an FP instance (build_hub_from_fp), so
+the two start with identical parameter values and their outputs can be compared in
+a fidelity check.
 
 UnarySim -> napl kernel map used here:
     nn.Conv2d / nn.Linear   -> conv_hub / linear_hub   (HUB inference path)
@@ -37,9 +37,8 @@ on EEG-shaped tensors.
 import torch
 import torch.nn as nn
 
+from napl import conv_hub, linear_hub, mgu_hard, mgu_hub, relu_hub, tanh_hub
 from napl.utils import truncated_normal
-from napl.sim.module import conv_hub, linear_hub, mgu_hard, mgu_hub
-from napl.sim.operation import relu_hub, tanh_hub
 
 
 def fc3_in_features(input_sz, cnn_chn, cnn_padding):
@@ -81,11 +80,9 @@ class Cascade_CNN_RNN_FP(nn.Module):
         self.conv2 = nn.Conv2d(cnn_chn, cnn_chn * 2, (cnn_kn_sz, cnn_kn_sz), bias=bias, padding=cnn_padding)
         self.fc3 = nn.Linear(fc3_in_features(self.input_sz, cnn_chn, cnn_padding), fc_sz, bias=bias)
         self.fc3_drop = nn.Dropout(p=1 - keep_prob)
-        # MGU recurrent cell, hard activations (== HardMGUCell)
         self.rnncell4 = mgu_hard(fc_sz, rnn_hidden_sz, bias=bias, config={'hard': True})
         self.fc5 = nn.Linear(rnn_hidden_sz, sum(num_class), bias=bias)
 
-        # ScaleReLU == relu_hub (Hardtanh(0, 1)); output Hardtanh == tanh_hub
         self.conv1_act = relu_hub({'scale': 1.0})
         self.conv2_act = relu_hub({'scale': 1.0})
         self.fc3_act = relu_hub({'scale': 1.0})
@@ -94,10 +91,9 @@ class Cascade_CNN_RNN_FP(nn.Module):
         self._init_weight(init_std)
 
     def _init_weight(self, std):
-        self.conv1.weight.data = truncated_normal(self.conv1.weight, 0.0, std)
-        self.conv2.weight.data = truncated_normal(self.conv2.weight, 0.0, std)
-        self.fc3.weight.data = truncated_normal(self.fc3.weight, 0.0, std)
-        self.fc5.weight.data = truncated_normal(self.fc5.weight, 0.0, std)
+        with torch.no_grad():
+            for weight in (self.conv1.weight, self.conv2.weight, self.fc3.weight, self.fc5.weight):
+                weight.copy_(truncated_normal(torch.empty_like(weight), 0.0, std))
 
     def forward(self, x):
         # x: (batch, win, h, w)
@@ -158,7 +154,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
         self.width = width
         cycle = 2 ** (width - 1)
 
-        # widthi == widthw required by the HUB value map; cycle = 2**(width-1)
+        # The HUB value map requires widthi == widthw and cycle == 2**(width - 1).
         lin_cfg = lambda: {'widthi': width, 'rngi': rng, 'quantilei': 1,
                            'widthw': width, 'rngw': rng, 'quantilew': 1,
                            'cycle': cycle, 'rounding': 'round'}
@@ -187,7 +183,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
         o = x.view(-1, 1, self.input_sz[0], self.input_sz[1])
         o = self.conv1_act(self.conv1(o))
         o = self.conv2_act(self.conv2(o))
-        o = o.reshape(o.shape[0], -1)  # conv_hub output is non-contiguous; view() would fail
+        o = o.reshape(o.shape[0], -1)  # conv_hub output is non-contiguous.
         o = self.fc3_act(self.fc3(o))
         o = self.fc3_drop(o)
         o = o.view(-1, self.rnn_win_sz, self.fc_sz).transpose(0, 1)  # (win, batch, fc_sz)
@@ -205,7 +201,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
 
 def build_hub_from_fp(fp_model, width=8, rng='sobol'):
     """
-    Build a HUB Cascade_CNN_RNN that shares the FP model's weights. The conv/linear
+    Build a HUB Cascade_CNN_RNN initialized from the FP model's weights. The conv/linear
     nn weights map straight into conv_hub/linear_hub weight_ext (identical shapes),
     and the mgu_hard gate weights (shape (hidden, hidden+input)) map into mgu_hub's
     weight_f / weight_n.

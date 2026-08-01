@@ -27,16 +27,16 @@ baseline as more spike bits are streamed.
 From the repo root, in the `napl` conda env, in order:
 
 ```sh
-conda run -n napl python examples/mlp/train_fp.py
-conda run -n napl python examples/mlp/eval_unary.py
+conda run -n napl python zoo/mlp/train_fp.py
+conda run -n napl python zoo/mlp/eval_unary.py
 ```
 
 Useful flags for `eval_unary.py`:
 
 ```sh
-conda run -n napl python examples/mlp/eval_unary.py --device cpu --samples 256
-conda run -n napl python examples/mlp/eval_unary.py --device mps --samples 256
-conda run -n napl python examples/mlp/eval_unary.py --sanity      # tiny both-device check
+conda run -n napl python zoo/mlp/eval_unary.py --device cpu --samples 256
+conda run -n napl python zoo/mlp/eval_unary.py --device mps --samples 256
+conda run -n napl python zoo/mlp/eval_unary.py --sanity      # tiny both-device check
 ```
 
 `--device` defaults to MPS when available, else CPU. The eval is fully batched, so the whole
@@ -44,14 +44,13 @@ conda run -n napl python examples/mlp/eval_unary.py --sanity      # tiny both-de
 
 ## What it reuses from napl
 
-- `napl.sim.module.encoder` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
-- `napl.sim.module.linear_pc` (the parallel-counter streaming linear, UnarySim's `FSULinearPC`) - the
+- `napl.encoder` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
+- `napl.linear_pc` (the parallel-counter streaming linear, UnarySim's `FSULinearPC`) - the
   per-cycle binary inner-product count of input spikes against freshly Sobol-encoded weight
   spikes on a decorrelated RNG dimension. Accumulating the count over k cycles and forming
   `2*(count/k) - entry` recovers the bipolar `W x + b` with progressively higher precision.
+- `napl.relu_hub` - bounded ReLU in the binary domain between streamed linear layers.
 - `napl.utils.NN_SC_Weight_Clipper` - bipolar 8-bit weight/bias clipping during training.
-- ReLU and the [-1, 1] clamp are applied in the value domain on each layer's converged
-  activation, matching the trained clamp-eval model.
 
 The layers are streamed **sequentially** (layer L is run to convergence over all T cycles, its
 activation is read out, then layer L+1 is streamed). This keeps every layer's input stream

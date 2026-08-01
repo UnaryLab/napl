@@ -9,7 +9,7 @@ quantized to the stochastic-computing range with NN_SC_Weight_Clipper(bitwidth=8
 the bipolar 8-bit streams used at eval time.
 
 Run:
-    conda run -n napl python examples/mlp/train_fp.py
+    conda run -n napl python zoo/mlp/train_fp.py
 """
 
 import os
@@ -24,7 +24,6 @@ from napl.utils import NN_SC_Weight_Clipper
 
 from model import MLP3_clamp_train
 
-# small, fast config (see module docstring)
 WIDTH = 128
 EPOCHS = 3
 BATCH = 128
@@ -76,7 +75,7 @@ def main():
     model = MLP3_clamp_train(in_size=IN_SIZE, width=WIDTH).to(device)
     criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    # bitwidth-8 bipolar clipper, applied per epoch so the trained weights stay in the SC range
+    # Keep trained weights in the bitwidth-8 bipolar range.
     clipper = NN_SC_Weight_Clipper(bitwidth=BITWIDTH, mode='bipolar')
 
     for epoch in range(EPOCHS):
@@ -95,7 +94,7 @@ def main():
     final_acc = evaluate(model, testloader, device)
     print(f'final FP test accuracy (clamped/quantized weights): {final_acc:.4f}')
 
-    # save on CPU so the checkpoint loads regardless of eval device
+    # CPU tensors keep the checkpoint device-independent.
     torch.save({'state_dict': model.cpu().state_dict(), 'width': WIDTH, 'in_size': IN_SIZE,
                 'fp_test_acc': final_acc}, CKPT_PATH)
     print(f'saved checkpoint to {CKPT_PATH}')

@@ -56,7 +56,7 @@ def class_block(src, name):
         return None
     out = [lines[start]]
     for l in lines[start + 1:]:
-        if re.match(r"(class |def )", l):  # next top-level definition
+        if re.match(r"(class |def )", l):  # Stop at the next top-level definition.
             break
         out.append(l)
     return "\n".join(out).rstrip()
@@ -74,7 +74,7 @@ def main():
         sys.exit(f"error: could not fetch '{args.path}' from {REPO} "
                  f"(check the path; for the API path try `gh auth login`)")
 
-    src = src.replace("\r\n", "\n").replace("\r", "\n")  # normalize CRLF
+    src = src.replace("\r\n", "\n").replace("\r", "\n")
     out = args.out or "/tmp/unarysim_" + args.path.replace("/", "_")
     with open(out, "w") as f:
         f.write(src)

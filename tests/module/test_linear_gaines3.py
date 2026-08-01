@@ -40,7 +40,7 @@ def _kernel_specific_checks():
     """
     timestep = 256
     out_features = 8
-    # in_features chosen so entry is a power of two and the gADD scale is exact
+    # A power-of-two entry count makes the gADD scale exact.
     for has_bias in [False, True]:
         in_features = 64 - (1 if has_bias else 0)
         entry = 64
@@ -67,7 +67,7 @@ def _kernel_specific_checks():
                 print(f'{device}/{polarity}/bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
                 inst.reset()
 
-    # spike streams are integer-valued: devices must agree bit-exactly on the counts
+    # Integer spike streams must produce bit-exact counts across devices.
     if len(devices()) > 1:
         accs = []
         for device in devices():
@@ -84,7 +84,6 @@ def _kernel_specific_checks():
             assert torch.equal(accs[0], a), 'cross-device spike counts diverge'
         print('cross-device bit-exactness passed.')
 
-    # known-answer corners
     n = 16
     w1_cpu = torch.ones(out_features, n).type(global_config.ntype)
     x1_cpu = torch.ones(n).type(global_config.ntype)
@@ -117,7 +116,7 @@ def _kernel_specific_checks():
             f'[{device}] non-scaled bipolar saturation corner'
     print('known-answer corners passed.')
 
-    # performance: linear_gaines3 vs linear on identical inputs, per device
+    # Compare linear_gaines3 and linear on identical inputs per device.
     in_features = 64
     input_x_cpu = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype)
     weight_cpu = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype)

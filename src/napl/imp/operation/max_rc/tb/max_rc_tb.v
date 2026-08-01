@@ -1,6 +1,5 @@
-// Self-checking testbench for max_rc: replays vec/max_rc.vec cycle by cycle and
-// compares o_max/o_arg to the golden columns from the napl Python model.
-// Prints "PASS" only on a full bit-exact match.
+// Python golden max/arg outputs are checked before each posedge updates state.
+// Co-sim: make test OP=max_rc
 `timescale 1ns / 1ps
 `default_nettype none
 `include "max_rc/vec/max_rc_params.vh"
@@ -25,7 +24,7 @@ module max_rc_tb;
         .o_arg   (o_arg)
     );
 
-    // 10ns clock
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
@@ -35,7 +34,6 @@ module max_rc_tb;
         in_0   = 1'b0;
         in_1   = 1'b0;
 
-        // Pulse reset low so the DUT starts from the model's post-reset() state.
         rst_n = 1'b0;
         @(negedge clk);
         @(negedge clk);
@@ -52,8 +50,6 @@ module max_rc_tb;
             $finish;
         end
 
-        // Drive each vector on the negedge, sample outputs (combinational) the
-        // same cycle, then advance the posedge to update state.
         while (!$feof(fd)) begin
             code = $fgets(line, fd);
             if (code == 0) begin
@@ -73,7 +69,7 @@ module max_rc_tb;
                     end
                     in_0 = v_in_0[0];
                     in_1 = v_in_1[0];
-                    #1;  // let combinational outputs settle
+                    #1;
                     if (o_max !== v_max[0] || o_arg !== v_arg[0]) begin
                         errors = errors + 1;
                         if (errors <= 10)
@@ -81,7 +77,7 @@ module max_rc_tb;
                                      count, v_in_0, v_in_1, o_max, o_arg, v_max, v_arg);
                     end
                     count = count + 1;
-                    @(posedge clk);  // commit state for next cycle
+                    @(posedge clk);
                 end
             end
         end

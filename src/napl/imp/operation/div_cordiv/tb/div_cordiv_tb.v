@@ -1,30 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_DEPTH is emitted by gen/gen_div_cordiv.py from the op config (= the test's
-// div_cordiv_config), so the DUT parameter is inherited from the Python model.
-// iverilog resolves this include relative to the compile cwd (imp/).
+// Generated DEPTH/WIDTH mirror the Python model configuration.
 `include "div_cordiv/vec/div_cordiv_params.vh"
-//==============================================================================
-// Self-checking testbench for div_cordiv.
-//
-// Reads golden vectors produced by gen/gen_div_cordiv.py (from the napl Python
-// model) and asserts the RTL reproduces them cycle by cycle. Prints "PASS ..."
-// iff every vector matches; the Makefile greps for that line to decide the exit
-// status.
-//
-// div_cordiv is stateful: o_quotient is combinational in the inputs and the
-// current state, and the state advances on each posedge i_clk. Per vector we
-// drive the inputs, let the combinational quotient settle, check it, then pulse
-// the clock once to advance the state (one posedge == one Python forward()).
-// i_rst_n is pulsed low first so the co-sim starts from the model's reset state.
-//
-// The vector file may also contain a lone "R" line: a MID-STREAM reset marker.
-// On it the tb re-pulses i_rst_n low (matching model.reset()) so reset
-// equivalence is proven from a dirtied operating state, not only at power-on.
-//
-// Run (from src/napl/imp/):
-//   make test OP=div_cordiv
-//==============================================================================
+// Python golden output is checked before each posedge advances buffer and index.
+// R requests an active-low reset before replay continues.
+// Co-sim: make test OP=div_cordiv
 module div_cordiv_tb;
     reg  clk, rst_n;
     reg  dividend, divisor;
@@ -45,7 +25,6 @@ module div_cordiv_tb;
     reg [7:0] tag;
     reg dv, ds, exp_q;
 
-    // Pulse i_rst_n low across one posedge to load the model's reset() state.
     task do_reset;
         begin
             rst_n = 1'b0;
@@ -71,7 +50,6 @@ module div_cordiv_tb;
             $finish;
         end
 
-        // Power-on reset before the first stream.
         do_reset;
 
         fd = $fopen("vec/div_cordiv.vec", "r");
@@ -81,12 +59,9 @@ module div_cordiv_tb;
         end
 
         while (!$feof(fd)) begin
-            // Peek the first token of the line: "R" is a mid-stream reset marker,
-            // otherwise it is the dividend bit of a "dv ds q" vector line.
             code = $fscanf(fd, "%s", tag);
             if (code == 1) begin
                 if (tag == "R") begin
-                    // Mid-stream reset from a dirtied state: must re-converge.
                     do_reset;
                 end else begin
                     dv = (tag == "1");
@@ -101,7 +76,6 @@ module div_cordiv_tb;
                                      n, dv, ds, quotient, exp_q);
                             fails = fails + 1;
                         end
-                        // Advance the state by one Python forward() timestep.
                         clk = 1'b1; #1;
                         clk = 1'b0; #1;
                     end

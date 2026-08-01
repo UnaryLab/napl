@@ -20,7 +20,6 @@ def parse_commandline_args():
 def main():
     args = parse_commandline_args()
 
-    # set up banner
     ascii_banner = pyfiglet.figlet_format('NAPL')
     print(bcolors.Magenta + ascii_banner + bcolors.ENDC)
     ascii_banner = pyfiglet.figlet_format('UnaryLab')
@@ -31,5 +30,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-    

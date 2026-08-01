@@ -42,15 +42,10 @@ state. This state is not necessarily zero.
 Timing metadata
 ---------------
 
-RTL-backed Python operations set ``self.hw`` to
-``napl.sim.base.hw_params``. ``pp_delay`` records verified input-to-output
-latency in cycles. Combinational paths use zero. Registered paths count one
-cycle per register stage. A sizing-dependent latency is derived from the same
-configuration field in Python and RTL.
-
-Per-corner static timing data is stored in ``self.hw.timing``. A combinational
-operation records through-delay in ``cp_delay``. Registered operations record
-combinational, input-to-register, and register-to-output timing components.
+Timing metadata connects RTL-backed Python operations to verified latency and
+per-corner timing results. :class:`napl.hw_params` and :class:`napl.timing` own
+the public field definitions; the hardware policy linked above owns the
+cross-model verification requirements.
 
 Golden-vector contract
 ----------------------

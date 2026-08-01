@@ -37,13 +37,19 @@ class signabs_interleave(napl_base):
         """
         super().__init__(config, ['width'], polarity_required=False)
 
+        #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']
         assert isinstance(self.width, int) and self.width > 0, logger.error(
             f'Invalid width: <{self.width}>; legal values: a positive integer.'
         )
+        #: Largest value retained by the unsigned accumulator.
         self.acc_max = 2**self.width - 1
+        #: Half-scale accumulator value that represents bipolar zero.
         self.acc_half = 2 ** (self.width - 1)
+        #: Hardware latency and timing metadata for the combinational outputs.
         self.hw = hw_params(pp_delay=0)
+        #: Running bipolar input count used to interleave sign and magnitude spikes.
+        self.acc: torch.Tensor
         self.register_buffer('acc',
             torch.full((1,), self.acc_half, dtype=self.ntype),
         )

@@ -5,19 +5,17 @@ import torch.nn.functional as F
 from napl.utils import *
 from napl.sim.base import napl_base
 
-# NB: no operation imports needed; the hard activations (sigmoid_hub/tanh_hub) are
-# imported lazily inside __init__ to respect the module<->operation import cycle.
+# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
 class gru_hardnuapt(napl_base):
     """Apply a PyTorch-layout GRU cell with optional hard activations.
 
     Use this single-shot cell to match UnarySim ``HardGRUCellNUAPT`` while keeping
-    the standard three-chunk ``GRUCell`` parameter layout. It is a standard GRU cell in the binary (float) domain with hard activations: sigmoid ->
-    scaled hard sigmoid, tanh -> hard tanh. Not fully unary-aware (NUA): intermediate
-    values are not bounded to the legal unary range. PyTorch GRUCell equations and
-    weight layout (3-chunk weight_ih/weight_hh). Single-shot; trainable.
-    Port of UnarySim ``HardGRUCellNUAPT``.
+    the standard three-chunk ``GRUCell`` parameter layout. In the binary domain,
+    it replaces sigmoid with scaled hard sigmoid and tanh with hard tanh.
+    Intermediate values are not bounded to the legal unary range. The cell is
+    single-shot and trainable.
 
     .. rubric:: Example
 
@@ -29,6 +27,7 @@ class gru_hardnuapt(napl_base):
         cell = gru_hardnuapt(2, 3)
         hidden = cell(torch.zeros(1, 2))
     """
+    #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the GRU cell and initialize trainable parameters.
@@ -44,17 +43,30 @@ class gru_hardnuapt(napl_base):
                 defaults to ``None``.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether the cell includes trainable input and hidden biases.
+        self.bias = bias
+        #: Whether the reset, update, and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub
+        #: Activation applied to the reset gate.
         self.rg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the update gate.
         self.ug_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
 
+        #: Trainable input-to-gate weights in reset, update, and new-gate order.
         self.weight_ih = torch.nn.Parameter(torch.empty(3 * hidden_size, input_size))
+        #: Trainable hidden-to-gate weights in reset, update, and new-gate order.
         self.weight_hh = torch.nn.Parameter(torch.empty(3 * hidden_size, hidden_size))
         if bias:
+            #: Trainable input-to-gate bias in reset, update, and new-gate order.
             self.bias_ih = torch.nn.Parameter(torch.empty(3 * hidden_size))
+            #: Trainable hidden-to-gate bias in reset, update, and new-gate order.
             self.bias_hh = torch.nn.Parameter(torch.empty(3 * hidden_size))
         else:
             self.register_parameter('bias_ih', None)
@@ -93,8 +105,7 @@ class gru_hardnuapt(napl_base):
         i_r, i_z, i_n = gate_i.chunk(3, 1)
         h_r, h_z, h_n = gate_h.chunk(3, 1)
 
-        rg = self.rg_sigmoid(i_r + h_r)          # reset gate
-        ug = self.ug_sigmoid(i_z + h_z)          # update gate
-        ng = self.ng_tanh(i_n + rg * h_n)        # new gate
-        # output: hy = (1-ug)*ng + ug*hx
+        rg = self.rg_sigmoid(i_r + h_r)
+        ug = self.ug_sigmoid(i_z + h_z)
+        ng = self.ng_tanh(i_n + rg * h_n)
         return (1 - ug) * ng + ug * hx

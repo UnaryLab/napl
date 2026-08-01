@@ -45,21 +45,25 @@ class add_any(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'scale', 'width'], polarity_required=True)
+        #: Hardware latency and timing metadata for the combinational adder.
         self.hw = hw_params(pp_delay=0)
 
-        # width of the accumulator
+        #: Signed accumulator width in bits.
         self.width = config['width']
-        # max value in the accumulator
+        #: Largest value retained by the signed accumulator.
         self.acc_max = 2**(self.width-1) - 1
-        # min value in the accumulator
+        #: Smallest value retained by the signed accumulator.
         self.acc_min = -2**(self.width-1)
 
-        # the carry scale at the output
+        #: Accumulated amount consumed when an output spike is emitted.
+        self.scale: torch.Tensor
         self.register_buffer('scale', torch.tensor(config['scale'], dtype=self.ntype))
-        # accumulation offset
+        #: Bipolar centering offset inferred from the input count on first use.
         self.offset = 0
-        # accumulator for (PC - offset)
+        #: Running centered input sum used to decide when to emit a spike.
+        self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
+        #: Whether the next call must infer input-dependent state.
         self.is_first_call = True
 
 
@@ -106,20 +110,15 @@ class add_any(napl_base):
         if dim is None:
             acc_delta = input.type(self.ntype) - self.offset
         else:
-            # in-place sub on the freshly-allocated sum (owned temp): same
-            # (partial - offset) math as before, one fewer full-size alloc per timestep
             acc_delta = torch.sum(input, dim, dtype=self.ntype)
             acc_delta.sub_(self.offset)
-        # in-place add/clamp once the accumulator matches the stream shape (both ntype,
-        # so promotion is a no-op); the first timestep must broadcast-expand the (1,)
-        # init, which add_ cannot do
+        # The scalar initial state broadcasts out of place; matching shapes update in place.
         if self.accumulator.shape == acc_delta.shape:
             self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)
         else:
             updated = self.accumulator.add(acc_delta).clamp(self.acc_min, self.acc_max)
             self.accumulator.resize_as_(updated).copy_(updated.detach())
-        output = torch.ge(self.accumulator, self.scale).type(self.ntype)
-        # subtract scale only where output==1 (acc>=scale>0), fused, no intermediate
-        # alloc; result stays in [0, acc_max] so the post-clamp would be a no-op
+        output = torch.gt(self.accumulator, self.scale).type(self.ntype)
+        # With scale > 0, emitting a carry preserves the accumulator bounds.
         self.accumulator.addcmul_(output, self.scale, value=-1)
         return output.type(self.stype)

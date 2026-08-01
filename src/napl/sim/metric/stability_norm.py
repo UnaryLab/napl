@@ -22,27 +22,18 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
     max_stab_l_p = torch.ones_like(max_stab_len)
     p_low = p_low_L.float()
     p_high = p_high_L.float()
-    # i-invariant parts of the padding terms, for all-0s (B_L=0) and all-1s (B_L=L)
-    # padding: the out-of-window penalty and the distance numerators.
     pads = []
     for B_L in (0.0, float(L)):
         low_pen = (1 - (p_low <= B_L).float()) * L
         high_pen = (1 - (B_L <= p_high).float()) * L
         pads.append((low_pen, p_low - B_L, high_pen, B_L - p_high))
-    # Batch the candidate loop into (rows, *source_shape) chunks: one kernel per op
-    # across many candidates instead of ~30 tiny launches per i. All ops are elementwise
-    # float32, so the values are bit-identical to the per-i loop; only the running-best
-    # scan is inherently sequential (the reference overwrites, not keeps, the best) and
-    # stays a cheap per-row loop. Chunk rows to cap peak memory at O(rows*N) floats.
     rows = max(1, min(search_range + 1, (1 << 20) // max(1, p_low_L.numel())))
     for start in range(0, search_range + 1, rows):
         i_idx = torch.arange(start, min(start + rows, search_range + 1),
                              dtype=p_low_L.dtype).reshape(
                                  (-1,) + (1,) * p_low_L.ndim)
         p_L = torch.minimum(p_low_L + i_idx, p_high_L)
-        # gcd with L (a power of 2) is the largest power of 2 dividing p_L,
-        # i.e. p_L & -p_L, capped by p_L <= L; 0 maps to L. Same values as
-        # torch.gcd(p_L, L_t) but without its per-element Euclid loop.
+        # For power-of-two L, p_L & -p_L is gcd(p_L, L); zero maps to L.
         gcd = p_L & p_L.neg()
         l_p = L / torch.where(gcd == 0, L_t, gcd).float()
         denom_low = l_p * i_idx.float()
@@ -51,8 +42,7 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
         denom_high[denom_high == 0] = 1
         p_L_eq_low = (p_L == p_low_L).float()
         p_L_eq_high = (p_high_L == p_L).float()
-        # R needed so the tail stays in-threshold when padded with all-0s (B_L=0) or
-        # all-1s (B_L=L); take the cheaper padding.
+        # R is the smaller repetition count for all-zero or all-one padding.
         R_pad = []
         for low_pen, num_low, high_pen, num_high in pads:
             R_low = p_L_eq_low * low_pen + (1 - p_L_eq_low) * num_low / denom_low
@@ -61,12 +51,7 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
         R = torch.minimum(R_pad[0], R_pad[1])
         R_l_p = R * l_p
         R_l_p_c = R_l_p.clamp(min=1)
-        # Vectorized form of the reference's sequential overwrite scan. R_l_p >= 0
-        # (R is a min of ceils of non-negative maxima given p_high_L <= L, and
-        # l_p >= 1), so a failed compare zeroes the state and it stays zero
-        # (nothing is ever < 0). The final state therefore equals the last row's
-        # values iff every row's compare succeeded: row 0 against the carried
-        # state, row j against R_l_p_c[j-1]. Bit-identical to the per-row loop.
+        # Since R_l_p is nonnegative, one failed comparison zeros all later state.
         alive = (R_l_p < torch.cat((max_stab_len.unsqueeze(0), R_l_p_c[:-1]))).all(dim=0).float()
         max_stab_len = alive * R_l_p_c[-1]
         max_stab_R = alive * R[-1]
@@ -131,9 +116,12 @@ class stability_norm(napl_base):
         """
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
+        #: Expected decoded value used as the per-element normalization reference.
+        self.source: torch.Tensor
         self.register_buffer('source', source)
+        #: Maximum absolute progressive error treated as stable.
         self.threshold = config['threshold']
-        # inner actual-stability monitor
+        #: Child metric that measures the observed stream's unnormalized stability.
         self.stability = stability(source, {'polarity': self.polarity, 'threshold': self.threshold})
         if self.polarity == 'bipolar':
             prob = (source + 1) / 2
@@ -141,8 +129,11 @@ class stability_norm(napl_base):
         else:
             prob = source
             half = self.threshold
-        # in-threshold probability window of the source value
+        #: Lower encoded-probability bound accepted as stable for each source element.
+        self.min_prob: torch.Tensor
         self.register_buffer('min_prob', (prob - half).clamp(min=0).detach())
+        #: Upper encoded-probability bound accepted as stable for each source element.
+        self.max_prob: torch.Tensor
         self.register_buffer('max_prob', (prob + half).clamp(max=1).detach())
 
 
@@ -174,7 +165,6 @@ class stability_norm(napl_base):
             metric(torch.ones(1))
         """
         self.stability(spike)
-        # no return: readers access .stability_norm on demand.
 
 
     @property
@@ -195,22 +185,21 @@ class stability_norm(napl_base):
         if not self.valid:
             return torch.zeros_like(self.source)
         timestep = self.stability.accuracy.timestep_cur
-        # float32 tensor math mirrors UnarySim exactly (L = next power of 2 >= timestep)
+        # Search arithmetic uses float32, with L as the next power of two.
         len_t = torch.tensor([float(timestep)])
         L_t = torch.pow(2, torch.ceil(torch.log2(len_t)))
         L = int(L_t.item())
-        # torch.gcd in the search is CPU-only territory; the search runs once on CPU
+        # Integer search bounds stay on CPU.
         p_low_L = torch.floor(self.min_prob.cpu() * L_t).clamp(0, L).to(torch.int64)
         p_high_L = torch.ceil(self.max_prob.cpu() * L_t).clamp(0, L).to(torch.int64)
-        # float32 threshold arithmetic, truncated: matches the reference's search width
+        # The search width truncates a float32 threshold product.
         search_range = int((torch.tensor([self.threshold], dtype=torch.float32) * 2 * L_t + 1).item())
         max_stab_len, _, _ = search_max_stab(p_low_L, p_high_L, L, search_range)
         max_stab = (1 - max_stab_len / float(timestep)).clamp(min=0).to(self.source.device)
 
         norm = self.stability.stability / max_stab
         norm[torch.isnan(norm)] = 0
-        # segmented-uniform max is an approximation of the best case, so the ratio can
-        # exceed 1; clamp like the reference
+        # The estimated maximum can produce ratios above one.
         return norm.clamp_(0, 1)
 
 
@@ -237,7 +226,6 @@ class stability_norm(napl_base):
             value, result = metric.analyze()
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: stability_norm computes from the accumulated state on each read
         stability_norm = self.stability_norm
         result = analyze(
             stability_norm,

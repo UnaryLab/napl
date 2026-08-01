@@ -38,8 +38,7 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sqrt_tracejkff.vec"
 
-# test_sqrt_tracejkff.py codec_config: bipolar encoder, but the test draws
-# unipolar-range [0,1] operands (sqrt input is non-negative).
+# The sqrt test encodes nonnegative inputs with a bipolar Sobol stream.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -69,29 +68,23 @@ def main():
     uni = sqrt_tracejkff(config={"polarity": "unipolar"})
     bip = sqrt_tracejkff(config={"polarity": "bipolar"})
 
-    # the test's encoder streams for representative operands, concatenated.
     values = rep_values(CODEC["polarity"], value_range=(0.0, 1.0))
-    # split into a leading "dirtying" segment and a post-reset segment so the
-    # mid-stream reset is exercised from a non-zero trace/acc state.
+    # Split where trace and accumulator state are nonzero.
     split = max(1, len(values) // 2)
     head_vals, tail_vals = values[:split], values[split:]
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with VEC.open("w") as f:
-        # Phase 1: drive from a clean reset to dirty the stateful registers.
         clear_state(uni, bip)
         for v in head_vals:
             for bit in encode_value(CODEC, v):
                 emit(f, uni, bip, bit)
                 rows += 1
-        # Mid-stream reset: clear the model state and emit the sentinel row the
-        # testbench turns into an i_rst_n pulse. Proves RTL reset == Python
-        # reset from a dirtied state.
+        # R requests the corresponding active-low RTL reset.
         clear_state(uni, bip)
         f.write("R\n")
         rows += 1
-        # Phase 2: continue from the freshly-cleared state.
         for v in tail_vals:
             for bit in encode_value(CODEC, v):
                 emit(f, uni, bip, bit)

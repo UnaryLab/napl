@@ -47,15 +47,22 @@ class exp_ng(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['depth'], polarity_required=False)
-        # output is combinational from the state counter; input reaches it one cycle later
+        # Output uses the counter state before the current update, giving one-cycle latency.
+        #: Hardware latency and timing metadata for the registered output.
         self.hw = hw_params(pp_delay=1)
 
+        #: Saturating state-counter width in bits.
         self.depth = config['depth']
+        #: Exponential gain and number of upper counter states that emit zero.
         self.gain = config.get('gain', 1)
 
+        #: Largest value retained by the state counter.
         self.cnt_max = 2**self.depth - 1
-        # emit a 1-spike while the counter is below this threshold (top `gain` states emit 0)
+        # The top gain counter states emit 0; all lower states emit 1.
+        #: Exclusive counter threshold below which the output spike is one.
         self.thd = 2**self.depth - self.gain
+        #: Saturating state counter updated by each bipolar input spike.
+        self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype).fill_(2**(self.depth - 1)))
 
 
@@ -86,16 +93,13 @@ class exp_ng(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # output reflects the state before this timestep's input is absorbed
         output = torch.lt(self.cnt, self.thd).type(self.stype)
         if output.shape != input.shape:
             output = torch.zeros_like(input) + output
-        # count up on a 1-spike, down on a 0-spike, saturating at [0, 2**depth - 1]
+        # The scalar initial counter broadcasts out of place; matching shapes update in place.
         if self.cnt.shape == input.shape:
-            # steady state: in-place on the ntype counter (promotion is a no-op)
             self.cnt.add_(input, alpha=2).sub_(1).clamp_(0, self.cnt_max)
         else:
-            # first call: out-of-place add broadcasts the scalar counter to input shape
             updated = self.cnt.add(input.type(self.ntype), alpha=2).sub_(1).clamp_(0, self.cnt_max)
             self.cnt.resize_as_(updated).copy_(updated.detach())
         return output

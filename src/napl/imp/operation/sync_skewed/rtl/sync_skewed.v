@@ -1,34 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// sync_skewed -- skewed synchronizer of two spike streams (stateful).
-//
-// RTL counterpart of napl.sim.operation.sync_skewed (src/napl/sim/operation/sync_skewed.py).
-// Assumes stream 1's rate <= stream 2's rate. Stream 2 passes through unchanged;
-// stream 1 is re-timed toward stream 2 using a saturating WIDTH-bit counter that
-// buffers the lead/lag between the two streams.
-//
-// Per cycle (one Python forward() timestep), with the counter cnt read BEFORE
-// it is updated:
-//   diff = i_input_1 ^ i_input_2                     // inputs are 01 or 10
-//   when diff:
-//     i_input_1==1 (push): o_out_1 = (cnt==CNT_MAX); cnt saturates up   (cnt+1)
-//     i_input_1==0 (pop) : o_out_1 = (cnt!=0);       cnt saturates down (cnt-1)
-//   when !diff (00/11): o_out_1 = i_input_1; cnt unchanged.
-// o_out_2 = i_input_2 always. Output is combinational in (i_input_1,i_input_2,cnt), so
-// the input->output latency is 0; the counter update is registered.
-//
-// Reset (active-low i_rst_n) reproduces the Python reset() state: cnt = 0.
-//
-// sync_skewed has no polarity variants (polarity_required=False), so the module
-// is the bare op name with no _unipolar/_bipolar postfix.
-//
-// WIDTH is a Verilog parameter inherited from the Python model's config['width']:
-// the testbench overrides it with `GEN_WIDTH (emitted by gen/gen_sync_skewed.py
-// from the same config test_sync_skewed.py uses), so the verified hardware always
-// tracks the simulator. The default here is only a standalone-elaboration
-// fallback. The saturating bound CNT_MAX = 2**WIDTH - 1 derives from WIDTH.
-//==============================================================================
+// sync_skewed equivalent for stream_1 rate <= stream_2 rate. A WIDTH-bit
+// saturating counter retimes stream_1; stream_2 passes through.
+// Outputs use the pre-update counter (pp_delay=0). Active-low reset clears cnt.
 module sync_skewed #(
     parameter integer WIDTH = 3   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

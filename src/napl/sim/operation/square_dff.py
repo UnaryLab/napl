@@ -51,14 +51,13 @@ class square_dff(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: Hardware latency and timing metadata for the combinational square output.
         self.hw = hw_params(pp_delay=0)
 
-        # the depth of input
+        #: Delay line that supplies the earlier spike multiplied with the current input.
         self.dff = dff(config={'depth': config['depth']})
 
-        # When spikes are already int8 (the default stype), the per-timestep
-        # int8 casts are redundant copies; skip them. For float/bfloat16 stype
-        # the bitwise ops require an int8 operand, so the casts stay.
+        # Bitwise operands remain int8; floating spike types are cast to int8.
         self._spike_is_int8 = (self.stype == torch.int8)
 
 
@@ -86,17 +85,14 @@ class square_dff(napl_base):
 
             output = square(torch.tensor([1], dtype=torch.int8))
         """
-        # input is a spike tensor
         input_d = self.dff(input)
         if self._spike_is_int8:
-            # operands already int8: skip the redundant casts and the result cast.
             a, b = input, input_d
         else:
             a, b = input.type(torch.int8), input_d.type(torch.int8)
         if self.polarity == 'unipolar':
             out = a & b
         else:
-            # XNOR as 1-(a^b): identical 0/1 result to (1-a)^b for spike
-            # operands, and ~1.7x faster on MPS.
+            # For 0/1 spikes, XNOR is 1 - (a ^ b).
             out = 1 - (a ^ b)
         return out if self._spike_is_int8 else out.type(self.stype)

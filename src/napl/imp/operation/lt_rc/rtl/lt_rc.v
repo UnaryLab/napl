@@ -1,35 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// lt_rc -- unary/stochastic-computing "less than" via sync_skewed (clocked).
-//
-// RTL counterpart of napl.sim.operation.lt_rc (src/napl/sim/operation/lt_rc.py),
-// which embeds a sync_skewed(width=2) to skew-align input_0 onto input_1 and a
-// 1-bit dff holding the running less-than result.
-//
-// Per timestep (one posedge i_clk):
-//   sync_skewed (counter cnt, 0..3 saturating, width=2):
-//     diff   = i_input_0 ^ i_input_1                 // input_01_10: the pair is 01/10
-//     not_min= (cnt != 0)
-//     not_max= (cnt != 3)
-//     select = not_min - (not_min + not_max) * i_input_0
-//     sync_0 = i_input_0 + diff * select          // skewed output_1, a 0/1 spike
-//     sync_1 = i_input_1                           // input_2 passes through
-//     cnt   += diff ? (i_input_0 ? +1 : -1) : 0   // saturating at [0,3]
-//   lt_rc:
-//     d_en   = sync_0 ^ sync_1
-//     o_out  = dff                              // REGISTERED (previous state)
-//     dff   <= d_en ? sync_1 : dff
-//
-// o_out is the dff value sampled before this cycle's update, so input->output
-// latency is one clock (pp_delay = 1).
-//
-// i_rst_n (active-low) maps to Python reset(): cnt <= 0, dff <= 0.
-//
-// References:
-//   In-Stream Stochastic Division and Square Root via Correlation.
-//   In-Stream Correlation-Based Division and Bit-Inserting Square Root in SC.
-//==============================================================================
+// Rate-coded lt_rc equivalent with a width-2 sync_skewed counter.
+// o_out is the pre-update result register, so pp_delay=1.
+// Each posedge is one Python timestep; active-low reset clears result and cnt.
 module lt_rc (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

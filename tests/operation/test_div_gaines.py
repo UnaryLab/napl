@@ -6,7 +6,7 @@ from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
-# direct module import: not wired into napl.sim.operation.__init__ yet
+# div_gaines is not exported from operation/__init__.py.
 from napl.sim.operation.div_gaines import div_gaines
 from napl.sim.metric import accuracy
 
@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_div_gaines(napl_base):
     def __init__(self, codec_config1, codec_config2, div_gaines_config):
         super().__init__()
-        # set up encoder, decoder, divider, and accuracy
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder = decoder(codec_config1)
@@ -24,7 +23,6 @@ class napl_div_gaines(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike0 = self.encoder0(input_0)
         i_spike1 = self.encoder1(input_1)
         o_spike = self.div_gaines(i_spike0, i_spike1)
@@ -54,28 +52,24 @@ def run_div_gaines(device, polarity, quotient_cpu, divisor_cpu):
         'dim': 3,
     }
 
-    # build dividend = quotient * divisor so the true quotient stays in range;
-    # keep |divisor| >= 0.5 so the feedback loop settles within the run
+    # Construct an in-range quotient and keep |divisor| >= 0.5 for convergence.
     quotient = quotient_cpu.to(device)
     divisor = divisor_cpu.to(device)
     dividend = quotient * divisor
 
-    # generate the napl_div_gaines instance
     div_gaines_inst = napl_div_gaines(codec_config1, codec_config2, div_gaines_config).to(device)
 
-    # time the streaming run (identical inputs across devices)
     sync(device)
     start = time.perf_counter()
     div_gaines_inst(dividend, divisor, timesteps=timestep)
     sync(device)
     elapsed = time.perf_counter() - start
 
-    # report the error against the analytic quotient
     error, _ = div_gaines_inst.accuracy.analyze(quotient, verbose=True)
     rmse = error.pow(2).mean().sqrt().item()
     print(f'div_gaines [{device}] [{polarity}] rmse={rmse:.4f} time={elapsed:.3f}s')
 
-    # Gaines division is a feedback loop, so the bound is looser than the open-loop SC bound
+    # Feedback makes this bound looser than the open-loop SC bound.
     assert rmse < 0.2, f'rmse {rmse} out of bound on {device} ({polarity})'
 
     assert div_gaines_inst.div_gaines.timestep_cur == timestep

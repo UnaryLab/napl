@@ -65,8 +65,7 @@ def _kernel_specific_checks():
                           f'max_err={err.max().item():.4f}')
                     inst.reset()
 
-    # known-answer corner: unipolar all-ones input & weight, no bias, no pad => the scaled
-    # adder gains exactly entry per step, so the output spike fires every timestep (value 1)
+    # All-ones unipolar operands make the scaled adder emit 1 every timestep.
     for device in devices():
         w1 = torch.ones(oc, ic, k, k).type(ntype).to(device)
         x1 = torch.ones(1, ic, k, k).type(ntype).to(device)
@@ -88,7 +87,7 @@ def _kernel_specific_checks():
         ugemm.reset()
         print(f'[{device}] known-answer corner passed.')
 
-    # performance vs conv (the free-running-encoder sibling) on identical input spikes
+    # Compare against the free-running encoder variant on identical spikes.
     perf_x = gen_rand_tensor('bipolar', (b, ic, hw, hw), 8).type(ntype)
     perf_weight = gen_rand_tensor('bipolar', (oc, ic, k, k), 8).type(ntype)
     perf_bias = gen_rand_tensor('bipolar', (oc,), 8).type(ntype)

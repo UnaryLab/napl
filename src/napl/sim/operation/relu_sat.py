@@ -34,10 +34,12 @@ class relu_sat(napl_base):
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the composed ReLU path.
         self.hw = hw_params(pp_delay=0)
 
-        # default to optimal width
+        #: Bipolar saturating adder that performs the first ReLU transform stage.
         self.sub_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
+        #: Bipolar saturating adder that performs the second ReLU transform stage.
         self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
 
 
@@ -67,10 +69,8 @@ class relu_sat(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # sub_1 moves input from [-1, 1] to [-1, 0]: the 2-row reduction sum([input, 0])
-        # is just `input`, so feed the pre-reduced partial sum (dim=None) with the row
-        # count as <entry> and skip the per-timestep stack alloc + sum reduction.
+        # With entry=2, the first adder maps input from [-1, 1] to [-1, 0].
         sub_1_out = self.sub_1(input, entry=2, dim=None)
-        # add_1 moves input from [-1, 0] to [0, 1]: sum([sub_1_out, 1]) == sub_1_out + 1
+        # The second adder maps sub_1_out from [-1, 0] to [0, 1].
         output = self.add_1(sub_1_out + 1, entry=2, dim=None)
         return output

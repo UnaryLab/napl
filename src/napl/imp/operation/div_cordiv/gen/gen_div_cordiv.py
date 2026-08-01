@@ -42,11 +42,9 @@ from _gen_common import pair_streams, rep_pairs
 VEC = Path(__file__).resolve().parent.parent / "vec" / "div_cordiv.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "div_cordiv_params.vh"
 
-# test_div_cordiv.py div_cordiv_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_div_cordiv.py.
 DIV_CORDIV = {"depth": 2, "generator": "Sobol"}
-# test_div_cordiv.py codec_config1/2: both unipolar on the SAME sobol dim (dim=1)
-# -> correlated dividend/divisor streams, exactly as the test requires. The test
-# also sorts so dividend <= divisor (proper-fraction quotient) and divisor != 0.
+# Dividend and divisor share a Sobol dimension and satisfy 0 <= dividend <= divisor.
 CODEC0 = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
@@ -80,12 +78,10 @@ def main():
     model = div_cordiv(config=dict(DIV_CORDIV))
 
     pairs = proper_pairs()
-    # Split into two segments to exercise a mid-stream reset between them.
     half = len(pairs) // 2
     seg_a, seg_b = pairs[:half], pairs[half:]
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     PARAMS.write_text(
         f"`define GEN_DEPTH {model.depth}\n"
         f"`define GEN_WIDTH {model.width}\n"
@@ -94,11 +90,9 @@ def main():
 
     rows = 0
     with VEC.open("w") as f:
-        # Power-on reset, then a first segment that dirties the buffer.
         model.reset()
         rows += run_segment(model, f, seg_a)
-        # Mid-stream reset from the dirtied state: marker for the tb to re-pulse
-        # i_rst_n, and model.reset() so both sides return to the reset() state.
+        # R requests matching model and RTL resets between segments.
         f.write("R\n")
         model.reset()
         rows += run_segment(model, f, seg_b)

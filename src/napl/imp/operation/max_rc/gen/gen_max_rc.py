@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 VEC = os.path.join(HERE, os.pardir, "vec", "max_rc.vec")
 PARAMS = os.path.join(HERE, os.pardir, "vec", "max_rc_params.vh")
 
-# test_max_rc.py codec_config1/2: the two encoders feeding max_rc, distinct dims.
+# Encoder settings mirror test_max_rc.py and use distinct Sobol dimensions.
 CODEC0 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2}
 
@@ -27,7 +27,6 @@ def main():
     model = max_rc({"polarity": "bipolar", "timestep": 256})
     model.reset()
 
-    # the test's encoder streams for representative operand pairs, concatenated.
     s0, s1 = pair_streams(CODEC0, CODEC1, rep_pairs("bipolar", "bipolar"))
     reset_at = len(s0) // 2
 

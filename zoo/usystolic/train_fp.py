@@ -7,7 +7,7 @@ epochs (default 3), which already reaches ~99% test accuracy. The checkpoint is
 the input to eval_sweep.py.
 
 Run (from the repo root, napl env):
-    conda run -n napl python examples/usystolic/train_fp.py
+    conda run -n napl python zoo/usystolic/train_fp.py
 """
 import argparse
 from pathlib import Path
@@ -86,7 +86,7 @@ def main():
         scheduler.step()
 
     CKPT.parent.mkdir(parents=True, exist_ok=True)
-    # save on CPU so the checkpoint loads regardless of eval device
+    # CPU tensors keep the checkpoint device-independent.
     torch.save({k: v.cpu() for k, v in model.state_dict().items()}, CKPT)
     print(f"saved checkpoint -> {CKPT}")
 

@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_add_any(napl_base):
     def __init__(self, codec_config, add_any_config):
         super().__init__()
-        # set up encoder, decoder, add_any, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
@@ -23,7 +22,6 @@ class napl_add_any(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.add_any(i_spike, dim=-1)
         self.decoder(o_spike)
@@ -46,7 +44,6 @@ def _kernel_specific_checks():
         'width': 20,
     }
 
-    # Generate random inputs based on polarity
     input_cpu = gen_rand_tensor(
         codec_config['polarity'],
         shape=(10000, add_any_config['scale']),
@@ -111,5 +108,15 @@ def test_add_any():
     streaming_suite(CONFIG)
 
 
+def test_add_any_uses_unarysim_strict_carry_threshold():
+    input = torch.ones((2, 2), dtype=global_config.stype)
+
+    for polarity in ('unipolar', 'bipolar'):
+        operation = add_any({'polarity': polarity, 'scale': 2, 'width': 8})
+        output = operation(input, dim=-1)
+        assert torch.equal(output, torch.zeros(2, dtype=global_config.stype))
+
+
 if __name__ == '__main__':
     test_add_any()
+    test_add_any_uses_unarysim_strict_carry_threshold()

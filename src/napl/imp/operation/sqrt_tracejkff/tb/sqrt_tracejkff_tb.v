@@ -1,28 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for sqrt_tracejkff (unipolar + bipolar variants).
-//
-// Reads golden vectors produced by gen/gen_sqrt_tracejkff.py (from the napl
-// Python model) and asserts both polarity variants reproduce them cycle by
-// cycle.
-//
-// Timing contract (matches the Python forward()): o_out at timestep t is
-// combinational in i_input given the cycle-t trace/acc registers, then the new
-// state is clocked in. So per cycle we (1) drive i_input, let it settle, (2) check
-// o_out against the expected column BEFORE the committing posedge, then (3)
-// pulse one posedge i_clk to commit the state update. Checking before the
-// posedge (rather than on the next negedge) is required: otherwise the posedge
-// that follows reset-deassert advances the trace register one cycle too early,
-// an off-by-one that only shows up once cycle 0's input drives trace to 1.
-// i_rst_n is held low first so the co-sim starts from the exact post-reset()
-// state (trace=0, acc=0).
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=sqrt_tracejkff
-//==============================================================================
+// Python golden outputs must be checked before the committing posedge; checking
+// later advances trace one cycle early after reset. R clears trace and acc.
+// Co-sim: make test OP=sqrt_tracejkff
 module sqrt_tracejkff_tb;
     reg  clk;
     reg  rst_n;
@@ -46,16 +26,16 @@ module sqrt_tracejkff_tb;
 
     integer fd, code, n, fails;
     reg a, exp_u, exp_b;
-    reg [8*8-1:0] tok;   // first whitespace-delimited token of a vec line
+    reg [8*8-1:0] tok;
 
-    // Free-running clock: 10ns period.
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
     initial begin
         in_bit = 1'b0;
 
-        // Assert active-low reset across clock edges to load trace=0, acc=0.
+        // Reset loads trace=0 and acc=0.
         rst_n = 1'b0;
         @(negedge clk);
         @(negedge clk);
@@ -70,30 +50,19 @@ module sqrt_tracejkff_tb;
         n = 0;
         fails = 0;
         while (!$feof(fd)) begin
-            // Read the first token of the line. "R" is a mid-stream reset
-            // sentinel; otherwise it is this cycle's input bit and the line
-            // also carries the two expected output columns.
             code = $fscanf(fd, "%s", tok);
             if (code == 1) begin
                 if (tok == "R") begin
-                    // Mid-stream reset: pulse active-low i_rst_n across an edge
-                    // to clear trace=0, acc=0, mirroring the model's reset from
-                    // a dirtied state. We are on a negedge here.
                     rst_n = 1'b0;
-                    @(posedge clk);   // commit the reset into the registers
+                    @(posedge clk);
                     @(negedge clk);
                     rst_n = 1'b1;
                 end else begin
-                    // tok holds the input bit; read the two expected columns.
                     a     = (tok == "1");
                     code  = $fscanf(fd, "%b %b\n", exp_u, exp_b);
-                    // We are on a negedge: registers are stable. Drive this
-                    // cycle's input, let the combinational output settle, and
-                    // check it (the value forward() returns this timestep)
-                    // BEFORE the posedge commits the state update.
                     n = n + 1;
                     in_bit = a;
-                    #1;   // settle combinational paths
+                    #1;
                     if (out_uni !== exp_u) begin
                         $display("FAIL uni cyc=%0d in=%b : got %b exp %b", n, a, out_uni, exp_u);
                         fails = fails + 1;
@@ -102,8 +71,8 @@ module sqrt_tracejkff_tb;
                         $display("FAIL bip cyc=%0d in=%b : got %b exp %b", n, a, out_bip, exp_b);
                         fails = fails + 1;
                     end
-                    @(posedge clk);   // commit state update for this timestep
-                    @(negedge clk);   // settle for the next check
+                    @(posedge clk);
+                    @(negedge clk);
                 end
             end
         end

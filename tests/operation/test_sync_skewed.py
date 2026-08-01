@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_sync_skewed(napl_base):
     def __init__(self, codec_config1, codec_config2, sync_skewed_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder0 = decoder(codec_config1)
@@ -26,7 +25,6 @@ class napl_sync_skewed(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike0 = self.encoder0(input_0)
         i_spike1 = self.encoder1(input_1)
         o_spike0, o_spike1 = self.sync_skewed(i_spike0, i_spike1)
@@ -57,13 +55,11 @@ def _kernel_specific_checks():
         'width' : 3,
     }
 
-    # Generate random inputs based on polarity
     input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
     input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
     input_mask = input_0_cpu < input_1_cpu
     input_0_new = torch.where(input_mask, input_0_cpu, input_1_cpu)
     input_1_new = torch.where(~input_mask, input_0_cpu, input_1_cpu)
-    # make sure divisor is not 0
     input_1_new = torch.where(input_1_new==0, 1, input_1_new)
     input_0_cpu = input_0_new
     input_1_cpu = input_1_new

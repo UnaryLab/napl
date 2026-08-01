@@ -15,7 +15,6 @@ from napl.sim.metric import accuracy
 class napl_mul_csg(napl_base):
     def __init__(self, codec_config, mul_csg_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.mul_csg = mul_csg(mul_csg_config)
@@ -24,7 +23,6 @@ class napl_mul_csg(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input_0)
         o_spike = self.mul_csg(i_spike, input_1)
         self.decoder(o_spike)
@@ -66,7 +64,6 @@ def test_mul_csg():
     }
     mul_csg_config=codec_config
 
-    # Generate random inputs based on polarity
     input_0_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
     input_1_cpu = gen_rand_tensor(codec_config['polarity'], shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 

@@ -36,7 +36,7 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sigmoid_hard.vec"
 
-# test_sigmoid_hard.py codec_config: the encoder feeding sigmoid_hard.
+# Encoder settings mirror test_sigmoid_hard.py.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -57,13 +57,11 @@ def main():
     model = sigmoid_hard(config={"polarity": "bipolar"})
 
     stream = build_stream()
-    # split point for the mid-stream reset: dirty the accumulator on the first
-    # half, reset, then prove the second half matches a fresh-from-reset model.
+    # Reset after the first half, when the accumulator has changed.
     split = len(stream) // 2
 
     rows = []  # (i_rst_n, i_input, o_out)
 
-    # segment 1: from reset() at t=0
     model.reset()
     rst_pending = True  # this cycle is the first after reset()
     for s in stream[:split]:
@@ -71,8 +69,6 @@ def main():
         rows.append((0 if rst_pending else 1, s, out))
         rst_pending = False
 
-    # segment 2: MID-STREAM reset() -- accumulator returns to 0 from a dirtied
-    # state; the RTL must match by pulsing i_rst_n on the first cycle here.
     model.reset()
     rst_pending = True
     for s in stream[split:]:

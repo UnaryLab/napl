@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "signabs_shiftreg.vec"
 PARAMS = ROOT / "vec" / "signabs_shiftreg_params.vh"
 
-# Mirrors tests/operation/test_signabs_shiftreg.py.
+# Configuration mirrors test_signabs_shiftreg.py.
 CONFIG = {"depth": 8}
 CODEC = {
     "polarity": "bipolar",

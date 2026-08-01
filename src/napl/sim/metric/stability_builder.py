@@ -74,13 +74,15 @@ class stability_builder(napl_base):
         """
         super().__init__(config, ['polarity', 'threshold', 'normstability', 'timestep', 'generator'], polarity_required=True)
 
+        #: Designed length of the generated spike stream in timesteps.
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two number sequence covering :attr:`timestep`.
         self.width = math.ceil(math.log2(self.timestep))
+        #: Requested ratio between realized and maximum source-value stability.
         self.normstability = config['normstability']
 
-        # the build-time search below runs on CPU (torch.gcd on integers); move
-        # the module to the target device after construction for streaming.
+        # Integer search state is constructed on CPU; move the module before streaming.
         source = source.detach().to('cpu', self.ntype)
         seq_len = 2**self.width
         if self.polarity == 'bipolar':
@@ -90,7 +92,7 @@ class stability_builder(napl_base):
             val = source
             threshold = config['threshold']
 
-        # per-element value band [p_low, p_up] allowed by the threshold
+        # Each element may vary within the threshold band [p_low, p_up].
         p_low = torch.max(val - threshold, torch.zeros_like(val))
         p_up = torch.min(torch.ones_like(val), val + threshold)
         lower = torch.max(torch.floor(seq_len * p_low), torch.zeros_like(val))
@@ -101,30 +103,39 @@ class stability_builder(napl_base):
                                            seq_len, search_range)
         max_stable = max_stable.to(val.dtype)
 
-        # split the stream: unstable prefix of new_ns_len spikes, stable tail
+        # The stream has an unstable prefix followed by a stable tail.
         max_st_len = seq_len - max_stable
         new_st_len = torch.ceil(max_st_len * self.normstability)
         new_ns_len = seq_len - new_st_len
 
-        # one-count per segment: the prefix parks the value just outside the
-        # band on the far side, the tail supplies the remaining ones
+        # The prefix stays just outside the band; the tail supplies the remaining ones.
         val_gt_half = (val > 0.5).to(val.dtype)
         new_ns_one = val_gt_half * (p_up * (new_ns_len + 1)) \
                    + (1 - val_gt_half) * torch.max(p_low * (new_ns_len + 1) - 1, torch.zeros_like(val))
         new_st_one = val * seq_len - new_ns_one
 
-        # per-segment stream values, quantized to seq_len levels for comparison
-        # against the integer-valued number sequence
+        # Segment values use the same integer grid as the number sequence.
         src_ns = (new_ns_one / new_ns_len).mul(seq_len).round()
         src_st = (new_st_one / new_st_len).mul(seq_len).round()
 
         num_seq = gen_num_seq(config={'width': self.width, 'generator': config['generator'], 'dim': config.get('dim', 1)})
+        #: Integer threshold sequence used to emit spikes from either stream segment.
+        self.num_seq: torch.Tensor
         self.register_buffer('num_seq', num_seq.mul(seq_len).floor())
+        #: Quantized source threshold used during the unstable prefix.
+        self.src_ns: torch.Tensor
         self.register_buffer('src_ns', src_ns)
+        #: Quantized source threshold used during the stable tail.
+        self.src_st: torch.Tensor
         self.register_buffer('src_st', src_st)
+        #: Number of generated spikes assigned to the unstable prefix per element.
+        self.new_ns_len: torch.Tensor
         self.register_buffer('new_ns_len', new_ns_len)
-        # per-segment spike counters, doubling as indices into num_seq
+        #: Per-element position within the unstable-prefix number sequence.
+        self.out_cnt_ns: torch.Tensor
         self.register_buffer('out_cnt_ns', torch.zeros_like(val, dtype=torch.long))
+        #: Per-element position within the stable-tail number sequence.
+        self.out_cnt_st: torch.Tensor
         self.register_buffer('out_cnt_st', torch.zeros_like(val, dtype=torch.long))
 
 
@@ -157,13 +168,10 @@ class stability_builder(napl_base):
             spike = builder()
         """
         in_prefix = self.out_cnt_ns < self.new_ns_len
-        # select the active segment first, then gather/compare once (exactly
-        # equivalent to comparing both segments and where-selecting the spikes)
         src = torch.where(in_prefix, self.src_ns, self.src_st)
         cnt = torch.where(in_prefix, self.out_cnt_ns, self.out_cnt_st)
         spike = torch.gt(src, self.num_seq[cnt]).type(self.stype)
-        # in-place is safe: counters are full-shape longs from __init__ (no
-        # scalar broadcast), long += bool involves no dtype promotion change
+        # Full-shape long counters accept in-place bool increments without promotion.
         self.out_cnt_ns.add_(in_prefix)
         self.out_cnt_st.add_(~in_prefix)
         return spike

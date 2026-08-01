@@ -47,14 +47,17 @@ class bi2uni(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational converter.
         self.hw = hw_params(pp_delay=0)
 
-        # width of the accumulator
+        #: Signed conversion-accumulator width in bits.
         self.width = config['width']
-        # max value in the accumulator
+        #: Largest value retained by the conversion accumulator.
         self.acc_max = 2**(self.width-1) - 1
-        # min value in the accumulator
+        #: Smallest value retained by the conversion accumulator.
         self.acc_min = -2**(self.width-1)
+        #: Running bipolar-to-unipolar conversion error.
+        self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
 
@@ -82,22 +85,14 @@ class bi2uni(napl_base):
 
             output = converter(torch.tensor([1, 0], dtype=torch.int8))
         """
-        # calculate (2*input-1)/1
-        # input spike streams are [input, input, 0]
-        # fuse acc + (2*input - 1), then clamp. ntype destination promotes the int8 input
-        # (alpha=2), so the explicit .type(ntype) cast is unnecessary.
+        # The scalar initial state broadcasts out of place; matching shapes update in place.
         acc = self.accumulator
         if acc.shape == input.shape:
-            # steady state: update the accumulator buffer in place (no per-timestep alloc).
             acc = acc.add_(input, alpha=2).sub_(1).clamp_(self.acc_min, self.acc_max)
         else:
-            # first call: broadcast the (1,) accumulator up to the input shape out of place.
             acc = acc.add(input, alpha=2).sub_(1).clamp_(self.acc_min, self.acc_max)
-        # output as stype directly; acc.sub_ promotes int8 up to float32 destination (no truncation),
-        # which drops the separate stype cast at return.
         output = torch.ge(acc, 1).type(self.stype)
-        # acc is already in [acc_min, acc_max] and output in {0,1} with output==1 only when acc>=1,
-        # so acc-output stays in range; the trailing clamp is a provable no-op.
+        # Since output is 1 only for acc >= 1, subtraction preserves the accumulator bounds.
         acc.sub_(output)
         if self.accumulator.shape != acc.shape:
             self.accumulator.resize_as_(acc).copy_(acc.detach())

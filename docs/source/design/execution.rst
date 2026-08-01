@@ -7,20 +7,12 @@ and can use supported CPU and GPU devices.
 Streaming execution
 -------------------
 
-Streaming classes inherit ``napl.sim.base.napl_base`` and keep the default
-``streaming = True``.
-
-* One call represents one timestep and one bit from each input stream.
-* ``napl_base.__call__`` increments ``timestep_cur`` before ``forward()``.
-* Stateful classes update persistent state across calls.
-* ``valid`` becomes true after the first timestep following construction or
-  reset.
-* ``reset()`` restores the timestep and class state to their initial values.
-
-The ``napl.sim.base.napl_sim_timesteps`` decorator repeats a module method.
-``napl.sim.base.napl_sim_timesteps_func`` provides the same behavior for a
-free function. Both accept ``timesteps`` as a keyword argument. The decorated
-body still implements one timestep.
+Streaming classes model time-explicit dataflow: state and spike values advance
+through a composed network one timestep at a time. The shared lifecycle is
+defined by :class:`napl.napl_base`; see its :meth:`~napl.napl_base.__call__`,
+:attr:`~napl.napl_base.valid`, and :meth:`~napl.napl_base.reset` API entries.
+The :func:`napl.napl_sim_timesteps` and
+:func:`napl.napl_sim_timesteps_func` API entries define the repetition helpers.
 
 A typical streaming loop is::
 
@@ -34,17 +26,9 @@ The complete path runs once per timestep.
 Single-shot execution
 ---------------------
 
-Single-shot classes set ``streaming = False``.
-
-* One call processes the complete tensor.
-* ``napl_base.__call__`` does not increment ``timestep_cur``.
-* ``timestep_cur`` remains zero and ``valid`` remains false.
-* Trainable HUB, FXP, TLUT, and hard neural kernels can use custom
-  ``torch.autograd.Function`` implementations and straight-through
-  estimators.
-
-Single-shot execution models binary-domain computation. It does not imply that
-a matching RTL module exists.
+Single-shot classes expose binary-domain tensor computation through the same
+module composition model. This execution family is independent of RTL
+availability. Constructor and call behavior belong to each class's API page.
 
 Kernel families
 ---------------

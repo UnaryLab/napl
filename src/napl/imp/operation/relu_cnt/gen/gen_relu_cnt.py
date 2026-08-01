@@ -36,9 +36,8 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "relu_cnt.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "relu_cnt_params.vh"
 
-# test_relu_cnt.py relu_cnt_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_relu_cnt.py.
 RELU_CNT = {"width": 3}
-# test_relu_cnt.py codec_config: the encoder feeding relu_cnt.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -46,15 +45,11 @@ def main():
     model = relu_cnt(config=RELU_CNT)
     model.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
     vals = rep_values(CODEC["polarity"])
-    # Pick a mid-stream reset point: after the first operand's stream, reset the
-    # model (acc dirtied by the first operand) and continue. The RTL pulses
-    # i_rst_n at that cycle so both reload acc = HALF and must agree afterward.
+    # Reset after one operand stream, when the accumulator has changed.
     reset_after_value_idx = 1  # reset before encoding the 2nd representative value
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     PARAMS.write_text(f"`define GEN_WIDTH {RELU_CNT['width']}\n")
 
     rows = 0
@@ -63,8 +58,6 @@ def main():
             spikes = encode_value(CODEC, v)
             for si, bit in enumerate(spikes):
                 rst = 0
-                # mid-stream reset: at the first cycle of the chosen operand,
-                # reset the model and tell the tb to pulse i_rst_n first.
                 if vi == reset_after_value_idx and si == 0:
                     model.reset()
                     rst = 1

@@ -5,17 +5,17 @@
 module add_gaines_tb;
     reg i_clk;
     reg i_rst_n;
-    reg [`GEN_ENTRY-1:0] i_scaled_uni;
-    reg [`GEN_ENTRY-1:0] i_scaled_bi;
-    reg [`GEN_ENTRY-1:0] i_unscaled;
+    reg [`GEN_SCALED_ENTRY-1:0] i_scaled_uni;
+    reg [`GEN_SCALED_ENTRY-1:0] i_scaled_bi;
+    reg [`GEN_UNSCALED_ENTRY-1:0] i_unscaled;
     wire o_scaled_uni;
     wire o_scaled_bi;
     wire o_unscaled;
 
     add_gaines #(
         .SCALED(`GEN_SCALED),
-        .ENTRY(`GEN_ENTRY),
-        .SELECT_WIDTH(`GEN_SELECT_WIDTH)
+        .ENTRY(`GEN_SCALED_ENTRY),
+        .SELECT_WIDTH(`GEN_SCALED_SELECT_WIDTH)
     ) dut_scaled_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
@@ -24,8 +24,8 @@ module add_gaines_tb;
     );
     add_gaines #(
         .SCALED(`GEN_SCALED),
-        .ENTRY(`GEN_ENTRY),
-        .SELECT_WIDTH(`GEN_SELECT_WIDTH)
+        .ENTRY(`GEN_SCALED_ENTRY),
+        .SELECT_WIDTH(`GEN_SCALED_SELECT_WIDTH)
     ) dut_scaled_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
@@ -34,8 +34,8 @@ module add_gaines_tb;
     );
     add_gaines #(
         .SCALED(`GEN_UNSCALED),
-        .ENTRY(`GEN_ENTRY),
-        .SELECT_WIDTH(`GEN_SELECT_WIDTH)
+        .ENTRY(`GEN_UNSCALED_ENTRY),
+        .SELECT_WIDTH(`GEN_UNSCALED_SELECT_WIDTH)
     ) dut_unscaled (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
@@ -66,9 +66,9 @@ module add_gaines_tb;
 
     initial begin
         i_rst_n = 1'b1;
-        i_scaled_uni = {`GEN_ENTRY{1'b0}};
-        i_scaled_bi = {`GEN_ENTRY{1'b0}};
-        i_unscaled = {`GEN_ENTRY{1'b0}};
+        i_scaled_uni = {`GEN_SCALED_ENTRY{1'b0}};
+        i_scaled_bi = {`GEN_SCALED_ENTRY{1'b0}};
+        i_unscaled = {`GEN_UNSCALED_ENTRY{1'b0}};
 
         if (`GEN_PP_DELAY != 0) begin
             $display("FAIL add_gaines: observed latency 0, expected %0d", `GEN_PP_DELAY);

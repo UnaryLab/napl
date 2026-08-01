@@ -48,17 +48,21 @@ class sqrt_traceiscb(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: Hardware latency and timing metadata for the composed square-root path.
         self.hw = hw_params(pp_delay=0)
 
-        # for cordiv kernel, the config is fixed to optimal directly
-        # this actually leads to 01 sequence
+        #: Correlated-divider stage that updates the square-root trace.
         self.cordiv_kernel = div_cordiv({'depth': 2, 'generator': 'sobol'})
+        #: One-timestep delayed input used by the trace update.
+        self.dff: torch.Tensor
         self.register_buffer('dff', torch.zeros(1, dtype=torch.int8))
+        #: Saved square-root trace inserted into the current input stream.
+        self.trace: torch.Tensor
         self.register_buffer('trace', torch.zeros(1, dtype=torch.int8))
 
         if self.polarity == 'bipolar':
-            # fix width to optimal 2
-            self.bi2uni = bi2uni({'width': 2})
+            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
+            self.bi2uni = bi2uni({'width': 3})
 
 
     def _reset(self):
@@ -91,14 +95,13 @@ class sqrt_traceiscb(napl_base):
             output = operation(torch.tensor([0.0, 1.0]))
         """
         trace = self.trace
-        # for trace, input in {0,1}, ((1-trace) & input) + trace == trace | input:
-        # one fused OR instead of sub/and/add temporaries per timestep
+        # For 0/1 values, ((1 - trace) & input) + trace == trace | input.
         output = (trace | input.type(torch.int8)).type(self.stype)
         if self.polarity == 'unipolar':
-            # P_trace = P_out/(P_out+1)
+            # P_trace = P_out / (P_out + 1).
             self.unipolar_trace(output)
         else:
-            # P_trace = (P_out*2-1)/((P_out*2-1)+1)
+            # P_trace = (2 * P_out - 1) / ((2 * P_out - 1) + 1).
             out = self.bi2uni(output)
             self.unipolar_trace(out)
         return output
@@ -127,7 +130,6 @@ class sqrt_traceiscb(napl_base):
         dividend = dff_inv & output.type(torch.int8)
         divisor = self.dff | dividend
 
-        # use actual quotient as trace
         trace = self.cordiv_kernel(dividend, divisor)
         if self.trace.shape == trace.shape:
             self.trace.copy_(trace.detach())

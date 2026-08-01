@@ -23,9 +23,7 @@ class codec(napl_base):
         spike = self.encoder(input)
         self.decoder(spike)
         self.accuracy(spike)
-        # The composite auto-ticks once per outer __call__; the inner modules
-        # auto-tick once per looped iteration.
-        # print(f'Timestep {self.encoder.timestep_cur} processed.')
+        # The composite ticks once per call; inner modules tick once per iteration.
         assert self.encoder.timestep_cur == self.decoder.timestep_cur, \
             f'Timestep mismatch: {self.encoder.timestep_cur}, {self.decoder.timestep_cur}.'
 

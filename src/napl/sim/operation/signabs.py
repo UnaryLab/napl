@@ -41,12 +41,18 @@ class signabs(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational outputs.
         self.hw = hw_params(pp_delay=0)
 
+        #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']
 
+        #: Largest value retained by the unsigned accumulator.
         self.acc_max = 2**self.width - 1
+        #: Half-scale accumulator value that represents bipolar zero.
         self.acc_med = 2**(self.width - 1)
+        #: Running bipolar input count used to derive sign and magnitude spikes.
+        self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(self.acc_med))
 
 
@@ -76,9 +82,7 @@ class signabs(napl_base):
 
             sign, magnitude = operation(torch.tensor([0.0, 1.0]))
         """
-        # update the accumulator based on input: +1 for input 1; -1 for input 0
-        # the accumulator saturates at min and max
-        # acc + 2*input - 1 fused via alpha; in-place only after the first-call (1,)->(N,) broadcast
+        # The scalar initial accumulator broadcasts out of place; matching shapes update in place.
         if self.acc.shape == input.shape:
             self.acc.add_(input, alpha=2).sub_(1).clamp_(0, self.acc_max)
         else:

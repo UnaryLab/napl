@@ -36,7 +36,7 @@ or there is a real bug, never "close".
 
 
 def cell(s):
-    # pipes break markdown table columns; escape them
+    # Escape pipes to preserve Markdown table columns.
     return str(s).replace("|", "\\|").strip()
 
 
@@ -58,7 +58,6 @@ def main():
     row = "| " + " | ".join(cell(x) for x in (
         date, a.kernel, a.rtl, a.result, a.vectors, a.polarities, a.reset, a.regimes, a.notes)) + " |"
 
-    # collect existing data rows (the table body), if any
     new = not os.path.exists(a.file)
     rows = []
     if not new:
@@ -70,11 +69,11 @@ def main():
                 rows.append(ln.rstrip())
 
     rows.append(row)
-    # rank the log by kernel name (col 2) only, not by date
+    # Sort by kernel name, independent of record date.
     def key(r):
         parts = [c.strip() for c in r.strip().strip("|").split("|")]
-        return parts[1].lower()  # kernel name only
-    rows = sorted(dict.fromkeys(rows), key=key)  # dedupe identical rows, then sort
+        return parts[1].lower()
+    rows = sorted(dict.fromkeys(rows), key=key)
 
     os.makedirs(os.path.dirname(a.file) or ".", exist_ok=True)
     with open(a.file, "w") as f:

@@ -33,7 +33,7 @@ def _kernel_specific_checks():
     timestep = 256
     in_features, out_features = 16, 8
 
-    # input on rng dim 1; weight/bias on dims 2/3 (decorrelated operands)
+    # Separate Sobol dimensions decorrelate inputs, weights, and biases.
     codec_config = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}
     lin_config = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2, 'scale': None, 'width': 12}
 

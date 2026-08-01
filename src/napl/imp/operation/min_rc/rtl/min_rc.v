@@ -1,24 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// min_rc -- rate-coded streaming min / argmin via sync_skewed.
-//
-// Gate-level counterpart of napl.sim.operation.min_rc (operation/min_rc.py), which
-// in turn uses operation/sync_skewed.py::sync_skewed with width=2 (cnt in 0..3).
-//
-// One posedge i_clk == one Python forward() timestep. Active-low i_rst_n maps to
-// the Python reset(): cnt <- 0, dff <- 0.
-//
-// Inputs  i_input_0, i_input_1 : 1-bit spikes (sync_skewed receives them as
-//                          input_1=i_input_0, input_2=i_input_1).
-// Outputs o_min          : min spike    = dff*i_input_0 + (1-dff)*i_input_1 (PRE-update dff)
-//         o_argmin       : argmin spike  = 1 - dff_next               (POST-update dff)
-//
-// Mirroring the Python forward(): the min uses the dff value held coming into the
-// timestep, while the argmin is read AFTER the in-timestep dff update (the model
-// returns 1 - self.dff on the line following self.dff.data = ...). Both are thus
-// combinational w.r.t. the inputs (delay 0); dff/cnt latch on the clock edge.
-//==============================================================================
+// Rate-coded min_rc equivalent with a width-2 sync_skewed counter.
+// o_min uses the pre-update arg register; o_argmin inverts its next value. Both
+// are combinational (pp_delay=0). Active-low reset clears arg and cnt.
 module min_rc (
     input  wire i_clk,
     input  wire i_rst_n,

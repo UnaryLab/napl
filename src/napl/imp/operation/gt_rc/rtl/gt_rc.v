@@ -1,22 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// gt_rc -- "greater than" of two rate-coded spike streams via sync_skewed.
-//
-// Gate-level model of napl.sim.operation.gt_rc (config-free, no polarity branch).
-// State: a 1-bit result register (o_out, reset to 1) and the 2-bit skew counter
-// of sync_skewed (width=2, cnt in 0..3, reset to 0). One posedge i_clk == one
-// Python forward() timestep; i_rst_n (active low) == Python reset().
-//
-// Per cycle (a=i_input_0, b=i_input_1), reproducing sync_skewed(width=2) then gt_rc:
-//   diff        = a ^ b                         // sync's input_01_10
-//   sync_0      = diff ? (a ? (cnt==3) : (cnt!=0)) : a   // skewed input_0
-//   sync_1      = b                             // input_1 passthrough
-//   d_enable    = sync_0 ^ sync_1
-//   dff_next    = d_enable ? sync_0 : dff       // result register
-//   cnt_next    = clamp(cnt + (diff ? (a ? +1 : -1) : 0), 0, 3)
-// o_out is the registered dff read BEFORE its update, so latency is 1 cycle.
-//==============================================================================
+// Rate-coded gt_rc equivalent with a width-2 sync_skewed counter.
+// o_out is the pre-update result register, so pp_delay=1.
+// Each posedge is one Python timestep; active-low reset loads result=1, cnt=0.
 module gt_rc (
     input  wire i_clk,
     input  wire i_rst_n,

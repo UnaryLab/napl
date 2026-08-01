@@ -41,27 +41,25 @@ def _kernel_specific_checks():
 
         y = cell(x, hx)
         assert y.shape == (b, hsz)
-        # analytic reference
         ref = _ref_mgu_nua(x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n)
         assert torch.allclose(y, ref, atol=1e-6), (device, (y - ref).abs().max().item())
-        # UnarySim faithfulness: identical inputs and weights -> bit-exact
+        # Identical inputs and weights must match the reference bit-exactly.
         y_us = ref_cell(x, hx)
         assert torch.equal(y, y_us), (device, (y - y_us).abs().max().item())
-        # NUA property: output may leave [-1, 1] (unlike mgu_hard); just check finite
+        # NUA output may leave [-1, 1], so only finiteness is required.
         assert torch.isfinite(y).all()
-        assert cell(x).shape == (b, hsz)   # hx=None default
+        assert cell(x).shape == (b, hsz)  # Default hx=None path.
 
-        # gradients flow
         xg = x.clone().requires_grad_(True)
         cell(xg, hx).sum().backward()
         assert torch.isfinite(xg.grad).all()
         assert torch.isfinite(cell.weight_f.grad).all()
         cell.zero_grad()
 
-        # performance vs the UnarySim baseline, identical inputs
+        # Compare against the reference on identical inputs.
         n = 200
         for m in (cell, ref_cell):
-            m(x, hx)   # warmup
+            m(x, hx)  # Warm up before timing.
         sync(device)
         t0 = time.perf_counter()
         for _ in range(n):

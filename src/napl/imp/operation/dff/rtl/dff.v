@@ -1,28 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// dff -- depth-DEPTH bit-serial delay line (a FIFO of D flip-flops, stateful).
-//
-// RTL counterpart of napl.sim.operation.dff (src/napl/sim/operation/dff.py). One input
-// spike per cycle; the output is the spike that entered DEPTH cycles earlier, so
-// the input->output latency is DEPTH (== pp_delay; pp_delay=1 at the default
-// depth=1, where the module degenerates to a single D flip-flop).
-//
-// Reset (active-low i_rst_n) reproduces the Python reset() state EXACTLY: the
-// FIFO is initialized to ALL ZEROS (unlike shiftreg's i%2 pattern), so for the
-// first DEPTH cycles the output replays zeros, then the DEPTH-cycle-delayed
-// inputs follow.
-//
-// dff has no polarity variants (polarity_required=False), so the module is the
-// bare op name with no _unipolar/_bipolar postfix.
-//
-// DEPTH is a Verilog parameter inherited from the Python model's config['depth']:
-// the testbench overrides it with `GEN_DEPTH (emitted by gen/gen_dff.py from the
-// same config test_dff.py uses), so the verified hardware always tracks the
-// simulator. The default here is only a standalone-elaboration fallback.
-//
-// Verify from src/napl/imp/: conda run -n napl make test OP=dff
-//==============================================================================
+// DEPTH-cycle delay equivalent to napl.sim.operation.dff; pp_delay=DEPTH.
+// Generated DEPTH mirrors Python. Active-low reset clears every FIFO cell.
 module dff #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
@@ -57,7 +36,6 @@ module dff #(
         end
     endgenerate
 
-    // Output is always the oldest cell.
     assign o_out = reg_q[0];
 endmodule
 `default_nettype wire

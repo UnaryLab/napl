@@ -1,29 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_WIDTH is emitted by gen/gen_signabs.py from the op config (= the test's
-// signabs_config), so the DUT parameter is inherited from the Python model.
-// iverilog resolves this include relative to the compile cwd (imp/).
+// Generated WIDTH mirrors the Python model configuration.
 `include "signabs/vec/signabs_params.vh"
-//==============================================================================
-// Self-checking testbench for signabs.
-//
-// Reads golden vectors produced by gen/gen_signabs.py (from the napl Python
-// model) and asserts the saturating-accumulator sign/abs logic reproduces them
-// cycle by cycle.
-//
-// Timing contract (matches the Python forward()): at timestep t the model folds
-// i_input into the accumulator and returns sign/abs from the UPDATED value, all in
-// one call. In RTL acc is registered and o_sign/o_abs are combinational from the
-// current acc + i_input, so per cycle we (1) drive i_input, (2) check o_sign/o_abs
-// against the settled combinational outputs, then (3) pulse one posedge i_clk to
-// commit acc_next. i_rst_n is held low first so the co-sim starts from the exact
-// post-reset() state (acc = ACC_MED).
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=signabs
-//==============================================================================
+// Python golden sign/abs use acc_next from the current input. Outputs are
+// checked before the posedge commits acc_next; reset loads ACC_MED.
+// Co-sim: make test OP=signabs
 module signabs_tb;
     reg  clk;
     reg  rst_n;
@@ -42,7 +23,7 @@ module signabs_tb;
     integer fd, code, n, fails;
     reg rflag, a, exp_sign, exp_abs;
 
-    // Free-running clock: 10ns period.
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
@@ -69,28 +50,22 @@ module signabs_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b %b %b\n", rflag, a, exp_sign, exp_abs);
             if (code == 4) begin
-                // Mid-stream reset: when rflag is set, the model called reset()
-                // BEFORE this timestep, so re-load acc = ACC_MED here to prove
-                // the RTL recovers the post-reset() state from a dirtied acc.
                 if (rflag) begin
                     rst_n = 1'b0;
                     @(posedge clk);   // async reset loads acc = ACC_MED
                     @(negedge clk);
                     rst_n = 1'b1;
                 end
-                // Drive this cycle's input; o_sign/o_abs settle combinationally
-                // from the current acc + i_input (the UPDATED-acc outputs the model
-                // returns this timestep). Check, then posedge to commit acc_next.
                 in_bit = a;
-                #1;   // let the combinational outputs settle
+                #1;
                 n = n + 1;
                 if (sign_bit !== exp_sign || abs_bit !== exp_abs) begin
                     $display("FAIL cyc=%0d in=%b : got sign=%b abs=%b exp sign=%b abs=%b",
                              n, a, sign_bit, abs_bit, exp_sign, exp_abs);
                     fails = fails + 1;
                 end
-                @(posedge clk);   // commit acc_next
-                @(negedge clk);   // settle for the next check
+                @(posedge clk);
+                @(negedge clk);
             end
         end
         $fclose(fd);

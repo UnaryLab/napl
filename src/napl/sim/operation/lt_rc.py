@@ -38,10 +38,13 @@ class lt_rc(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the registered comparator output.
         self.hw = hw_params(pp_delay=1)
 
+        #: Previous comparison decision used as the one-cycle delayed output.
+        self.dff: torch.Tensor
         self.register_buffer('dff', torch.zeros(1, dtype=torch.int8))
-        # default to optimal width
+        #: Skew synchronizer that correlates the two input streams before comparison.
         self.sync = sync_skewed({'width': 2})
 
 
@@ -71,19 +74,14 @@ class lt_rc(napl_base):
             result = compare(torch.tensor([0], dtype=torch.int8),
                              torch.tensor([1], dtype=torch.int8))
         """
-        # sync input_0 to input_1
         sync_0, sync_1 = self.sync(input_0, input_1)
         sync_0_i8 = sync_0.type(torch.int8)
         sync_1_i8 = sync_1.type(torch.int8)
-        # if sync_0/1 is 01 or 10, enable dff update
         d_enable = sync_0_i8 ^ sync_1_i8
 
-        # generate output
-        # if self.dff == 1, input_0 < input_1
+        # Output reflects the pre-update decision state.
         output = self.dff.clone()
 
-        # update the dff if d_enable is 1: mux(d_enable, sync_1, dff)
-        # if sync_0/1 is 01, input_0 < input_1, update dff to 1
         if self.dff.shape == d_enable.shape:
             self.dff.add_(d_enable * (sync_1_i8 - self.dff))
         else:

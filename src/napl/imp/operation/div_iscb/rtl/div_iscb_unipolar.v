@@ -1,24 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// div_iscb_unipolar -- in-stream correlation-based division, unipolar (stateful).
-//
-// RTL counterpart of napl.sim.operation.div_iscb with config polarity='unipolar'
-// (src/napl/sim/operation/div_iscb.py), i.e. unipolar_forward: a skewed synchronizer
-// (sync_skewed, width=3) feeding a correlated-division kernel (div_cordiv,
-// depth=2, generator='sobol' -> rand_seq_idx = [0, 1]).
-//
-// One dividend spike and one divisor spike per cycle; the quotient spike is a
-// purely combinational function of the current inputs and the CURRENT register
-// state (the cnt counter, the depth-2 buffer, the read pointer), so the
-// input->output latency is 0 (pp_delay=0). The registers update on the posedge
-// for the next cycle.
-//
-// State / reset (active-low i_rst_n) reproduces the Python reset() EXACTLY:
-//   sync_skewed.cnt  = 0   (range [0, 7], width 3)
-//   div_cordiv.buf   = {0, 0}
-//   div_cordiv.idx   = 0   (rand_seq_idx = [0, 1], so it reads buf[idx])
-//==============================================================================
+// Unipolar div_iscb equivalent: width-3 sync_skewed followed by a depth-2
+// div_cordiv with Sobol indices [0,1]. Output is combinational (pp_delay=0);
+// state advances each posedge. Active-low reset clears cnt, buffer, and index.
 module div_iscb_unipolar (
     input  wire i_clk,        // one posedge == one Python forward() timestep
     input  wire i_rst_n,      // active-low; maps to Python reset()

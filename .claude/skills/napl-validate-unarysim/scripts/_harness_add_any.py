@@ -8,7 +8,6 @@ from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
 from napl.utils import gen_rand_tensor
 
-# load the committed test wiring
 spec = importlib.util.spec_from_file_location('t', '/Users/diwu/Projects/napl/tests/operation/test_add_any.py')
 t = importlib.util.module_from_spec(spec); spec.loader.exec_module(t)
 NaplWiring = t.napl_add_any
@@ -19,15 +18,14 @@ def run(device, polarity, scale, width, entry, T, n=2000, seed=0):
     codec_config = {'polarity': polarity, 'timestep': T, 'generator': 'sobol'}
     add_cfg = {'polarity': polarity, 'scale': scale, 'width': width}
 
-    # input value generated ONCE, fed to both sides
+    # Both implementations receive the same generated values.
     inp = gen_rand_tensor(polarity, shape=(n, entry), width=math.log2(T)).type(global_config.ntype).to(device)
 
-    # napl side via committed wiring
     nap = NaplWiring(codec_config, add_cfg).to(device)
     nap(inp, timesteps=T)
-    nap_out = nap.decoder.spike_value  # decoded value
+    nap_out = nap.decoder.spike_value
 
-    # UnarySim side: feed the SAME spike stream (mirror napl encoder)
+    # UnarySim consumes the exact spike stream produced by the NAPL encoder.
     enc = encoder(codec_config).to(device)
     dec = decoder(codec_config).to(device)
     hwcfg = {'mode': polarity, 'scale': scale, 'dima': -1, 'depth': width, 'entry': entry}
@@ -43,7 +41,6 @@ def run(device, polarity, scale, width, entry, T, n=2000, seed=0):
     bitexact = torch.equal(nap_out, ref_out)
     maxdiff = (nap_out - ref_out).abs().max().item()
 
-    # analytic reference
     r_value = torch.sum(inp, dim=-1) / scale
     rmse_nap = torch.sqrt(torch.mean((nap_out - r_value) ** 2)).item()
     rmse_ref = torch.sqrt(torch.mean((ref_out - r_value) ** 2)).item()
@@ -57,7 +54,7 @@ def time_napl(device, polarity, scale, width, entry, T, n=2000, seed=0, iters=3)
     add_cfg = {'polarity': polarity, 'scale': scale, 'width': width}
     inp = gen_rand_tensor(polarity, shape=(n, entry), width=math.log2(T)).type(global_config.ntype).to(device)
     nap = NaplWiring(codec_config, add_cfg).to(device)
-    # warmup
+    # Warm up before timing.
     nap(inp, timesteps=T); nap.reset()
     if device == 'mps':
         torch.mps.synchronize()
@@ -70,7 +67,7 @@ def time_napl(device, polarity, scale, width, entry, T, n=2000, seed=0, iters=3)
         torch.mps.synchronize()
     elif device == 'cuda':
         torch.cuda.synchronize()
-    return (time.time() - t0) / iters * 1000.0  # ms
+    return (time.time() - t0) / iters * 1000.0  # milliseconds
 
 
 if __name__ == '__main__':
@@ -83,7 +80,7 @@ if __name__ == '__main__':
             be, md, rn, rr, sc = run(device, polarity, scale, width, entry, T)
             print(f'[{device}] {polarity}: bitexact={be} maxdiff={md:.3e} '
                   f'rmse_nap={rn:.4e} rmse_ref={rr:.4e} sc_bound={sc:.4e}')
-    # timing on the test's default config (scale=128 entry=128 width=20)
+    # Time the default scale=128, entry=128, width=20 configuration.
     for device in devices:
         ms = time_napl(device, 'bipolar', scale, width, entry, T, n=2000)
         print(f'TIMING [{device}] bipolar n=2000 entry=128 T=256: {ms:.2f} ms')

@@ -38,12 +38,15 @@ class jkff(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the registered flip-flop output.
         self.hw = hw_params(pp_delay=1)
 
+        #: Current JK flip-flop output state.
+        self.q: torch.Tensor
         self.register_buffer('q', torch.zeros(1, dtype=torch.int8))
-        # bool mirror of q; the select consumes this directly so the hot path
-        # skips a per-timestep int8->bool cast (q stays int8 for dependents,
-        # e.g. sqrt_tracejkff's `(1 - trace) & ...`).
+        # q_b is boolean transition state; q remains int8 for downstream bitwise arithmetic.
+        #: Boolean complement of :attr:`q`, updated on every call.
+        self.q_b: torch.Tensor
         self.register_buffer('q_b', torch.zeros(1, dtype=torch.bool))
 
 
@@ -74,10 +77,7 @@ class jkff(napl_base):
             q = flip_flop(torch.tensor([1], dtype=torch.int8),
                           torch.tensor([0], dtype=torch.int8))
         """
-        # JK characteristic eq: Q' = (J AND NOT Q) OR (NOT K AND Q). The two
-        # terms are mutually exclusive, so for Q in {0,1} this is a plain select:
-        # Q' = Q ? (NOT K) : J, a single masked select with no mask or
-        # int8-cast temporaries per timestep.
+        # For Q in {0, 1}, the JK equation reduces to Q' = (not K) if Q else J.
         q_b = torch.where(self.q_b, torch.eq(input_k, 0), torch.ne(input_j, 0))
         if self.q_b.shape == q_b.shape:
             self.q_b.copy_(q_b.detach())

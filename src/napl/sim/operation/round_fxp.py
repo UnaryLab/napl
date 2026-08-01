@@ -13,8 +13,7 @@ class _round_ste_fn(torch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, input, fracwidth, min_val, max_val):
-        # pow2_lshift returns a fresh tensor (never aliases input), so round/clamp it
-        # in place to avoid two intermediate allocations; values are identical.
+        # pow2_lshift returns a fresh tensor, so in-place rounding cannot modify input.
         scaled = pow2_lshift(input, fracwidth)
         scaled.round_().clamp_(min_val, max_val)
         return pow2_rshift(scaled, fracwidth)
@@ -72,6 +71,7 @@ class round_fxp(napl_base):
         operation = round_fxp({'intwidth': 3, 'fracwidth': 4})
         output = operation(torch.tensor([0.1, -0.3]))
     """
+    #: Marks this quantizer as a single-shot tensor operation.
     streaming = False
     def __init__(
             self,
@@ -95,12 +95,16 @@ class round_fxp(napl_base):
         """
         super().__init__(config, ['intwidth', 'fracwidth'])
 
+        #: Number of integer magnitude bits in the signed fixed-point format.
         self.intwidth = config['intwidth']
+        #: Number of fractional bits in the signed fixed-point format.
         self.fracwidth = config['fracwidth']
+        #: Largest scaled integer retained before conversion back to a tensor value.
         self.max_val = 2**(self.intwidth + self.fracwidth) - 1
+        #: Smallest scaled integer retained before conversion back to a tensor value.
         self.min_val = 1 - 2**(self.intwidth + self.fracwidth)
-        # RTL latency: the round_fxp clamp (src/napl/imp/operation/round_fxp)
-        # is purely combinational (saturating clamp on the fixed-point code).
+        # The RTL saturating clamp is combinational.
+        #: Modeled scalar latency of the single-shot quantizer.
         self.delay = 0
 
     def _reset(self):

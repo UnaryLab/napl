@@ -49,11 +49,17 @@ class sync_skewed(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational synchronizer.
         self.hw = hw_params(pp_delay=0)
 
+        #: Width of the stored stream-skew counter in bits.
         self.width=config['width']
+        #: Largest unmatched-spike count retained by the synchronizer.
         self.cnt_max = 2**self.width - 1
+        #: Per-element unmatched-spike count carried across timesteps.
+        self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
+        #: Whether :attr:`cnt` must be expanded for the first input shape.
         self.is_first_call = True
 
 
@@ -86,46 +92,21 @@ class sync_skewed(napl_base):
             first, second = sync(torch.tensor([0], dtype=torch.int8),
                                  torch.tensor([1], dtype=torch.int8))
         """
-        # input_1 and input_2 are spike tensors
-        # this class assume input 1 is smaller than input 2, and input 2 is kept unchanged at output
+        # input_1 is assumed to have no higher rate than input_2; input_2 passes through unchanged.
 
-        # if input 1 and 2  spikes are 01 or 10, sum_in is 1
-        # spikes are {0,1}, so diff is {-1,0,1}: |diff| == (spikes differ) and
-        # diff == input_01_10*(2*input_1-1), replacing 6 elementwise kernels with 2
+        # For 0/1 spikes, abs(input_1 - input_2) flags unequal pairs.
         diff = input_1 - input_2
         input_01_10 = diff.abs()
         if self.is_first_call:
-            # init cnt
             self.cnt.resize_as_(input_01_10).zero_()
             self.is_first_call = False
 
         cnt_not_min = torch.ne(self.cnt, 0).type(self.stype)
         cnt_not_max = torch.ne(self.cnt, self.cnt_max).type(self.stype)
 
-        # if input is 00/11: input_01_10 == 0
-        #   output_1 = input_1
-        #   cnt does not change
-
-        # if input is 01/10: input_01_10 == 1
-        #   if input_1 is 0: cnt_not_min * (1 - input_1)
-        #       if cnt_not_min == 1: cnt has past input_1 saved
-        #           output_1 = 1
-        #           cnt sub 1
-        #       if cnt_not_min == 0: cnt has no past input_1 saved, cnt == 0
-        #           output_1 = 0
-        #           cnt sub 1 then saturate to 0: no change
-
-        #   if input_1 is 1: (0 - cnt_not_max) * input_1)
-        #       if cnt_not_max == 1
-        #           output_1 = 0
-        #           cnt add 1
-        #       if cnt_not_max == 0: cnt == cnt_max
-        #           output_1 = 1
-        #           cnt add 1 then saturate to cnt_max: no change
-        # select term cnt_not_min*(1-input_1) - cnt_not_max*input_1 rewritten with fewer
-        # int8 elementwise ops (input_1 is a {0,1} spike, so this identity is exact)
+        # For 0/1 input_1, select = cnt_not_min * (1 - input_1) - cnt_not_max * input_1.
         select = cnt_not_min - (cnt_not_min + cnt_not_max).mul(input_1)
         output_1 = input_1.add(input_01_10.mul(select))
-        # cnt update input_01_10*(2*input_1-1) == diff exactly; add_ into cnt anchors ntype
+        # input_01_10 * (2 * input_1 - 1) equals diff exactly; cnt remains ntype.
         self.cnt.add_(diff).clamp_(0, self.cnt_max)
         return output_1, input_2

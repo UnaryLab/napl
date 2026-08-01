@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_div_cordiv(napl_base):
     def __init__(self, codec_config1, codec_config2, div_cordiv_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder0 = encoder(codec_config1)
         self.encoder1 = encoder(codec_config2)
         self.decoder = decoder(codec_config1)
@@ -24,7 +23,6 @@ class napl_div_cordiv(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
-        # forward is a description of the circuit
         i_spike0 = self.encoder0(input_0)
         i_spike1 = self.encoder1(input_1)
         o_spike = self.div_cordiv(i_spike0, i_spike1)
@@ -54,14 +52,13 @@ def _kernel_specific_checks():
         'generator' : 'Sobol',
     }
 
-    # Generate random inputs based on polarity
-    # using the same dim for two codec configs to ensure we have correlated spikes to div_cordiv
+    # Matching codec dimensions provide the correlated spikes required by div_cordiv.
     input_0 = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
     input_1 = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
     input_mask = input_0 < input_1
     input_0_new = torch.where(input_mask, input_0, input_1)
     input_1_new = torch.where(~input_mask, input_0, input_1)
-    # make sure divisor is not 0
+    # Division requires a nonzero divisor.
     input_1_new = torch.where(input_1_new==0, 1, input_1_new)
     input_0 = input_0_new
     input_1 = input_1_new
@@ -126,5 +123,23 @@ def test_div_cordiv():
     streaming_suite(CONFIG)
 
 
+def test_div_cordiv_matches_unarysim_history_order():
+    dividends = [0, 1, 0, 1, 1, 0]
+    divisors = [0, 0, 1, 0, 1, 0]
+    expected = torch.tensor([0, 1, 0, 0, 1, 1], dtype=global_config.stype)
+    operation = div_cordiv({'depth': 2, 'generator': 'Sobol'})
+
+    output = torch.stack([
+        operation(
+            torch.full((2, 3), dividend, dtype=global_config.stype),
+            torch.full((2, 3), divisor, dtype=global_config.stype),
+        )
+        for dividend, divisor in zip(dividends, divisors)
+    ])
+
+    assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
+
+
 if __name__ == '__main__':
     test_div_cordiv()
+    test_div_cordiv_matches_unarysim_history_order()

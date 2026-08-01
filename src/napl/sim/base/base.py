@@ -28,9 +28,10 @@ torch_dtype_map = {
 }
 
 
-# Initialize global configuration
-# This will be used throughout the NAPL framework to maintain consistent data types across different modules and operations.
-# The global configuration can be loaded from a YAML file or set directly.
+_GLOBAL_ROOT_PATH = os.path.dirname(os.path.abspath(napl.__file__))
+_GLOBAL_CONFIG_FILE = os.path.join(_GLOBAL_ROOT_PATH, 'sim/base/global_config.yaml')
+
+
 @dataclass
 class global_config_check:
     """Load and validate the process-wide tensor dtypes used by NAPL.
@@ -52,15 +53,22 @@ class global_config_check:
         config = global_config_check()
         print(config.stype, config.ntype)
     """
-    root_path: str = os.path.dirname(os.path.abspath(napl.__file__))
-    config_file: str = str(os.path.join(root_path, 'sim/base/global_config.yaml'))
-    assert os.path.exists(config_file), logger.error(f'Global configuration file <{config_file}> does not exist.')
-    config = read_yaml(config_file)
+    #: Installed NAPL package directory used to locate shared data files.
+    root_path: str = field(default_factory=lambda: _GLOBAL_ROOT_PATH)
+    #: YAML file that defines the process-wide spike and non-spike dtypes.
+    config_file: str = field(default_factory=lambda: _GLOBAL_CONFIG_FILE)
+    assert os.path.exists(_GLOBAL_CONFIG_FILE), logger.error(
+        f'Global configuration file <{_GLOBAL_CONFIG_FILE}> does not exist.'
+    )
+    #: Parsed contents of :attr:`config_file`.
+    config = read_yaml(_GLOBAL_CONFIG_FILE)
 
+    #: PyTorch dtype used for spike tensors.
     stype = torch_dtype_map.get(config['global_config']['spike_type'], None)
     assert stype in [torch.float, torch.bfloat16, torch.int8], \
         logger.error(f'Invalid spike type: <{stype}>; legal types: [torch.float, torch.bfloat16, torch.int8].')
-        
+
+    #: PyTorch dtype used for non-spike values and accumulated results.
     ntype = torch_dtype_map.get(config['global_config']['non_spike_type'], None)
     assert ntype in [torch.float, torch.bfloat16], \
         logger.error(f'Invalid non-spike type: <{ntype}>; legal types: [torch.float, torch.bfloat16].')
@@ -73,6 +81,7 @@ Args:
     config_file: YAML file to read. Defaults to
         ``sim/base/global_config.yaml`` below ``root_path``.
 """
+global_config_check.__init__.__annotations__.pop('return', None)
 
 global_config = global_config_check()
 
@@ -92,12 +101,18 @@ class pvt_corner:
 
         corner = pvt_corner("asap7", "ss", 0.63, 125.0, rc="cworst")
     """
-    node: str                    # tech node, e.g. 'asap7', 'tsmc28'
-    process: str                 # process corner / libset, e.g. 'ss'/'tt'/'ff'
-    voltage: float               # supply voltage in V, e.g. 0.63
-    temp: float                  # junction temperature in degC, e.g. 125.0 (may be < 0)
-    rc: str = 'typ'              # interconnect (RC) corner, e.g. 'cworst'/'rcworst'/'typ'
-    mode: str = 'func'           # MCMM mode, e.g. 'func'/'scan'/'sleep'
+    #: Technology-node identifier, such as ``"asap7"``.
+    node: str
+    #: Process corner or standard-cell library set, such as ``"ss"``.
+    process: str
+    #: Supply voltage in volts.
+    voltage: float
+    #: Junction temperature in degrees Celsius.
+    temp: float
+    #: Interconnect-resistance/capacitance corner.
+    rc: str = 'typ'
+    #: Multi-corner analysis mode, such as ``"func"`` or ``"scan"``.
+    mode: str = 'func'
 
 
 pvt_corner.__init__.__doc__ = """Initialize an immutable hardware corner.
@@ -110,6 +125,7 @@ Args:
     rc: Interconnect corner. Defaults to ``"typ"``.
     mode: Functional mode. Defaults to ``"func"``.
 """
+pvt_corner.__init__.__annotations__.pop('return', None)
 
 
 @dataclass
@@ -128,8 +144,11 @@ class timing:
 
         path = timing(cp_delay=0.42, ir_delay=0.08, or_delay=0.05)
     """
+    #: Worst internal combinational delay in nanoseconds.
     cp_delay: float = 0.0
+    #: Input-port-to-first-register delay in nanoseconds.
     ir_delay: float = 0.0
+    #: Last-register-to-output-port delay in nanoseconds.
     or_delay: float = 0.0
 
 
@@ -144,6 +163,7 @@ Args:
     or_delay: Last-register-to-output-port delay in nanoseconds. Defaults to
         ``0.0``.
 """
+timing.__init__.__annotations__.pop('return', None)
 
 
 @dataclass
@@ -164,8 +184,10 @@ class hw_params:
         corner = pvt_corner("asap7", "tt", 0.70, 25.0)
         hw = hw_params(pp_delay=1, timing={corner: timing(cp_delay=0.35)})
     """
+    #: Input-to-output pipeline latency in clock cycles.
     pp_delay: int = 0
-    timing: dict = field(default_factory=dict)   # {pvt_corner: timing}
+    #: Timing data indexed by :class:`pvt_corner`.
+    timing: dict = field(default_factory=dict)
 
 
 hw_params.__init__.__doc__ = """Initialize hardware latency and timing data.
@@ -176,6 +198,7 @@ Args:
     timing: Mapping from :class:`pvt_corner` objects to :class:`timing` values.
         Defaults to an empty mapping.
 """
+hw_params.__init__.__annotations__.pop('return', None)
 
 
 class napl_base(torch.nn.Module):
@@ -197,8 +220,7 @@ class napl_base(torch.nn.Module):
         module.reset()
         assert not module.valid
     """
-    # Streaming modules advance timestep_cur once per call; single-shot
-    # binary-domain classes override with False.
+    #: Whether each call represents one streaming timestep.
     streaming = True
 
     def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
@@ -218,22 +240,45 @@ class napl_base(torch.nn.Module):
         a zero-latency :class:`hw_params` value.
         """
         super().__init__()
-        # Load global configuration
+        #: PyTorch dtype used for spike tensors in this module.
         self.stype = global_config.stype
+        #: PyTorch dtype used for non-spike values in this module.
         self.ntype = global_config.ntype
 
-        # check config
         if polarity_required is True:
             assert 'polarity' in config, logger.error('Missing key <polarity> in the input configuration.')
         check_config(config, key_list)
+        #: Stream encoding, either ``"unipolar"``, ``"bipolar"``, or ``None``.
         self.polarity = check_polarity(config)
+        #: User-facing module label derived from the configuration.
         self.name = check_name(config)
-        
+
+        #: Number of streaming timesteps processed since the last reset.
         self.timestep_cur = 0
 
-        # hardware contract for RTL generation; ops override with their own values
+        #: Hardware latency and characterized timing metadata for this module.
         self.hw = hw_params()
 
+    def _reset(self):
+        """Reset state owned directly by the base class.
+
+        The base implementation has no additional local state and returns
+        ``None``. Subclasses override this hook for their own mutable state;
+        callers use :meth:`reset` instead.
+        """
+        pass
+
+    @property
+    def valid(self):
+        """Report whether a streaming module has processed at least one timestep.
+
+        Returns:
+            ``True`` when ``timestep_cur > 0``; otherwise ``False``.
+
+        Reading this property does not change state. It remains ``False`` for
+        single-shot modules because they do not advance ``timestep_cur``.
+        """
+        return self.timestep_cur > 0
 
     def tick(self):
         """Advance a streaming module by one timestep.
@@ -251,7 +296,6 @@ class napl_base(torch.nn.Module):
         """
         self.timestep_cur += 1
 
-
     def __call__(self, *args, **kwargs):
         """Run ``forward()`` and update streaming execution state.
 
@@ -267,25 +311,9 @@ class napl_base(torch.nn.Module):
         change the timestep. Call the module normally instead of invoking this
         method directly.
         """
-        # __call__ override, not register_forward_pre_hook: a hook on every module
-        # forces nn.Module's slow call path per timestep.
         if self.streaming:
             self.tick()
         return super().__call__(*args, **kwargs)
-
-
-    @property
-    def valid(self):
-        """Report whether a streaming module has processed at least one timestep.
-
-        Returns:
-            ``True`` when ``timestep_cur > 0``; otherwise ``False``.
-
-        Reading this property does not change state. It remains ``False`` for
-        single-shot modules because they do not advance ``timestep_cur``.
-        """
-        return self.timestep_cur > 0
-
 
     def reset(self, verbose=False):
         """
@@ -316,16 +344,6 @@ class napl_base(torch.nn.Module):
         self._reset()
 
 
-    def _reset(self):
-        """Reset state owned directly by the base class.
-
-        The base implementation has no additional local state and returns
-        ``None``. Subclasses override this hook for their own mutable state;
-        callers use :meth:`reset` instead.
-        """
-        pass
-
-
 def napl_sim_timesteps(timestep_func):
     """
     This function is a decorator to simulate multiple timesteps in the NAPL framework.
@@ -335,8 +353,8 @@ def napl_sim_timesteps(timestep_func):
         assert 'timesteps' in kwargs, \
             logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
-        timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
-        verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
+        timesteps = kwargs.pop('timesteps', 256)
+        verbose = kwargs.pop('verbose', False)
         if verbose:
             logger.info(f'Simulating <{timesteps}> timesteps in NAPL class <{self.__class__.__name__}>...')
 
@@ -356,8 +374,8 @@ def napl_sim_timesteps_func(timestep_func):
         assert 'timesteps' in kwargs, \
             logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
         
-        timesteps = kwargs.pop('timesteps', 256)  # Remove 'timesteps' from kwargs
-        verbose = kwargs.pop('verbose', False)  # Remove 'timesteps' from kwargs
+        timesteps = kwargs.pop('timesteps', 256)
+        verbose = kwargs.pop('verbose', False)
         if verbose:
             logger.info(f'Simulating <{timesteps}> timesteps in NAPL function...')
 

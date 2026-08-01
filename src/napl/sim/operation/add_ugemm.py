@@ -42,19 +42,23 @@ class add_ugemm(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
+        #: Hardware latency and timing metadata for the combinational uGEMM adder.
         self.hw = hw_params(pp_delay=0)
 
-        # whether the addition is scaled (carry-out per acc_bound spikes)
+        #: Whether the output represents the mean rather than the clipped sum.
         self.scaled = config['scaled']
-        # upper bound of the accumulation counter (= entry count along dim)
+        #: Number of streams reduced per call, inferred from the first input.
         self.acc_bound = 0
-        # per-timestep accumulation offset (non-scaled bipolar only)
+        #: Bipolar centering offset inferred from :attr:`acc_bound`.
         self.offset = 0
-        # accumulator of the per-timestep partial counts
+        #: Running input sum used by both scaled and non-scaled modes.
+        self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
-        # count of already-emitted output spikes (non-scaled mode)
         if not self.scaled:
+            #: Running number of spikes emitted in non-scaled mode.
+            self.out_accumulator: torch.Tensor
             self.register_buffer('out_accumulator', torch.zeros(1, dtype=self.ntype))
+        #: Whether the next call must infer the reduction size and offset.
         self.is_first_call = True
 
 
@@ -93,16 +97,14 @@ class add_ugemm(napl_base):
             self.is_first_call = False
 
         acc_delta = torch.sum(input, dim, dtype=self.ntype)
-        # out-of-place add broadcasts the (1,) init up to the stream shape on the
-        # first timestep (napl accumulator idiom); in-place afterwards (same ntype)
+        # The scalar initial state broadcasts out of place; matching shapes update in place.
         if self.accumulator.shape == acc_delta.shape:
             self.accumulator.add_(acc_delta)
         else:
             updated = self.accumulator.add(acc_delta)
             self.accumulator.resize_as_(updated).copy_(updated.detach())
 
-        # compare -> stype directly (one cast); sub_/add_ promote the int8 spike
-        # to the float32 destination, so results are unchanged
+        # Integer spikes promote exactly into the ntype accumulators.
         if self.scaled:
             output = torch.ge(self.accumulator, self.acc_bound).type(self.stype)
             self.accumulator.sub_(output, alpha=self.acc_bound)

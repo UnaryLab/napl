@@ -45,12 +45,13 @@ class avgpool2d(napl_base):
         output shape on the first call.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: PyTorch pooling operator that computes each per-timestep window mean.
         self.avgpool2d = torch.nn.AvgPool2d(kernel_size, stride=stride, padding=padding,
                                             ceil_mode=ceil_mode,
                                             count_include_pad=count_include_pad,
                                             divisor_override=divisor_override)
-        # scalar accumulator; broadcasts up to the pooled output shape on the
-        # first forward() (napl broadcast idiom, no pre-sized input_shape needed)
+        #: Residual pooled value carried forward until it emits an output spike.
+        self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
     def _reset(self):
@@ -73,17 +74,15 @@ class avgpool2d(napl_base):
         The call updates the persistent accumulator. Calling the module also
         advances ``timestep_cur`` once.
         """
-        # input_spike: (batch, channel, H, W) spike tensor for the current timestep
         pooled_input = input_spike if input_spike.dtype == self.ntype else input_spike.type(self.ntype)
         delta = self.avgpool2d(pooled_input)
         if self.accumulator.shape == delta.shape:
             self.accumulator.add_(delta)
         else:
-            # first timestep: broadcast-expand the (1,) init out of place
+            # The first update broadcasts the scalar state out of place.
             expanded = self.accumulator.add(delta).detach()
             self.accumulator.resize_as_(expanded).copy_(expanded)
-        # single cast to stype: sub_ promotes the 0/1 spike into the ntype
-        # accumulator in place, saving one full-tensor cast per timestep
+        # sub_ promotes 0/1 spikes into the accumulator dtype without changing values.
         output = torch.ge(self.accumulator, 1).type(self.stype)
         self.accumulator.sub_(output)
         return output

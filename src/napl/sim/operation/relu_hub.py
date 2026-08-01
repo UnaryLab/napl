@@ -21,6 +21,7 @@ class relu_hub(napl_base):
         operation = relu_hub({'scale': 1.0})
         output = operation(torch.tensor([-1.0, 0.5, 2.0]))
     """
+    #: Marks this activation as a single-shot tensor operation.
     streaming = False
     def __init__(
             self,
@@ -41,6 +42,7 @@ class relu_hub(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, [])
+        #: Upper bound applied to the clipped output tensor.
         self.scale = config.get('scale', 1.0)
 
     def _reset(self):

@@ -14,7 +14,7 @@ VEC = ROOT / "vec" / "mul_shiftreg.vec"
 PARAMS = ROOT / "vec" / "mul_shiftreg_params.vh"
 ROM = ROOT / "vec" / "mul_shiftreg_rom.hex"
 
-# Mirrors tests/operation/test_mul_shiftreg.py.
+# Configuration mirrors test_mul_shiftreg.py.
 WIDTH = 4
 TIMESTEPS = 256
 OP_CONFIG = {"width": WIDTH, "generator": "sobol", "dim": 1}

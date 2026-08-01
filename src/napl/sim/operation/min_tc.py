@@ -36,6 +36,7 @@ class min_tc(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational temporal minimum.
         self.hw = hw_params(pp_delay=0)
 
 

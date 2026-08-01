@@ -1,21 +1,11 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for mul_and.
-//
-// Reads golden vectors produced by gen/gen_mul_and.py (from the napl Python
-// model) and asserts both polarity variants reproduce them. Prints "PASS ..."
-// iff every vector matches; the Makefile greps for that line to decide the
-// exit status.
-//
-// Run (from src/napl/imp/):
-//   make test OP=mul_and
-//==============================================================================
+// Python golden vectors check both polarity variants.
+// Co-sim: make test OP=mul_and
 module mul_and_tb;
     reg  in_0, in_1;
     wire out_uni, out_bi;
 
-    // One module per polarity, both fed the same stimulus.
     mul_and_unipolar dut_uni (.i_input_0(in_0), .i_input_1(in_1), .o_out(out_uni));
     mul_and_bipolar  dut_bi  (.i_input_0(in_0), .i_input_1(in_1), .o_out(out_bi));
 
@@ -36,7 +26,7 @@ module mul_and_tb;
             if (code == 4) begin
                 in_0 = a;
                 in_1 = b;
-                #1;                         // let the combinational logic settle
+                #1;
                 n = n + 1;
                 if (out_uni !== exp_uni) begin
                     $display("FAIL[uni] in_0=%b in_1=%b : got %b exp %b", a, b, out_uni, exp_uni);

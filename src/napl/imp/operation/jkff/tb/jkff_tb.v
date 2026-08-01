@@ -1,18 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
 `include "jkff/vec/jkff_params.vh"
-//==============================================================================
-// Self-checking testbench for jkff.
-//
-// Reads golden vectors produced by gen/gen_jkff.py (from the napl Python model)
-// and asserts the RTL reproduces them. jkff is stateful, so the stream is
-// replayed cycle by cycle: i_rst_n is pulsed low first (Python reset(): q<-0),
-// then each vector drives the inputs, takes one posedge i_clk, and the registered
-// output is compared. An R marker repeats reset after q has changed.
-//
-// Run (from src/napl/imp/):
-//   make test OP=jkff
-//==============================================================================
+// Python golden output is checked after each posedge; R clears q before replay.
+// Co-sim: make test OP=jkff
 module jkff_tb;
     reg  i_clk, i_rst_n, i_input_j, i_input_k;
     wire o_q;
@@ -25,7 +15,7 @@ module jkff_tb;
         .o_q(o_q)
     );
 
-    // 10ns clock.
+    // 10 ns clock period.
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 

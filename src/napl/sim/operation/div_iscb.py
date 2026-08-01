@@ -53,23 +53,25 @@ class div_iscb(napl_base):
         implementation.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
+        #: Hardware latency and timing metadata for the composed divider.
         self.hw = hw_params(pp_delay=0)
 
-        # fix width to optimal 3
+        #: Skew synchronizer that correlates unipolar dividend and divisor streams.
         self.sync = sync_skewed({'width': 3})
 
-        # for cordiv kernel, the config is fixed to optimal directly
-        # this actually leads to 01 sequence
+        #: Correlated-divider stage applied after stream synchronization.
         self.cordiv_kernel = div_cordiv({'depth': 2, 'generator': 'sobol'})
 
         if self.polarity == 'bipolar':
-            # fix width to optimal 3
+            #: Sign-and-magnitude converter for the bipolar dividend stream.
             self.signabs_dividend = signabs({'width': 3})
+            #: Sign-and-magnitude converter for the bipolar divisor stream.
             self.signabs_divisor  = signabs({'width': 3})
-            # fix width to optimal 2
-            self.bi2uni_dividend = bi2uni({'width': 2})
-            self.bi2uni_divisor  = bi2uni({'width': 2})
-            # fix width to optimal 3
+            #: Converter from bipolar dividend magnitude to a unipolar stream.
+            self.bi2uni_dividend = bi2uni({'width': 3})
+            #: Converter from bipolar divisor magnitude to a unipolar stream.
+            self.bi2uni_divisor  = bi2uni({'width': 3})
+            #: Converter from the unipolar magnitude quotient back to bipolar form.
             self.uni2bi_quotient = uni2bi({'width': 3})
 
 
@@ -126,7 +128,6 @@ class div_iscb(napl_base):
             quotient = divider.bipolar_forward(torch.tensor([1], dtype=torch.int8),
                                                 torch.tensor([1], dtype=torch.int8))
         """
-        # dividend and divisor are both spike tensors
         sign_dividend, abs_dividend = self.signabs_dividend(dividend)
         sign_divisor, abs_divisor = self.signabs_divisor(divisor)
         uni_abs_dividend = self.bi2uni_dividend(abs_dividend)
@@ -157,7 +158,6 @@ class div_iscb(napl_base):
             quotient = divider.unipolar_forward(torch.tensor([1], dtype=torch.int8),
                                                  torch.tensor([1], dtype=torch.int8))
         """
-        # dividend and divisor are both spike tensors
         dividend_sync, divisor_sync = self.sync(dividend, divisor)
         quotient = self.cordiv_kernel(dividend_sync, divisor_sync)
         return quotient

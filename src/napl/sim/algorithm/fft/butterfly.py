@@ -82,25 +82,19 @@ class butterfly_spike(napl_base):
         """
         super().__init__()
 
-        # butterfly equation
-        # y0r = x0r + (wr * x1r - wi * x1i)
-        # y0i = x0i + (wr * x1i + wi * x1r)
-        # y1r = x0r - (wr * x1r - wi * x1i)
-        # y1i = x0i - (wr * x1i + wi * x1r)
-
-        # One batched instance per stage: the four parallel lanes are stacked
-        # along dim 0. Bit-identical to four separate instances because every
-        # submodule's state/RNG is elementwise (encoder threshold is a
-        # per-timestep scalar; mul_csg seq_idx, add_any accumulator, and
-        # decoder count are per-element) and all lanes share the same config.
+        # Four batched lanes share a per-step threshold and keep elementwise child state.
+        #: Encoder that converts the four stacked complex-input components into spikes.
         self.encoder_x = encoder(codec_config)
+        #: Decoder that tracks the four progressively decoded butterfly outputs.
         self.decoder_y = decoder(codec_config)
+        #: Accuracy monitor that accumulates the four output spike streams.
         self.accuracy_y = accuracy(acc_config)
+        #: Conditional-spike multiplier for the four stacked twiddle products.
         self.mul_wx = mul_csg(mul_config)
+        #: Scaled unary adder that combines each input with its twiddle term.
         self.add_y = add_any(add_config)
 
-        # cache of input-derived stacked tensors: inputs are constant across
-        # timesteps, so build once and reuse (keyed on id/version/shape)
+        # Cached stacks are valid only for the same tensor identity, version, and shape.
         self._stack_cache = None
 
     def _reset(self):
@@ -143,27 +137,21 @@ class butterfly_spike(napl_base):
 
             outputs = operation(*inputs, timesteps=4)
         """
-        # all inputs and outputs are binary tensors
         x_stack, w_stack, sign, bias0, bias1, b = self._stacks(x0r, x0i, x1r, x1i, wr, wi)
 
-        # encode [x0r; x0i; x1r; x1i] in one shot
         x_spike = self.encoder_x(x_stack)
-        x0_spike = x_spike.narrow(0, 0, 2 * b)   # [x0r; x0i]
+        x0_spike = x_spike.narrow(0, 0, 2 * b)
         x1_spike = x_spike.narrow(0, 2 * b, 2 * b)
 
-        # w * x1 in one shot: lanes [wr*x1r; wr*x1i; wi*x1r; wi*x1i]
         m = self.mul_wx(torch.cat([x1_spike, x1_spike], 0), w_stack)
-        m01 = m.narrow(0, 0, 2 * b)                                        # [wr*x1r; wr*x1i]
-        m32 = torch.cat([m.narrow(0, 3 * b, b), m.narrow(0, 2 * b, b)], 0)  # [wi*x1i; wi*x1r]
+        m01 = m.narrow(0, 0, 2 * b)
+        m32 = torch.cat([m.narrow(0, 3 * b, b), m.narrow(0, 2 * b, b)], 0)
 
-        # twiddle term t = [wr*x1r - wi*x1i; wr*x1i + wi*x1r]; the inverted-spike
-        # (1 - s) offsets from the original per-lane sums fold into bias0/bias1,
-        # so each lane's spike sum (in {0..3}) is bit-identical to the unfused form
+        # Bias terms absorb inverted spikes in the real-minus and imaginary-plus lanes.
         t = m01 + sign * m32
         y0_sum = x0_spike + t + bias0
         y1_sum = x0_spike - t + bias1
 
-        # three-input scaled add + decode, all four lanes at once
         y_spike = self.add_y(torch.cat([y0_sum, y1_sum], 0), entry=3, dim=None)
         self.decoder_y(y_spike)
         y = self.decoder_y.spike_value
@@ -177,14 +165,13 @@ class butterfly_spike(napl_base):
             return self._stack_cache[1:]
         shape = torch.broadcast_shapes(x0r.shape, x0i.shape, x1r.shape, x1i.shape, wr.shape, wi.shape)
         x0r, x0i, x1r, x1i, wr, wi = (t.expand(shape) for t in (x0r, x0i, x1r, x1i, wr, wi))
-        x_stack = torch.cat([x0r, x0i, x1r, x1i], 0)  # encoder input
-        w_stack = torch.cat([wr, wr, wi, wi], 0)      # mul weights for [x1r, x1i, x1r, x1i]
+        x_stack = torch.cat([x0r, x0i, x1r, x1i], 0)
+        w_stack = torch.cat([wr, wr, wi, wi], 0)
         b = shape[0]
-        # per-lane constants over the [r; i] half-stack, broadcast over trailing dims
         tail = (1,) * (len(shape) - 1)
         sign = torch.cat([torch.full((b,) + tail, -1), torch.full((b,) + tail, 1)]).type(self.stype).to(x_stack.device)
-        bias0 = sign.eq(-1).type(self.stype)                # [1; 0]
-        bias1 = torch.cat([bias0.narrow(0, 0, b), bias0.narrow(0, 0, b) + 1])  # [1; 2]
+        bias0 = sign.eq(-1).type(self.stype)
+        bias1 = torch.cat([bias0.narrow(0, 0, b), bias0.narrow(0, 0, b) + 1])
         self._stack_cache = (key, x_stack, w_stack, sign, bias0, bias1, b)
         return x_stack, w_stack, sign, bias0, bias1, b
 
@@ -215,7 +202,7 @@ class butterfly_binary(torch.nn.Module):
 
             **Parameters:**
 
-            None.
+            ``None``.
         """
         super().__init__()
 
@@ -243,7 +230,6 @@ class butterfly_binary(torch.nn.Module):
 
             outputs = operation(*inputs)
         """
-        # butterfly equation
         t_r = wr * x1r - wi * x1i
         t_i = wr * x1i + wi * x1r
 

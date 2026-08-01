@@ -6,7 +6,7 @@ from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, sync
 from napl.sim.module import encoder, decoder
-# direct import: not wired into operation/__init__.py yet
+# tanh_p1 is not exported from operation/__init__.py.
 from napl.sim.operation.tanh_p1 import tanh_p1
 from napl.sim.metric import accuracy
 
@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_tanh_p1(napl_base):
     def __init__(self, codec_config, tanh_p1_config):
         super().__init__()
-        # set up encoder, decoder, op, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.tanh_p1 = tanh_p1(tanh_p1_config)
@@ -23,7 +22,6 @@ class napl_tanh_p1(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.tanh_p1(i_spike)
         self.decoder(o_spike)
@@ -41,7 +39,7 @@ def _kernel_specific_checks():
         'generator': 'sobol',
         'dim': 5,
     }
-    # constants occupy sobol dims 1..4; input stream uses dim 5 to decorrelate
+    # Dimension 5 decorrelates input from constants on dimensions 1..4.
     tanh_p1_config = {
         'polarity': 'unipolar',
         'timestep': 256,
@@ -50,7 +48,7 @@ def _kernel_specific_checks():
     }
     timestep = codec_config['timestep']
 
-    # identical inputs on every device
+    # Generate once on CPU for identical inputs across devices.
     input_cpu = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(timestep)).type(global_config.ntype)
     r_value_cpu = torch.tanh(input_cpu)
 
@@ -68,10 +66,10 @@ def _kernel_specific_checks():
 
         tanh_p1_inst.accuracy.analyze(r_value, verbose=True)
         rmse = torch.sqrt(torch.mean((tanh_p1_inst.decoder.spike_value - r_value)**2)).item()
-        # series truncation + DFF-decorrelated SC noise at 256 timesteps
+        # The bound includes series truncation and DFF-decorrelated SC noise.
         assert rmse < 0.1, f'[{device}] rmse={rmse:.4f} exceeds bound 0.1'
 
-        # known-answer corner: x=0 -> tanh(0)=0
+        # Include the exact tanh(0)=0 case.
         zero_inst = napl_tanh_p1(codec_config, tanh_p1_config).to(device)
         zero_inst(torch.zeros(16, device=device), timesteps=timestep)
         assert zero_inst.decoder.spike_value.abs().max().item() < 0.1, f'[{device}] tanh(0) != 0'

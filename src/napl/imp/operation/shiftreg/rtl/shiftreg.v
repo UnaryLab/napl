@@ -1,27 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// shiftreg -- depth-DEPTH bit-serial shift register (stateful).
-//
-// RTL counterpart of napl.sim.operation.shiftreg (src/napl/sim/operation/shiftreg.py).
-// One input spike per cycle; the output is the spike that entered DEPTH cycles
-// earlier, so the input->output latency is DEPTH (== pp_delay).
-//
-// Reset (active-low i_rst_n) reproduces the Python reset() state EXACTLY:
-// reg[i] = i % 2 (an alternating 0,1,0,1,... pattern), NOT all-zeros. The model
-// reads the oldest cell first, so for the first DEPTH cycles the output replays
-// this reset pattern (reg[0], reg[1], ...), then the delayed inputs follow.
-//
-// shiftreg has no polarity variants (polarity_required=False), so the module is
-// the bare op name with no _unipolar/_bipolar postfix.
-//
-// DEPTH is a Verilog parameter inherited from the Python model's config['depth']:
-// the testbench overrides it with `GEN_DEPTH (emitted by gen/gen_shiftreg.py from
-// the same config test_shiftreg.py uses), so the verified hardware always tracks
-// the simulator. The default here is only a standalone-elaboration fallback.
-//
-// Verify from src/napl/imp/: conda run -n napl make test OP=shiftreg
-//==============================================================================
+// DEPTH-cycle delay equivalent to napl.sim.operation.shiftreg; pp_delay=DEPTH.
+// Generated DEPTH mirrors Python. Active-low reset loads reg[i]=i%2, and the
+// oldest cell is emitted first.
 module shiftreg #(
     parameter integer DEPTH = 2   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
@@ -74,7 +55,6 @@ module shiftreg #(
         end
     endgenerate
 
-    // Output is always the oldest cell.
     assign o_out = reg_q[0];
 endmodule
 `default_nettype wire

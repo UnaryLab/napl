@@ -28,7 +28,6 @@ dependencies = [
     "pylfsr"
 ]
 
-# Map script name to the main entry point (napl/main.py -> main())
 [project.scripts]
 napl = "napl.main:main"
 
@@ -36,7 +35,6 @@ napl = "napl.main:main"
 Homepage = "https://github.com/UnaryLab/napl"
 Issues = "https://github.com/UnaryLab/napl/issues"
 
-# Tell hatch where the source is
 [tool.hatch.build]
 sources = ["src"]
 

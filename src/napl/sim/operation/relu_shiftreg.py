@@ -37,23 +37,34 @@ class relu_shiftreg(napl_base):
         """
         super().__init__(config, ['depth'], polarity_required=False)
 
+        #: Number of spike-history entries retained by the ReLU register.
         self.depth = config['depth']
         assert isinstance(self.depth, int) and 0 < self.depth <= 127, (
             logger.error(
                 f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
             )
         )
+        #: Half-depth count threshold that represents bipolar zero.
         self.depth_half = self.depth / 2
+        #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
 
+        #: Circular register of recent ReLU output spikes.
+        self.reg: torch.Tensor
         self.register_buffer('reg',
             torch.tensor(
                 [index % 2 for index in range(self.depth)], dtype=self.stype
             ),
         )
+        #: Number of one-spikes currently stored in :attr:`reg`.
+        self.count: torch.Tensor
         self.register_buffer('count', torch.zeros(1, dtype=torch.long))
+        #: Previous timestep's register count used by the output decision.
+        self.count_delayed: torch.Tensor
         self.register_buffer('count_delayed', torch.zeros(1, dtype=torch.long))
+        #: Circular index of the register row replaced on the next call.
         self.head = 0
+        #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
 
     def _reset(self):

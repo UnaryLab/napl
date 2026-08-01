@@ -1,40 +1,17 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_DEPTH is emitted by gen/gen_square_dff.py from the op config (= the test's
-// square_dff_config), so the DUT DEPTH parameter is inherited from the Python
-// model. iverilog resolves this include relative to the compile cwd
-// (implementation/).
+// Generated DEPTH mirrors the Python model configuration.
 `include "square_dff/vec/square_dff_params.vh"
-//==============================================================================
-// Self-checking testbench for square_dff.
-//
-// Reads golden vectors produced by gen/gen_square_dff.py (from the napl Python
-// model) and asserts both polarity variants reproduce them cycle by cycle.
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line
-// to decide the exit status.
-//
-// Vector format per line:  <rst> <i_input> <out_uni> <out_bi>
-// rst=1 marks cycles where the model.reset() was replayed before driving i_input;
-// the tb pulses active-low i_rst_n low across a posedge there to clear the delay
-// line, proving reset equivalence from a dirtied mid-stream state.
-//
-// Timing model: one Python forward() timestep == one posedge i_clk. The delay
-// line holds the previous inputs; the output is combinational from the current
-// input and the oldest cell. So for each vector we drive i_input, let the
-// combinational output settle, check it, then clock the line forward.
-// i_rst_n is pulsed low first to match the Python reset() (delay line = 0).
-//
-// Run (from src/napl/imp/):
-//   make test OP=square_dff
-//==============================================================================
+// Python golden rows are <rst> <input> <unipolar> <bipolar>. Outputs are checked
+// before the posedge advances the delay; rst=1 first clears it.
+// Co-sim: make test OP=square_dff
 module square_dff_tb;
     reg  i_clk;
     reg  i_rst_n;
     reg  i_input;
     wire o_out_uni, o_out_bi;
 
-    // One module per polarity, both fed the same stimulus. DEPTH inherited from
-    // the Python model via `GEN_DEPTH.
+    // Both polarities use the Python model's generated DEPTH.
     square_dff_unipolar #(.DEPTH(`GEN_DEPTH)) dut_uni (
         .i_clk(i_clk), .i_rst_n(i_rst_n), .i_input(i_input), .o_out(o_out_uni)
     );
@@ -45,7 +22,7 @@ module square_dff_tb;
     integer fd, code, n, fails;
     reg rst_s, in_s, exp_uni, exp_bi;
 
-    // Free-running clock: 10ns period.
+    // 10 ns clock period.
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
@@ -62,7 +39,7 @@ module square_dff_tb;
             fails = fails + 1;
         end
 
-        // Pulse reset low across a clock edge -> delay line = 0 (matches reset()).
+        // Reset clears the delay line across a posedge.
         i_rst_n = 1'b0;
         @(posedge i_clk);
         #1 i_rst_n = 1'b1;
@@ -76,17 +53,12 @@ module square_dff_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b %b %b\n", rst_s, in_s, exp_uni, exp_bi);
             if (code == 4) begin
-                // Mid-stream reset: pulse i_rst_n low across a posedge to clear
-                // the delay line, mirroring the model.reset() the gen replayed.
                 if (rst_s) begin
                     @(negedge i_clk);
                     i_rst_n = 1'b0;
                     @(posedge i_clk);
                     #1 i_rst_n = 1'b1;
                 end
-                // Drive the input in the low phase of the clock, let the
-                // combinational output settle, then check before the rising
-                // edge that advances the delay line.
                 @(negedge i_clk);
                 i_input = in_s;
                 #1;
@@ -99,7 +71,6 @@ module square_dff_tb;
                     $display("FAIL[bi]  t=%0d i_input=%b : got %b exp %b", n, in_s, o_out_bi, exp_bi);
                     fails = fails + 1;
                 end
-                // Rising edge clocks the delay line (shift in i_input).
                 @(posedge i_clk);
             end
         end

@@ -1,18 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for tanh_hard.
-//
-// Reads golden vectors produced by gen/gen_tanh_hard.py (from the napl Python
-// model) and asserts the RTL reproduces them. tanh_hard is a stateless
-// combinational identity pass-through (no polarity split, no clock), so each
-// vector row is driven on i_input and o_out is checked after the logic settles.
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line
-// to decide the exit status.
-//
-// Run (from src/napl/imp/):
-//   make test OP=tanh_hard
-//==============================================================================
+// Python golden vectors check the zero-latency identity output.
+// Co-sim: make test OP=tanh_hard
 module tanh_hard_tb;
     reg  i_input;
     wire o_out;
@@ -35,7 +24,7 @@ module tanh_hard_tb;
             code = $fscanf(fd, "%b %b\n", in_b, exp_out);
             if (code == 2) begin
                 i_input = in_b;
-                #1;                         // let the combinational logic settle
+                #1;
                 n = n + 1;
                 if (o_out !== exp_out) begin
                     $display("FAIL cycle %0d: i_input=%b got %b exp %b", n, in_b, o_out, exp_out);

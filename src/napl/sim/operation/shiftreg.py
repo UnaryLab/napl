@@ -41,15 +41,19 @@ class shiftreg(napl_base):
         """
         super().__init__(config, ['depth'], polarity_required=False)
 
+        #: Number of timesteps retained by the shift register.
         self.depth = config['depth']
-        # output is reg[head], which is depth cycles old: latency == depth. RTL
-        # i_rst_n must reproduce the i%2 reset pattern below, not all-zeros.
+        # reg[head] is depth cycles old; RTL reset uses the same alternating i % 2 pattern.
+        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
         self.hw = hw_params(pp_delay=self.depth)
+        #: Alternating reset pattern and device anchor for the runtime queue.
+        self.reg: torch.Tensor
         self.register_buffer('reg', torch.zeros(self.depth, dtype=self.stype))
         for i in range(self.depth):
             self.reg[i].fill_(i%2)
+        #: Whether the runtime queue must be built for the next input shape.
         self.is_first_call = True
-        # runtime FIFO of row tensors; built lazily from self.reg on first forward
+        #: Queue of delayed tensor snapshots, allocated on first use.
         self.fifo = None
 
 
@@ -82,18 +86,16 @@ class shiftreg(napl_base):
 
             output = delay(torch.tensor([1], dtype=torch.int8))
         """
-        # input is a spike tensor
         if self.is_first_call:
             input_shape = list(input.shape)
             input_shape.insert(0, self.depth)
             self.reg.resize_(input_shape).zero_()
             for i in range(self.depth):
                 self.reg[i].fill_(i%2)
-            # FIFO over row tensors, oldest at the left.
             self.fifo = deque(self.reg[i] for i in range(self.depth))
             self.is_first_call = False
 
-        # Read the depth-cycles-old value and snapshot the new input.
+        # Read the oldest value before storing a detached snapshot of the current input.
         output = self.fifo.popleft()
         self.fifo.append(input.detach().clone())
         return output

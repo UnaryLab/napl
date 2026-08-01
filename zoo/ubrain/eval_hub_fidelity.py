@@ -1,7 +1,7 @@
 """
 FP-vs-HUB fidelity of the uBrain Cascade_CNN_RNN, swept over the unary bitwidth.
 
-Builds one FP model and a HUB model that SHARES its weights (build_hub_from_fp),
+Builds one FP model and a HUB model initialized from the same weights (build_hub_from_fp),
 runs BOTH on the same EEG-shaped random input, and reports the error of the HUB
 (unary) output against the FP output. Sweeping `width` shows the error shrinking
 as cycles grow (more cycles -> finer unary precision): the spirit of UnarySim
@@ -17,8 +17,7 @@ batch and width are kept small. Sweep runs on CPU; MPS is sanity-checked at one
 width.
 
 Run:
-    /Users/diwu/anaconda3/envs/napl/bin/python examples/ubrain/eval_hub_fidelity.py
-(equivalently `conda run -n napl python ...`; see README for the env note.)
+    conda run -n napl python zoo/ubrain/eval_hub_fidelity.py
 """
 
 import os
@@ -39,7 +38,7 @@ def sync(device):
 
 
 def fidelity(fp_model, x, width, rng, device):
-    """Build a weight-sharing HUB model at `width`, return (rmse, max_abs_err, seconds)."""
+    """Build a weight-matched HUB model at `width`, return (rmse, max_abs_err, seconds)."""
     with torch.no_grad():
         ref = fp_model(x)
     hub = build_hub_from_fp(fp_model, width=width, rng=rng).to(device).eval()
@@ -58,7 +57,7 @@ def main():
     input_sz = (10, 11)        # 10-10 MI grid
     win = 10
     num_class = (5, 2)
-    batch = 2                  # tiny: the HUB MGU runs 2**width cycles per step
+    batch = 2                  # The HUB MGU runs 2**width cycles per step.
     rng = 'sobol'
     widths = [6, 8, 10]
 
@@ -67,7 +66,6 @@ def main():
     print(f'EEG input shape: (batch={batch}, win={win}, h={input_sz[0]}, w={input_sz[1]})')
     print('FP output is the reference; HUB output is the unary approximation.\n')
 
-    # CPU sweep
     device = 'cpu'
     fp = Cascade_CNN_RNN_FP(input_sz=input_sz, rnn_win_sz=win, num_class=num_class).to(device).eval()
     x = (torch.rand(batch, win, input_sz[0], input_sz[1], device=device) * 2 - 1)
@@ -89,7 +87,7 @@ def main():
         w.writerows(rows)
     print(f'\nsaved sweep to {RESULTS}')
 
-    # MPS sanity check at one width: confirms the full HUB path runs on MPS.
+    # One width covers the full HUB path on MPS.
     if torch.backends.mps.is_available():
         device = 'mps'
         w_chk = 8

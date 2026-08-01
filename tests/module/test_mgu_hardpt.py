@@ -37,18 +37,18 @@ def _kernel_specific_checks():
         ref = _ref_mgu_pt(x, hx, c.weight_ih, c.bias_ih, c.weight_hh, c.bias_hh)
         assert y.shape == (b, hsz)
         assert torch.allclose(y, ref, atol=1e-6), f'mismatch on {device}'
-        assert c(x).shape == (b, hsz)  # hx=None default
-        # output stays in the legal unary range
+        assert c(x).shape == (b, hsz)  # Default hx=None path.
+        # Output stays in the legal unary range.
         assert y.abs().max().item() <= 1.0 + 1e-6
 
-        # gradients flow (hard activations are piecewise-linear, autograd-native)
+        # Hard activations use native piecewise-linear gradients.
         xg = x.clone().requires_grad_(True)
         c(xg, hx).sum().backward()
         assert torch.isfinite(xg.grad).all()
         assert torch.isfinite(c.weight_ih.grad).all()
         c.zero_grad()
 
-        # performance: cell vs functional reference, identical inputs
+        # Compare the cell and functional reference on identical inputs.
         n = 50
         sync(device)
         t0 = time.perf_counter()
@@ -64,7 +64,7 @@ def _kernel_specific_checks():
         print(f'[{device}] mgu_hardpt {t_cell*1e3/n:.3f} ms/iter, '
               f'reference {t_ref*1e3/n:.3f} ms/iter, ratio {t_ref/max(t_cell,1e-12):.2f}x')
 
-    # soft (hard=False) path uses true sigmoid/tanh
+    # Soft mode uses sigmoid and tanh.
     soft = mgu_hardpt(isz, hsz, bias=True, config={'hard': False})
     assert soft(x0, hx0).shape == (b, hsz)
     print('PASS')

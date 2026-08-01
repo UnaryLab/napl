@@ -8,17 +8,12 @@ below summarize its state and metric contracts.
 Lifecycle and reset
 -------------------
 
-Streaming state belongs to the class that updates it.
-``napl.sim.base.napl_base.reset()`` resets ``timestep_cur`` and registered
-child modules before calling the subclass ``_reset()`` hook. Every
-``napl_base`` subclass under ``src/napl/sim/`` defines ``_reset()`` explicitly.
-A class without local mutable state uses an empty hook::
-
-   def _reset(self):
-       pass
-
-A stateful hook restores only local state to the values used at construction.
-Reset followed by replay of the same inputs must reproduce the same outputs.
+Streaming state belongs to the class that updates it, while
+:class:`napl.napl_base` provides the common lifecycle. The public reset
+contract is documented by :meth:`napl.napl_base.reset`; class-specific state
+behavior belongs to each class's API documentation. The implementation and
+verification requirements remain in the canonical simulation policy linked
+above.
 
 Persistent tensors
 ------------------
@@ -46,23 +41,8 @@ replay, and ``state_dict`` serialization.
 Metric analysis
 ---------------
 
-Metrics are streaming observers. Each call consumes the current spike state.
-An ``analyze()`` method returns ``(value, result)``:
-
-``value``
-   The metric's primary per-element tensor.
-
-``result``
-   The complete ``napl.sim.metric._shared.Analysis`` value returned by the
-   shared analysis helper.
-
-Derived analysis outputs are local values. Metrics do not store them on
-``self``, register them as buffers, or include them in ``state_dict``. Callers
-select required summary fields from the returned value, for example::
-
-   value, result = metric.analyze()
-   index = result.max_absolute_index
-
-``napl.sim.metric.accuracy``, ``napl.sim.metric.correlation``,
-``napl.sim.metric.stability``, ``napl.sim.metric.stability_flux``, and
-``napl.sim.metric.stability_norm`` follow this interface.
+Metrics separate streaming observation from explicit analysis. The metric API
+pages own their call, state, and analysis contracts: :class:`napl.accuracy`,
+:class:`napl.correlation`, :class:`napl.stability`,
+:class:`napl.stability_flux`, and :class:`napl.stability_norm`. Shared summary
+calculation is listed as :func:`napl.analyze`.

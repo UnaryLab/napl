@@ -35,17 +35,15 @@ from _gen_common import pair_streams, rep_pairs
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sync_skewed.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "sync_skewed_params.vh"
 
-# test_sync_skewed.py sync_skewed_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_sync_skewed.py.
 WIDTH = 3
 
-# test_sync_skewed.py codec_config1/2: the two encoders feeding sync_skewed,
-# both unipolar on distinct sobol dims (1 and 3). width=3 matches the test.
+# Distinct Sobol dimensions decorrelate the two input streams.
 CODEC0 = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 3}
 
 
 def build_stream():
-    # the test's encoder streams for representative unipolar operand pairs.
     s0, s1 = pair_streams(CODEC0, CODEC1, rep_pairs("unipolar", "unipolar"))
     return list(zip(s0, s1))
 
@@ -66,21 +64,16 @@ def main():
     model.reset()
 
     stream = build_stream()
-    # Split the stream so we can re-issue reset() partway through (with the
-    # counter dirtied), proving the RTL's async reset reproduces the model's
-    # reset() from an arbitrary state. The "RST" marker drives the tb to pulse
-    # i_rst_n low between segments.
+    # RST requests matching model and RTL resets between segments.
     half = len(stream) // 2
     seg_a, seg_b = stream[:half], stream[half:]
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     PARAMS.write_text(f"`define GEN_WIDTH {WIDTH}\n")
 
     rows = 0
     with VEC.open("w") as f:
         rows += emit_segment(model, f, seg_a)
-        # mid-stream reset: dirty cnt is cleared back to 0 in both model and RTL.
         f.write("RST\n")
         model.reset()
         rows += emit_segment(model, f, seg_b)

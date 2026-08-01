@@ -37,8 +37,7 @@ from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "min_rc.vec"
 
-# test_min_rc.py codec_config1/2: the two encoders feeding min_rc, on distinct
-# sobol dims (decorrelated exactly as the test does).
+# Encoder settings mirror test_min_rc.py and use distinct Sobol dimensions.
 CODEC0 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2}
 
@@ -62,18 +61,15 @@ def emit(f, model, s0, s1, rst_first):
 def main():
     model = min_rc(config={})
 
-    # the test's encoder streams for representative operand pairs, concatenated.
     s0, s1 = pair_streams(CODEC0, CODEC1, rep_pairs("bipolar", "bipolar"))
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with VEC.open("w") as f:
-        # segment 1: from a fresh reset()
         model.reset()
         rows += emit(f, model, s0, s1, rst_first=False)
 
-        # segment 2: model is now in a DIRTIED state (dff/cnt carry over). Reset
-        # mid-stream and replay; the testbench pulses i_rst_n on the first cycle.
+        # The reset flag requests a matching RTL reset before replay.
         model.reset()
         rows += emit(f, model, s0, s1, rst_first=True)
 

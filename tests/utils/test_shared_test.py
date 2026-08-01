@@ -150,8 +150,7 @@ def _mul_and_reference(values, polarity):
 
 
 def _mul_and_known_answer(polarity):
-    # value 1.0 encodes as an all-ones stream in both polarities, so the
-    # product decodes to exactly 1.0.
+    # Both polarities encode 1.0 as all ones, so the product is exact.
     return (torch.tensor([1.0]), torch.tensor([1.0])), torch.tensor([1.0]), 0.0
 
 
@@ -196,7 +195,7 @@ def _fxp_inputs():
 
 
 def _fxp_known_answer():
-    # zero input leaves only the bias, exactly
+    # Zero input isolates the bias exactly.
     candidate, reference = _fxp_pair()
     expected = reference.bias.data.unsqueeze(0).expand(2, 4).clone()
     return candidate, (torch.zeros(2, 8),), expected
@@ -208,7 +207,7 @@ def _fxp_gradient_case():
 
 
 def _fxp_expected_gradients(candidate, inputs, grad_output):
-    # linear_fxp trains via the exact linear STE gradient
+    # linear_fxp uses the exact linear STE gradient.
     grad_input = grad_output.matmul(candidate.weight.detach())
     grad_weight = grad_output.t().matmul(inputs[0].detach())
     grad_bias = grad_output.sum(0)
@@ -247,7 +246,7 @@ def test_suite_config_validation():
         {},
         single_shot_suite,
     )
-    # 'seed' is a removed knob; passing it must fail loudly by name.
+    # Removed options fail explicitly by name.
     expect(
         ValueError,
         "unknown keys: ['seed']",

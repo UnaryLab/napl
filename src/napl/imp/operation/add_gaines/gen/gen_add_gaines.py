@@ -4,30 +4,69 @@ from pathlib import Path
 import torch
 
 from napl.sim.operation import add_gaines
+from napl.sim.module import encoder
 
 
 ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "add_gaines.vec"
 PARAMS = ROOT / "vec" / "add_gaines_params.vh"
 ROM = ROOT / "vec" / "add_gaines_rom.hex"
-ENTRY = 8
-SELECT_WIDTH = int(math.log2(ENTRY))
-SEGMENT = list(range(1 << ENTRY))
+TIMESTEP = 256
+SCALED_ENTRY = 8
+UNSCALED_ENTRY = 4
+SCALED_SELECT_WIDTH = int(math.log2(SCALED_ENTRY))
+UNSCALED_SELECT_WIDTH = int(math.log2(UNSCALED_ENTRY))
 SCALED = {
     "scaled": True,
-    "entry": ENTRY,
+    "entry": SCALED_ENTRY,
     "generator": "sobol",
     "dim": 5,
 }
 UNSCALED = {"scaled": False}
+SCALED_CODEC = {"timestep": TIMESTEP, "generator": "sobol", "dim": 1}
+UNSCALED_CODECS = [
+    {"polarity": "unipolar", "timestep": TIMESTEP, "generator": "sobol", "dim": dim}
+    for dim in range(1, UNSCALED_ENTRY + 1)
+]
 
 
-def bits(value):
-    return [(value >> index) & 1 for index in range(ENTRY)]
+def scaled_streams(polarity):
+    lo = -0.75 if polarity == "bipolar" else 0.0
+    values = torch.linspace(lo, 0.75, 64).repeat(SCALED_ENTRY, 1)
+    enc = encoder({"polarity": polarity, **SCALED_CODEC})
+    enc.reset()
+    spikes = torch.stack([enc(values) for _ in range(TIMESTEP)])
+    return spikes.permute(2, 0, 1)
 
 
-def bus(value):
-    return f"{value:0{ENTRY}b}"
+def unscaled_streams():
+    base = torch.linspace(0.0, 0.15, 64)
+    values = torch.stack([base.roll(index * 7) for index in range(UNSCALED_ENTRY)])
+    encoders = [encoder(config) for config in UNSCALED_CODECS]
+    for enc in encoders:
+        enc.reset()
+    spikes = torch.stack([
+        torch.stack([enc(values[index]) for index, enc in enumerate(encoders)])
+        for _ in range(TIMESTEP)
+    ])
+    return spikes.permute(2, 0, 1)
+
+
+def build_segments():
+    uni = scaled_streams("unipolar")
+    bi = scaled_streams("bipolar")
+    unscaled = unscaled_streams()
+    segments = [(uni[index], bi[index], unscaled[index]) for index in range(64)]
+    first = segments[0]
+    return [
+        tuple(stream[:3] for stream in first),
+        tuple(stream[3:] for stream in first),
+        *segments[1:],
+    ]
+
+
+def bus(spikes):
+    return "".join(str(int(bit)) for bit in reversed(spikes.tolist()))
 
 
 def main():
@@ -35,46 +74,45 @@ def main():
     scaled_bi = add_gaines({"polarity": "bipolar", **SCALED})
     unscaled = add_gaines({"polarity": "unipolar", **UNSCALED})
     models = (scaled_uni, scaled_bi, unscaled)
-    rows = SEGMENT + SEGMENT
-    reset_at = len(SEGMENT)
+    segments = build_segments()
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     ROM.write_text(
         "\n".join(
-            f"{value:0{SELECT_WIDTH}b}" for value in scaled_uni.sel_seq
+            f"{value:0{SCALED_SELECT_WIDTH}b}" for value in scaled_uni.sel_seq
         )
         + "\n"
     )
     PARAMS.write_text(
         f"`define GEN_SCALED {int(SCALED['scaled'])}\n"
         f"`define GEN_UNSCALED {int(UNSCALED['scaled'])}\n"
-        f"`define GEN_ENTRY {ENTRY}\n"
-        f"`define GEN_SELECT_WIDTH {SELECT_WIDTH}\n"
+        f"`define GEN_SCALED_ENTRY {SCALED_ENTRY}\n"
+        f"`define GEN_UNSCALED_ENTRY {UNSCALED_ENTRY}\n"
+        f"`define GEN_SCALED_SELECT_WIDTH {SCALED_SELECT_WIDTH}\n"
+        f"`define GEN_UNSCALED_SELECT_WIDTH {UNSCALED_SELECT_WIDTH}\n"
         f"`define GEN_PP_DELAY {scaled_uni.hw.pp_delay}\n"
     )
 
+    rows = 0
+    resets = 0
     with VEC.open("w") as output:
-        for index, value in enumerate(rows):
-            reset = int(index == 0 or index == reset_at)
-            if reset:
-                for model in models:
-                    model.reset()
-
-            value_bi = value ^ 0xA5
-            value_or = (value * 37) & 0xFF
-            in_uni = torch.tensor(bits(value), dtype=scaled_uni.stype)
-            in_bi = torch.tensor(bits(value_bi), dtype=scaled_bi.stype)
-            in_or = torch.tensor(bits(value_or), dtype=unscaled.stype)
-            out_uni = int(scaled_uni(in_uni, dim=0).item())
-            out_bi = int(scaled_bi(in_bi, dim=0).item())
-            out_or = int(unscaled(in_or, dim=0).item())
-            output.write(
-                f"{reset} {bus(value)} {out_uni} "
-                f"{bus(value_bi)} {out_bi} {bus(value_or)} {out_or}\n"
-            )
+        for segment in segments:
+            for model in models:
+                model.reset()
+            for cycle, (in_uni, in_bi, in_or) in enumerate(zip(*segment)):
+                reset = int(cycle == 0)
+                out_uni = int(scaled_uni(in_uni, dim=0).item())
+                out_bi = int(scaled_bi(in_bi, dim=0).item())
+                out_or = int(unscaled(in_or, dim=0).item())
+                output.write(
+                    f"{reset} {bus(in_uni)} {out_uni} "
+                    f"{bus(in_bi)} {out_bi} {bus(in_or)} {out_or}\n"
+                )
+                rows += 1
+                resets += reset
 
     print(
-        f"wrote {VEC} ({len(rows)} vectors, reset@{reset_at}), "
+        f"wrote {VEC} ({rows} vectors, {resets} resets), "
         f"{PARAMS}, and {ROM} ({len(scaled_uni.sel_seq)} ROM lines)"
     )
 

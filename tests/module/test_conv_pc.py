@@ -82,7 +82,7 @@ def _kernel_specific_checks():
                           f'max_err={err.max().item():.4f}')
                     inst.reset()
 
-    # known-answer corner: unipolar all-ones input & weight, no pad => PC count == entry every step
+    # All-ones unipolar operands produce the exact population count without padding.
     for device in devices():
         w1 = torch.ones(oc, ic, k, k).type(ntype).to(device)
         x1 = torch.ones(1, ic, k, k).type(ntype).to(device)
@@ -99,8 +99,7 @@ def _kernel_specific_checks():
         inst.reset()
         print(f'[{device}] known-answer corner passed.')
 
-    # performance: time conv_pc (no accumulator) vs conv (with scaled adder) on
-    # identical input spikes; the PC kernel should not be slower than the full conv.
+    # Compare kernels on identical spikes; conv_pc omits the scaled accumulator.
     perf_x = gen_rand_tensor('bipolar', (b, ic, hw, hw), 8).type(ntype)
     perf_weight = gen_rand_tensor('bipolar', (oc, ic, k, k), 8).type(ntype)
     perf_bias = gen_rand_tensor('bipolar', (oc,), 8).type(ntype)

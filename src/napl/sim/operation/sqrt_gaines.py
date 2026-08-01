@@ -31,7 +31,6 @@ class sqrt_gaines(napl_base):
         self,
         config={
             'polarity' : 'bipolar',
-            # counter bit width; experiments in UnarySim use 5
             'width' : 5,
             'generator' : 'Sobol',
         },
@@ -54,22 +53,32 @@ class sqrt_gaines(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
+        #: Hardware latency and timing metadata for the registered square-root output.
         self.hw = hw_params(pp_delay=1)
 
+        #: Counter and threshold-sequence width in bits.
         self.width = config['width']
+        #: Largest value retained by the square-root counter.
         self.cnt_max = 2**self.width - 1
+        #: Half-scale counter value restored by :meth:`_reset`.
         self.cnt_half = 2**(self.width - 1)
 
-        # random number sequence in [0, 2**width - 1] to threshold the counter state;
-        # a static python list so forward() compares against a cheap python scalar
-        # (a device scalar tensor would be a per-timestep GPU sync)
+        # Python scalar thresholds span the counter range without device synchronization.
+        #: Periodic tensor of stochastic counter thresholds.
+        self.rand_seq: torch.Tensor
         self.register_buffer('rand_seq', torch.floor(gen_num_seq(config).mul(2**self.width)))
+        #: Python-list view of :attr:`rand_seq` used for per-timestep comparison.
         self.rand_seq_vals = self.rand_seq.tolist()
+        #: Current position in :attr:`rand_seq_vals`.
         self.idx = 0
 
-        # saturating up/down counter, biased to half scale; broadcasts to input shape on first forward
+        # The half-scale scalar counter broadcasts to the input shape on first use.
+        #: Saturating error counter that controls square-root spike generation.
+        self.scnt: torch.Tensor
         self.register_buffer('scnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
-        # 1-cycle delayed output for the squared-output feedback
+        # Squared-output feedback uses a one-cycle delayed output.
+        #: Previous output spike tensor used by the squared-output feedback term.
+        self.out_d: torch.Tensor
         self.register_buffer('out_d', torch.zeros(1, dtype=torch.int8))
 
 
@@ -102,26 +111,21 @@ class sqrt_gaines(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # output spike from counter state vs the random threshold, same for both polarities
         output = torch.gt(self.scnt, self.rand_seq_vals[self.idx]).type(torch.int8)
         self.idx = (self.idx + 1) % len(self.rand_seq_vals)
         if output.shape != input.shape:
-            # first call only: scnt is still scalar, so materialize output at the input shape
             output = output.expand(input.size()).contiguous()
 
-        # counter increments on input spikes, decrements on the squared-output feedback
+        # Squared-output feedback is AND in unipolar coding and XNOR in bipolar coding.
         if self.polarity == 'unipolar':
-            # y*y in unipolar rate coding: output AND its 1-cycle delay
             dec = output & self.out_d
         else:
-            # y*y in bipolar rate coding: output XNOR its 1-cycle delay
             dec = 1 - (output ^ self.out_d)
         if self.out_d.shape == output.shape:
             self.out_d.copy_(output.detach())
         else:
             self.out_d.resize_as_(output).copy_(output.detach())
 
-        # spikes are 0/1, so the inc/dec muxes reduce to +input/-dec; one saturating clamp at the end
         if self.scnt.shape == input.shape and self.scnt.shape == dec.shape:
             self.scnt.add_(input).sub_(dec).clamp_(0, self.cnt_max)
         else:

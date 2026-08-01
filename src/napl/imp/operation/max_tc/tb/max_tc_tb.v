@@ -1,15 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for max_tc.
-//
-// Reads golden vectors produced by gen/gen_max_tc.py (from the napl Python
-// model) and asserts the RTL reproduces them. Prints "PASS ..." iff every
-// vector matches; the Makefile greps for that line to decide the exit status.
-//
-// Run (from src/napl/imp/):
-//   make test OP=max_tc
-//==============================================================================
+// Python golden vectors check the combinational output.
+// Co-sim: make test OP=max_tc
 module max_tc_tb;
     reg  i_input_0, i_input_1;
     wire o_out;
@@ -33,7 +25,7 @@ module max_tc_tb;
             if (code == 3) begin
                 i_input_0 = a;
                 i_input_1 = b;
-                #1;                         // let the combinational logic settle
+                #1;
                 n = n + 1;
                 if (o_out !== exp_out) begin
                     $display("FAIL in_0=%b in_1=%b : got %b exp %b", a, b, o_out, exp_out);

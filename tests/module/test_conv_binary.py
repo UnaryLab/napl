@@ -4,7 +4,59 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.module import conv_fxp, conv_hub, conv_tlut
+from napl.utils import conv2d_output_shape, pow2_rshift, rshift_offset
 from napl.utils._shared_test import devices, single_shot_suite, sync
+
+
+def _binary_conv_reference(module, input, linear_reference):
+    output_size = conv2d_output_shape(
+        input.shape[-2:], module.kernel_size, module.stride, module.padding, module.dilation
+    )
+    columns = F.unfold(input, module.kernel_size, module.dilation, module.padding, module.stride)
+    patches = columns.transpose(1, 2).reshape(-1, columns.size(1))
+    output = linear_reference(patches, module.weight.view(module.weight.size(0), -1))
+    output = output.reshape(input.size(0), -1, output.size(-1)).transpose(1, 2)
+    output = output.reshape(input.size(0), output.size(1), *output_size)
+    return output + module.bias.view(1, -1, 1, 1)
+
+
+def test_conv_unarysim_quantization_semantics():
+    input_fxp = torch.linspace(-0.34, 0.33, 64).reshape(2, 2, 4, 4)
+    weight_fxp = torch.linspace(-0.34, 0.32, 36).reshape(2, 2, 3, 3)
+    bias_fxp = torch.tensor([0.05, -0.075])
+    fxp = conv_fxp(
+        2, 2, 3, padding=1, weight_ext=weight_fxp, bias_ext=bias_fxp,
+        config={'widthi': 4, 'quantilei': 1, 'widthw': 4,
+                'quantilew': 1, 'rounding': 'round'},
+    )
+    rshift_i, rshift_w, _ = rshift_offset(input_fxp, weight_fxp, 3, 3, 'round')
+
+    def fxp_reference(input, weight):
+        input = pow2_rshift(input, rshift_i).round().clamp(-8, 7)
+        weight = pow2_rshift(weight, rshift_w).round().clamp(-8, 7)
+        return pow2_rshift(input @ weight.t(), -rshift_i - rshift_w)
+
+    assert torch.equal(fxp(input_fxp), _binary_conv_reference(fxp, input_fxp, fxp_reference))
+
+    input_hub = torch.linspace(-0.49, 0.47, 64).reshape(2, 2, 4, 4)
+    weight_hub = torch.linspace(-0.46, 0.49, 36).reshape(2, 2, 3, 3)
+    bias_hub = torch.tensor([0.025, -0.04])
+    hub = conv_hub(
+        2, 2, 3, padding=1, weight_ext=weight_hub, bias_ext=bias_hub,
+        config={'widthi': 4, 'rngi': 'sobol', 'quantilei': 1,
+                'widthw': 4, 'rngw': 'sobol', 'quantilew': 1,
+                'cycle': 8, 'rounding': 'round'},
+    )
+    rshift_i, rshift_w, rshift_o = rshift_offset(input_hub, weight_hub, 3, 3, 'round')
+
+    def hub_reference(input, weight):
+        input_index = pow2_rshift(input, rshift_i).abs().long().clamp(0, 7).unsqueeze(1)
+        weight_index = pow2_rshift(weight, rshift_w).abs().long().clamp(0, 7).unsqueeze(0)
+        products = hub.mapcbsg[input_index, weight_index] * torch.sign(weight).unsqueeze(0)
+        output = torch.sign(input).unsqueeze(1) @ products.transpose(1, 2)
+        return pow2_rshift(output, rshift_o).squeeze(1)
+
+    assert torch.equal(hub(input_hub), _binary_conv_reference(hub, input_hub, hub_reference))
 
 
 def _kernel_specific_checks():
@@ -136,3 +188,4 @@ def test_conv_binary():
 
 if __name__ == '__main__':
     test_conv_binary()
+    test_conv_unarysim_quantization_semantics()

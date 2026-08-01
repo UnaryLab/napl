@@ -5,20 +5,18 @@ import torch.nn.functional as F
 from napl.utils import *
 from napl.sim.base import napl_base
 
-# NB: operation primitives are imported lazily inside __init__ (not at module top),
-# because napl.sim.operation.mul_csg imports napl.sim.module.encoder, so a top-level import here
-# creates a circular import when napl.sim.operation is loaded before napl.sim.module.
+# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
 class mgu_hardpt(napl_base):
     """Apply a PyTorch-layout MGU cell with bounded hard activations.
 
     Use this single-shot cell when parameters must follow the two-chunk
-    input-hidden and hidden-hidden layout used by PyTorch recurrent cells. It is a Minimal Gated Unit (MGU) cell in the binary (float) domain, PyTorch RNNCell style
-    (separate input-hidden / hidden-hidden gate linears, chunked into forget/new gates)
-    with hard activations: sigmoid -> hard sigmoid, tanh -> hard tanh, and explicit
-    hard-tanh clamps so every intermediate value stays in the legal unary range.
-    Single-shot; trainable. Port of UnarySim ``HardMGUCellPT``.
+    input-hidden and hidden-hidden layout used by PyTorch recurrent cells. It is
+    a binary-domain Minimal Gated Unit with separate input-hidden and
+    hidden-hidden linears split into forget and new gates. Hard sigmoid, hard
+    tanh, and explicit range clamps keep intermediate values in the legal unary
+    range. The cell is single-shot and trainable.
 
     .. rubric:: Example
 
@@ -34,6 +32,7 @@ class mgu_hardpt(napl_base):
     ----------
     *Simplified Minimal Gated Unit Variations for RNNs*.
     """
+    #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the PyTorch-layout cell and initialize its parameters.
@@ -49,16 +48,28 @@ class mgu_hardpt(napl_base):
                 **name** is an optional instance label and defaults to ``None``.
         """
         super().__init__(config, [])
-        self.input_size, self.hidden_size, self.bias = input_size, hidden_size, bias
+        #: Number of features in each input vector.
+        self.input_size = input_size
+        #: Number of features in each hidden-state vector.
+        self.hidden_size = hidden_size
+        #: Whether the cell includes trainable input and hidden biases.
+        self.bias = bias
+        #: Whether the forget and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub
+        #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
-        # PT (RNNCellBase, num_chunks=2) parameter layout: rows [forget; new]
+        # PyTorch's two-chunk parameter layout stores forget rows before new rows.
+        #: Trainable input-to-gate weights in forget-then-new order.
         self.weight_ih = torch.nn.Parameter(torch.empty(2 * hidden_size, input_size))
+        #: Trainable hidden-to-gate weights in forget-then-new order.
         self.weight_hh = torch.nn.Parameter(torch.empty(2 * hidden_size, hidden_size))
         if bias:
+            #: Trainable input-to-gate bias in forget-then-new order.
             self.bias_ih = torch.nn.Parameter(torch.empty(2 * hidden_size))
+            #: Trainable hidden-to-gate bias in forget-then-new order.
             self.bias_hh = torch.nn.Parameter(torch.empty(2 * hidden_size))
         else:
             self.register_parameter('bias_ih', None)
@@ -92,15 +103,11 @@ class mgu_hardpt(napl_base):
         """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
-        # the explicit hard-tanh clamps (always hard): F.hardtanh directly, same math
-        # as operation.tanh_hub but without the nn.Module dispatch on the hot path
+        # Range clamps stay hard regardless of the configured gate activations.
         gate_i = F.hardtanh(F.linear(input, self.weight_ih, self.bias_ih), -1.0, 1.0)
         gate_h = F.hardtanh(F.linear(hx, self.weight_hh, self.bias_hh), -1.0, 1.0)
         i_f, i_n = gate_i.chunk(2, 1)
         h_f, h_n = gate_h.chunk(2, 1)
-        # forget gate
         fg = self.fg_sigmoid(F.hardtanh(i_f + h_f, -1.0, 1.0))
-        # new gate: ng = tanh(i_n + fg * h_n)
         ng = self.ng_tanh(i_n + fg * h_n)
-        # output: hy = hardtanh((1 - fg) * ng + fg * hx)
         return F.hardtanh(ng - fg * ng + fg * hx, -1.0, 1.0)

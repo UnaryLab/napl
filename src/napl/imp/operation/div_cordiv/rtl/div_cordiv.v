@@ -1,33 +1,11 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// div_cordiv -- correlated stochastic division, unipolar.
-//
-// RTL counterpart of napl.sim.operation.div_cordiv (src/napl/sim/operation/div_cordiv.py).
-// Unipolar only (the Python class is polarity_required=False, no polarity
-// branch), so the module is the bare op name with no _unipolar/_bipolar postfix.
-//
-// Per cycle the model computes, from the current state:
-//   rand_q   = buffer_q[rand_seq[idx]]            // buffered past quotient
-//   quotient = i_divisor ? i_dividend : rand_q    // correlated select
-// and then, only where i_divisor is a spike, shifts the new quotient into the
-// circular buffer (buffer_q[r] <= buffer_q[r-1] for r>0; buffer_q[0] <= quotient);
-// the cyclic index idx advances every cycle. o_quotient is combinational in the
-// inputs and the current state (no input->output register), so pp_delay = 0.
-//
-// DEPTH is a Verilog parameter inherited from the Python model's config['depth']:
-// the testbench overrides it with `GEN_DEPTH (emitted by gen/gen_div_cordiv.py
-// from the same config test_div_cordiv.py uses), so the verified hardware always
-// tracks the simulator. The default here is only a standalone-elaboration
-// fallback. All bus widths (buffer_q rows, idx width) are derived from DEPTH.
-//
-// The one-dimensional Sobol index sequence is bit-reversed Gray-code order,
-// generated directly from idx for every supported power-of-two DEPTH.
-//
-// Reset (active-low i_rst_n) reproduces the Python reset() state EXACTLY:
-// buffer_q all-zero and idx = 0.
-// Verify from src/napl/imp with: make test OP=div_cordiv
-//==============================================================================
+// Unipolar correlated divider equivalent to napl.sim.operation.div_cordiv.
+// The quotient selects the dividend on divisor spikes and otherwise reads the
+// buffered quotient at the bit-reversed Gray-code Sobol index.
+// Output is combinational (pp_delay=0); each posedge shifts on a divisor spike
+// and advances the index. Generated DEPTH/WIDTH mirror Python.
+// Active-low reset clears the buffer and index.
 module div_cordiv #(
     parameter integer DEPTH = 2,  // inherited from config['depth']; tb overrides via `GEN_DEPTH
     parameter integer WIDTH = 1   // inherited from log2(config['depth']); tb overrides via `GEN_WIDTH

@@ -1,28 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// square_dff_bipolar -- unary/stochastic-computing square, bipolar.
-//
-// RTL counterpart of napl.sim.operation.square_dff with config polarity='bipolar'
-// (src/napl/sim/operation/square_dff.py).  Squares a single spike stream by XNORing it
-// with a depth-DEPTH delayed copy of itself (a D flip-flop chain), per uGEMM.
-//
-//   out = ~(i_input ^ dff(i_input))     (XNOR)
-//
-// The delay line holds the previous DEPTH inputs; the model's internal dff
-// reset() initializes every cell to 0. The output is combinational from the
-// current input and the oldest cell, so the input->output latency is 0 cycles;
-// the delay line advances on posedge i_clk.
-//
-// DEPTH is a Verilog parameter inherited from the Python model's config['depth']
-// (consumed by the embedded dff): the testbench overrides it with `GEN_DEPTH
-// (emitted by gen/gen_square_dff.py from the same config test_square_dff.py
-// uses), so the verified hardware always tracks the simulator. The default here
-// is only a standalone-elaboration fallback.
-//
-// Reference: uGEMM: Unary Computing (Architecture) for GEMM Applications.
-// Verify from src/napl/imp/: conda run -n napl make test OP=square_dff
-//==============================================================================
+// Bipolar square_dff equivalent: XNOR the current input with its DEPTH-delayed
+// copy. Output is combinational (pp_delay=0); active-low reset clears the delay.
 module square_dff_bipolar #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

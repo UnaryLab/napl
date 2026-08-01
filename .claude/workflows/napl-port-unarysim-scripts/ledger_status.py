@@ -38,7 +38,7 @@ def data_rows(path, header_marker):
                 continue
             if header_marker in s:
                 continue
-            if not (set(s) - set("|-: ")):  # separator row
+            if not (set(s) - set("|-: ")):
                 continue
             out.append([c.strip() for c in s.strip("|").split("|")])
     return out
@@ -51,10 +51,8 @@ def main():
     ap.add_argument("--improve", default="reports/napl-opt-sim-report.md")
     a = ap.parse_args()
 
-    # napl-validate-unarysim-report.md: Date | napl module | ...  -> col 1
     validated = [r[1] for r in data_rows(a.validation, "napl module") if len(r) > 1]
 
-    # napl-gen-rtl-report.md: Date | napl class | RTL module(s) | Status | ...  -> col 1 keyed by col 3
     rtl = {"verified": [], "skipped": [], "failed": []}
     for r in data_rows(a.rtl, "napl class"):
         if len(r) > 3:
@@ -62,8 +60,6 @@ def main():
             if status in rtl:
                 rtl[status].append(r[1])
 
-    # napl-opt-sim-report.md: Date | napl kernel | Source file | Hash | ...  -> {Source: Hash}
-    # (source+hash are the improve idempotency key; skip rows with no source recorded)
     improved = {r[2]: r[3] for r in data_rows(a.improve, "napl kernel") if len(r) > 3 and r[2]}
 
     print(json.dumps({

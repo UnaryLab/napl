@@ -1,153 +1,95 @@
-"""
-Generate golden test vectors for the add_any RTL modules straight from napl's
-functional Python model (napl.sim.operation.add_any) -- so the testbench checks the
-Verilog against the *actual* simulator, not a hand-derived truth table.
-
-add_any is a stateful per-timestep accumulator. Per timestep it adds the input
-partial sum minus a constant offset, clamps to the width-sized accumulator range,
-emits out = (acc >= scale), and subtracts scale where it fired. The bit-serial
-RTL drives the pre-reduced partial sum directly (the model's dim=None path), so
-each cycle's input is one integer in [0, ENTRY]. Polarity only changes the offset
-(bipolar: (ENTRY-SCALE)/2; unipolar: 0), so each polarity is its own module.
-
-Faithfulness to test_add_any.py: that test encodes an (rows, SCALE) input with
-the codec (sobol, timestep=256), reduces over the lane dim, and feeds the result
-to add_any. ENTRY = SCALE = the reduction dim. Here we reproduce the SAME
-per-timestep partial-sum streams by encoding representative per-lane value vectors
-with the test's exact encoder config and summing the lane spikes per timestep.
-The streams therefore match the spike streams the test sends the op bit-for-bit.
-
-Sizing is the single source of truth: SCALE/WIDTH (from add_any_config) and ENTRY
-(= the reduction dim, == SCALE) are read once here, used to build the model, AND
-emitted into ../vec/add_any_params.vh as `GEN_SCALE / `GEN_WIDTH / `GEN_ENTRY so
-the testbench overrides the RTL parameters with the same values. RTL and sim
-cannot drift.
-
-Output: ../vec/add_any.vec, one line per cycle:
-
-    <rst> <partial> <out_unipolar> <out_bipolar>   (rst,outs 0/1; partial decimal)
-
-`rst`=1 marks a cycle where the model was reset() immediately before this forward()
-(the accumulator is 0 entering this cycle); the testbench pulses i_rst_n low before
-driving that row. The first row carries rst=1, and a MID-STREAM reset row also
-carries rst=1 -- proving the RTL's active-low reset returns to the model's reset()
-state from a dirtied accumulator.
-
-Run inside the `napl` conda env (so `import napl` resolves):
-    python gen/gen_add_any.py
-"""
 from pathlib import Path
 
 import torch
-from napl.sim.operation import add_any
+
 from napl.sim.module import encoder
+from napl.sim.operation import add_any
 
-VEC = Path(__file__).resolve().parent.parent / "vec" / "add_any.vec"
-PARAMS = Path(__file__).resolve().parent.parent / "vec" / "add_any_params.vh"
 
-# test_add_any.py add_any_config: the sizing params the op is built with.
-ADD_ANY = {"scale": 128, "width": 20}
-# ENTRY = number of addends = the reduction dim = SCALE (test input shape (rows, scale)).
+ROOT = Path(__file__).resolve().parent.parent
+VEC = ROOT / "vec" / "add_any.vec"
+PARAMS = ROOT / "vec" / "add_any_params.vh"
+
+# These are the primary regimes in tests/operation/test_add_any.py.
+TIMESTEP = 256
+ADD_ANY = {"scale": 8, "width": 20}
 ENTRY = ADD_ANY["scale"]
-SCALE = ADD_ANY["scale"]
-WIDTH = ADD_ANY["width"]
-
-# test_add_any.py codec_config: the encoder feeding add_any.
-CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol"}
 
 
-def encode_lane_stream(codec_config, values):
-    """Per-timestep partial-sum stream for an ENTRY-long per-lane value vector.
-
-    Drives a real napl encoder built from codec_config (the test's exact config,
-    single sobol dim shared across lanes, just like the test) over `timestep`
-    cycles from a fresh reset, summing the lane spikes each cycle. Returns a list
-    of length timestep of integer partial sums in [0, ENTRY].
-    """
-    enc = encoder(dict(codec_config))
-    enc.reset()
-    v = torch.tensor([float(x) for x in values]).type(enc.num_seq.dtype)
-    partials = []
-    for _ in range(codec_config["timestep"]):
-        spike = enc(v)                      # one spike per lane this timestep
-        partials.append(int(spike.sum().item()))
-    return partials
+def test_values(polarity):
+    """Return the test rows in the requested, probability-equivalent polarity."""
+    known = torch.full((8, ENTRY), 0.25)
+    fidelity = torch.linspace(-0.75, 0.75, 512).reshape(64, ENTRY)
+    values = torch.cat((known, fidelity), dim=0)
+    if polarity == "unipolar":
+        values = (values + 1) / 2
+    return values
 
 
-def lane_vectors(polarity, entry):
-    """Representative ENTRY-long per-lane value vectors covering the accumulator's
-    range: all-low / all-high rails, midpoints, graded fills, and random draws."""
-    lo, hi = (-1.0, 1.0) if polarity == "bipolar" else (0.0, 1.0)
-    mid = (lo + hi) / 2
-    g = torch.Generator().manual_seed(20240613)
-    vecs = []
-    # rails and midpoint -> drive the accumulator toward both clamp bounds
-    vecs.append([hi] * entry)               # max partial each cycle: positive rail
-    vecs.append([lo] * entry)               # min partial each cycle: negative rail
-    vecs.append([mid] * entry)              # midpoint: hovers near threshold
-    # graded fills: a fraction of lanes high, rest low
-    for frac in (0.25, 0.5, 0.75):
-        k = int(entry * frac)
-        vecs.append([hi] * k + [lo] * (entry - k))
-    # deterministic random draws over the operand range
-    for _ in range(3):
-        vecs.append((lo + (hi - lo) * torch.rand(entry, generator=g)).tolist())
-    return vecs
+def encode_segments(polarity, values):
+    """Encode each test row as one independent scalar RTL circuit's input stream."""
+    segments = []
+    for values_row in values:
+        enc = encoder({
+            "polarity": polarity,
+            "timestep": TIMESTEP,
+            "generator": "sobol",
+            "dim": 1,
+        })
+        enc.reset()
+        segments.append([enc(values_row).clone() for _ in range(TIMESTEP)])
+    return segments
 
 
 def run(polarity, segments):
-    """Run the model over a list of partial-sum segments, resetting before the
-    first segment and AGAIN before the last (mid-stream reset). Returns
-    (rst_flags, outs): rst_flags[i]=1 on the first cycle after each reset()."""
-    model = add_any(config={"polarity": polarity, "scale": SCALE, "width": WIDTH})
-    model.reset()
-    rsts, outs = [], []
-    first = True
-    for seg_idx, seg in enumerate(segments):
-        if seg_idx == len(segments) - 1:
-            model.reset()                   # mid-stream reset before the final segment
-            first = True
-        for j, p in enumerate(seg):
-            inp = torch.tensor(p, dtype=model.ntype)
-            entry = ENTRY if first else None
-            outs.append(int(model(inp, entry=entry, dim=None).item()))
-            # rst=1 on the very first cycle after each reset() (the dirtied-state proof)
-            rsts.append(1 if first else 0)
-            first = False
-    return rsts, outs
+    """Generate bit-exact Python outputs and reset before every independent row."""
+    model = add_any({"polarity": polarity, **ADD_ANY})
+    outputs = []
+    for segment in segments:
+        model.reset()
+        outputs.append([int(model(spikes, dim=-1).item()) for spikes in segment])
+    return outputs, model.hw.pp_delay
 
 
-def build_segments():
-    # encode each representative lane vector into a partial-sum segment.
-    # use the bipolar codec (the test's) for the stream shape; the partial sums
-    # are polarity-agnostic integers in [0, ENTRY], so both models see the same
-    # input stream and only the offset differs between the two modules.
-    vecs = lane_vectors(CODEC["polarity"], ENTRY)
-    return [encode_lane_stream(CODEC, v) for v in vecs]
+def bus(spikes):
+    """Format lane 0 as the Verilog vector's least-significant bit."""
+    return "".join(str(int(bit)) for bit in reversed(spikes.tolist()))
 
 
 def main():
-    segments = build_segments()
-    flat_partials = [p for seg in segments for p in seg]
-    rst_uni, out_uni = run("unipolar", segments)
-    rst_bi, out_bi = run("bipolar", segments)
-    # the reset schedule is identical for both polarities (same segmentation).
-    assert rst_uni == rst_bi
+    segments_uni = encode_segments("unipolar", test_values("unipolar"))
+    segments_bi = encode_segments("bipolar", test_values("bipolar"))
+    assert len(segments_uni) == len(segments_bi)
+    out_uni, pp_delay_uni = run("unipolar", segments_uni)
+    out_bi, pp_delay_bi = run("bipolar", segments_bi)
+    assert pp_delay_uni == pp_delay_bi
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameters.
     PARAMS.write_text(
-        f"`define GEN_SCALE {SCALE}\n"
-        f"`define GEN_WIDTH {WIDTH}\n"
+        f"`define GEN_SCALE {ADD_ANY['scale']}\n"
+        f"`define GEN_WIDTH {ADD_ANY['width']}\n"
         f"`define GEN_ENTRY {ENTRY}\n"
+        f"`define GEN_PP_DELAY {pp_delay_uni}\n"
     )
 
-    with VEC.open("w") as f:
-        for r, p, u, b in zip(rst_uni, flat_partials, out_uni, out_bi):
-            f.write(f"{r} {p} {u} {b}\n")
+    with VEC.open("w") as output:
+        for segment_index, (segment_uni, segment_bi) in enumerate(
+            zip(segments_uni, segments_bi)
+        ):
+            for cycle, (spikes_uni, spikes_bi) in enumerate(
+                zip(segment_uni, segment_bi)
+            ):
+                reset = int(cycle == 0)
+                output.write(
+                    f"{reset} {bus(spikes_uni)} {out_uni[segment_index][cycle]} "
+                    f"{bus(spikes_bi)} {out_bi[segment_index][cycle]}\n"
+                )
+
+    vector_count = len(segments_uni) * TIMESTEP
     print(
-        f"wrote {VEC} ({len(flat_partials)} vectors) and {PARAMS} "
-        f"(GEN_SCALE={SCALE} GEN_WIDTH={WIDTH} GEN_ENTRY={ENTRY})"
+        f"wrote {VEC} ({vector_count} vectors, {len(segments_uni)} reset segments) "
+        f"and {PARAMS} (SCALE={ADD_ANY['scale']} WIDTH={ADD_ANY['width']} "
+        f"ENTRY={ENTRY} PP_DELAY={pp_delay_uni})"
     )
 
 

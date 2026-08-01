@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "relu_tc.vec"
 PARAMS = ROOT / "vec" / "relu_tc_params.vh"
 
-# Mirrors tests/operation/test_relu_tc.py, including its temporal encoder.
+# Configuration, including the temporal encoder, mirrors test_relu_tc.py.
 CONFIG = {"width": 8}
 CODEC = {
     "polarity": "bipolar",

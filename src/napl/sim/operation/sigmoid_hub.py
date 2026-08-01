@@ -20,6 +20,7 @@ class sigmoid_hub(napl_base):
         operation = sigmoid_hub({'scale': 3})
         output = operation(torch.tensor([-1.0, 0.0, 1.0]))
     """
+    #: Marks this activation as a single-shot tensor operation.
     streaming = False
     def __init__(
         self,
@@ -40,7 +41,9 @@ class sigmoid_hub(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, [])
+        #: Modeled scalar latency of the single-shot hard sigmoid.
         self.delay = 0
+        #: Input multiplier applied before the hard sigmoid.
         self.scale = config.get('scale', 3)
 
     def _reset(self):

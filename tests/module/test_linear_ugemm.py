@@ -63,8 +63,7 @@ def _kernel_specific_checks():
                 print(f'[{device}] {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
                 inst.reset()
 
-    # known-answer corner: unipolar all-ones input & weight, no bias => the partial sum
-    # is entry every step, the scaled adder emits 1 every step, decoded value == 1
+    # All-ones unipolar operands make the scaled adder emit 1 every timestep.
     w1_cpu = torch.ones(out_features, in_features).type(global_config.ntype)
     x1_cpu = torch.ones(in_features).type(global_config.ntype)
     cfg = {'polarity': 'unipolar', 'timestep': 64, 'generator': 'sobol', 'dim': 1}
@@ -78,7 +77,7 @@ def _kernel_specific_checks():
         inst.reset()
     print('known-answer corner passed.')
 
-    # performance: time linear_ugemm vs linear on identical spike streams
+    # Compare linear_ugemm and linear on identical spikes.
     input_x_cpu = gen_rand_tensor('bipolar', shape=(in_features,), width=8).type(global_config.ntype)
     weight_cpu = gen_rand_tensor('bipolar', shape=(out_features, in_features), width=8).type(global_config.ntype)
     bias_cpu = gen_rand_tensor('bipolar', shape=(out_features,), width=8).type(global_config.ntype)

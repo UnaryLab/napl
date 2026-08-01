@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "signabs_interleave.vec"
 PARAMS = ROOT / "vec" / "signabs_interleave_params.vh"
 
-# Mirrors tests/operation/test_signabs_interleave.py.
+# Configuration mirrors test_signabs_interleave.py.
 CONFIG = {"width": 5}
 CODEC = {
     "polarity": "bipolar",

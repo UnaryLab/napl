@@ -47,14 +47,17 @@ class uni2bi(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational converter.
         self.hw = hw_params(pp_delay=0)
 
-        # width of the accumulator
+        #: Signed conversion-accumulator width in bits.
         self.width = config['width']
-        # max value in the accumulator
+        #: Largest value retained by the conversion accumulator.
         self.acc_max = 2**(self.width-1) - 1
-        # min value in the accumulator
+        #: Smallest value retained by the conversion accumulator.
         self.acc_min = -2**(self.width-1)
+        #: Running unipolar-to-bipolar conversion error.
+        self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
 
@@ -82,24 +85,15 @@ class uni2bi(napl_base):
 
             output = converter(torch.tensor([1, 0], dtype=torch.int8))
         """
-        # calculate (input+1)/2
-        # input spike streams are [input, 1]; the +1 is folded into a second
-        # in-place add so no addend/cast temporaries are allocated (in-place
-        # stype->ntype add is a safe widening into the ntype accumulator)
+        # ntype accumulation widens stype input without truncation.
         acc = self.accumulator
-        # accumulate in place once the accumulator has broadcast to the input
-        # shape; the first call still needs the out-of-place reshape from [1]
+        # The scalar initial state broadcasts out of place; matching shapes update in place.
         if acc.shape == input.shape:
             acc.add_(input).add_(1).clamp_(self.acc_min, self.acc_max)
         else:
             acc = acc.add(input).add_(1).clamp_(self.acc_min, self.acc_max)
-        # cast the carry-out spike to stype once and reuse it for the in-place
-        # acc update (stype->ntype is a safe widening in sub_) and the return,
-        # saving one cast versus going through ntype
         output = torch.ge(acc, 2).type(self.stype)
-        # acc in [acc_min, acc_max] and output*2 in {0, 2}; subtracting keeps it
-        # within range, so the trailing clamp is a no-op and is dropped.
-        # alpha=2 folds the *2 into sub_, avoiding the output.mul(2) temporary
+        # Since output is 1 only for acc >= 2, subtracting 2 preserves the bounds.
         acc.sub_(output, alpha=2)
         if self.accumulator.shape != acc.shape:
             self.accumulator.resize_as_(acc).copy_(acc.detach())

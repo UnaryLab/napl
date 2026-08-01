@@ -14,12 +14,9 @@ def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
     return a lfsr sequence of length 2**width within [0, 1]
     """
     if seed is None:
-        # always start from a fixed seed if no seed is provided
-        # this is to ensure the same sequence is generated every time
+        # The default seed makes generated sequences reproducible.
         seed = [0 for _ in range(width-1)] + [1]
     else:
-        # input seed is a integer, convert it to a list of binary bits
-        # modulo the seed to the width
         seed = int(seed) % (2**width)
         seed = [int(x) for x in np.binary_repr(seed, width=width)]
 
@@ -66,15 +63,11 @@ def gen_num_seq(config={
         logger.error(f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.')
 
     if (generator == 'sobol') or (generator == 'rc') or (generator == 'rate'):
-        # get the requested dimension of sobol random number sequence
-        # rate coding defaults to sobol sequence
+        # Rate coding uses the requested Sobol dimension.
         dim = config.get('dim', 1)
         num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
     elif (generator == 'tc') or (generator == 'temporal'):
-        # temporal coding defaults to descending counter sequence
-        # this choice counts 1s toward values, match that in rate.
-        # the output sequence is in an descending order
-        # the temporal coding starts with 1s, followed by 0s
+        # Descending thresholds make temporal streams emit ones before zeros.
         num_seq = torch.tensor([x/seq_len for x in range(seq_len-1, -1, -1)])
     elif generator == 'lfsr':
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
@@ -153,22 +146,24 @@ class encoder(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
+        #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two number-sequence period.
         self.width = math.ceil(math.log2(self.timestep))
+        #: Lowercase name of the configured number-sequence generator.
         self.generator = config['generator'].lower()
+        #: Number of thresholds in the generated periodic sequence.
         self.len = 2**self.width
 
-        # resolve the polarity branch once: avoids a per-timestep string compare in forward()
         self._is_bipolar = (self.polarity == 'bipolar')
 
-        # generate the number sequence
-        # the sequence is used to compare with the input data
         config_updated = {'width': self.width}
         config_updated.update(config)
+        #: Complete threshold sequence used to encode successive timesteps.
+        self.num_seq: torch.Tensor
         self.register_buffer('num_seq', gen_num_seq(config=config_updated))
 
-        # avoid recomputing the bipolar prob transform when re-encoding an unchanged input
         self._prob_cache = None
 
 
@@ -178,7 +173,6 @@ class encoder(napl_base):
         The number sequence is unchanged. This hook returns ``None`` and is
         called by ``reset()``, which separately resets the timestep.
         """
-        # drop the cached input/prob so reset releases the pinned tensors
         self._prob_cache = None
 
 
@@ -196,9 +190,6 @@ class encoder(napl_base):
         Calling the module advances ``timestep_cur`` and selects the next number
         in the periodic sequence. The input tensor is not modified.
         """
-        # use gt to generate the spike
-        # if input is 0, then a all 0 spike stream is generated
-        # if input is 1, then one spike in the spike stream will be 0
         if self._is_bipolar:
             c = self._prob_cache
             if c is not None and c[0] is input and c[1] == input._version:

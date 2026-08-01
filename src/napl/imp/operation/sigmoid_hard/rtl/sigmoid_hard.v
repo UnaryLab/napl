@@ -1,22 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// sigmoid_hard -- hard sigmoid (input+1)/2 as a streaming scaled-add.
-//
-// RTL counterpart of napl.sim.operation.sigmoid_hard
-// (src/napl/sim/operation/sigmoid_hard.py), which is add_any(scale=2, width=3) fed the
-// pre-reduced per-timestep sum (input+1).  Identical for unipolar and bipolar
-// (the bipolar offset (entry-scale)/2 = (2-2)/2 = 0), so there is a single
-// module with no polarity postfix.
-//
-// Per timestep (one posedge i_clk):
-//   acc_sum  = clamp(acc + (i_input + 1), -4, +3)   // add_any width=3 -> [-4,3]
-//   o_out    = (acc_sum >= scale=2)              // combinational, pp_delay = 0
-//   acc_next = acc_sum - (o_out ? 2 : 0)
-//
-// The accumulator is a 4-bit signed register; i_rst_n (active low) maps to the
-// Python reset() which zeroes the accumulator.
-//==============================================================================
+// Streaming sigmoid_hard equivalent to add_any(scale=2,width=3) on input+1.
+// Each cycle clamps acc+input+1 to [-4,3], emits at two, then subtracts two.
+// Output is combinational (pp_delay=0); active-low reset clears acc.
 module sigmoid_hard (
     input  wire i_clk,    // one posedge per Python forward() timestep
     input  wire i_rst_n,  // active-low reset -> Python reset() (acc <- 0)

@@ -10,16 +10,13 @@ class linear_ugemm(napl_base):
     """Apply a streaming unary linear layer with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
-    free-running weight encoder used by :class:`linear`. It provides conditional spike
-    generation: y = W x (+ b), computed bit by bit from *binary* weights. Unlike
-    linear (which encodes the weights on an independent RNG each timestep), the
-    weight spikes are generated conditionally on the input spikes, mul_csg style: each
-    input feature advances its RNG index only when its input spike is 1 (bipolar adds
-    the complementary input-0 path with its own index), so the weight bit generation is
-    input-driven and needs no separate weight encoder. The per-timestep partial products
-    are summed by the scaled unary adder (add_any); the decoded output represents
-    (W x + b) / scale with scale defaulting to entry = in_features + has_bias.
-    Only UnarySim's scaled accumulation is ported (FSULinearuGEMM(scaled=True)); the
+    free-running weight encoder used by :class:`linear`. It computes
+    ``y = W x (+ b)`` bit by bit. Each input feature advances its RNG index only
+    when its input spike is ``1``; bipolar mode adds an input-``0`` path with a
+    separate index. The per-timestep products are summed by ``add_any`` and the
+    decoded output represents ``(W x + b) / scale``, with **scale** defaulting
+    to ``entry = in_features + has_bias``. Only UnarySim's
+    ``FSULinearuGEMM(scaled=True)`` accumulation is implemented; the
     non-scaled output-comparator variant is not. This class matches UnarySim
     ``FSULinearuGEMM`` in scaled mode.
 
@@ -72,46 +69,52 @@ class linear_ugemm(napl_base):
                   must satisfy ``2 ** (width - 1) >= in_features + has_bias``.
                 * **name** - Optional instance label. Defaults to ``None``.
 
-        Numeric parameters are converted to spike probabilities. They are not
-        registered as trainable parameters by this class.
+        Weight and bias are trainable parameters. The layer converts their
+        current values to spike probabilities at each timestep.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # lazy import: operation.mul_csg imports module.encoder, so importing operation at
-        # module top would create an import cycle with module/__init__.
+        # These imports stay local to avoid the module-operation import cycle.
         from napl.sim.operation import add_any
         from napl.sim.module.encoder import gen_num_seq
 
         assert weight.dim() == 2, logger.error(
             f'linear_ugemm weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
-        self.out_features, self.in_features = weight.shape
+        #: Number of output features produced by the layer.
+        self.out_features = weight.shape[0]
+        #: Number of input features consumed by the layer.
+        self.in_features = weight.shape[1]
+        #: Whether an encoded bias contributes to the parallel count.
         self.has_bias = bias is not None
+        #: Parallel-count fan-in, including the bias when present.
         self.entry = self.in_features + (1 if self.has_bias else 0)
         scale = config.get('scale', None)
+        #: Divisor implemented by the streaming unary adder.
         self.scale = self.entry if scale is None else scale
 
+        #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
         assert self.timestep > 0, logger.error(
             f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        #: Bit width of the power-of-two number-sequence period.
         self.seq_width = math.ceil(math.log2(self.timestep))
+        #: Number of thresholds in the periodic number sequence.
         self.len = 2 ** self.seq_width
 
-        # the scaled accumulator must hold a per-step partial sum up to `entry`; if the
-        # accumulator range 2**(width-1) is smaller it saturates and silently returns
-        # near-maximal error, so reject that configuration outright.
+        # The signed accumulator range must contain every per-step partial sum.
         width = config.get('width', 12)
         assert 2 ** (width - 1) >= self.entry, logger.error(
             f'linear_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
             f'2**(width-1) must be >= entry or partial sums saturate. Increase width.')
 
         self._is_bipolar = (self.polarity == 'bipolar')
-        # binary weight/bias held as compare probabilities (rate of the target stream)
-        self.w_prob = ((weight + 1) / 2 if self._is_bipolar else weight).type(self.ntype)
-        if self.has_bias:
-            self.b_prob = ((bias + 1) / 2 if self._is_bipolar else bias).type(self.ntype)
+        #: Trainable numeric weight matrix converted to spike probabilities on use.
+        self.weight = torch.nn.Parameter(weight)
+        #: Optional trainable numeric bias converted to spike probabilities on use.
+        self.bias = torch.nn.Parameter(bias) if bias is not None else None
 
-        # one shared RNG sequence for weight and bias bit generation (UnarySim uses a
-        # single Sobol dim-1 RNG for both); the weight indices are input-driven so the
-        # decorrelation-by-dim concern of linear does not apply here.
+        # Weight and bias bits share one RNG; input-driven indices decorrelate products.
+        #: Threshold sequence shared by weight and bias spike generation.
+        self.num_seq: torch.Tensor
         self.register_buffer(
             'num_seq',
             gen_num_seq({'width': self.seq_width,
@@ -119,13 +122,16 @@ class linear_ugemm(napl_base):
                          'dim': config.get('dim', 1)}),
         )
 
-        # per-input-feature RNG index, advanced by the input spike (input-1 path);
-        # scalar init broadcasts up to the input shape on the first forward().
+        # Each input feature advances its own input-one RNG index.
+        #: Per-input conditional-generator indices advanced by input-one spikes.
+        self.seq_idx: torch.Tensor
         self.register_buffer('seq_idx', torch.zeros(1, dtype=torch.long))
         if self._is_bipolar:
-            # input-0 path index, advanced by the complemented input spike
+            #: Per-input indices advanced by input-zero spikes in bipolar mode.
+            self.seq_idx_inv: torch.Tensor
             self.register_buffer('seq_idx_inv', torch.zeros(1, dtype=torch.long))
 
+        #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
 
     def _reset(self):
@@ -151,34 +157,30 @@ class linear_ugemm(napl_base):
         The call advances the per-feature conditional RNG indices, the unary
         adder, and ``timestep_cur``. Stored spike probabilities are unchanged.
         """
-        # input_spike: (..., in_features) spike tensor for the current timestep
         xf = input_spike.type(self.ntype)
         x_long = input_spike.type(torch.long)
+        w_prob = ((self.weight + 1) / 2 if self._is_bipolar else self.weight).type(self.ntype)
 
-        # input-1 path: weight bit per (out, in) from the input-driven RNG index; the
-        # 0/1 mask-and-reduce is a matmul (one fused kernel, no (out, in) mul temp;
-        # bit-exact: 0/1 sums bounded by entry are exact float32 integers in any order)
-        thr = self.num_seq[self.seq_idx]                                      # (..., in)
-        w_bit = torch.gt(self.w_prob, thr.unsqueeze(-2)).type(self.ntype)     # (..., out, in)
-        psum = torch.matmul(w_bit, xf.unsqueeze(-1)).squeeze(-1)              # (..., out)
+        # Counts bounded by entry are exact float32 integers under any reduction order.
+        thr = self.num_seq[self.seq_idx]
+        w_bit = torch.gt(w_prob, thr.unsqueeze(-2)).type(self.ntype)
+        psum = torch.matmul(w_bit, xf.unsqueeze(-1)).squeeze(-1)
         if self.seq_idx.shape == x_long.shape:
-            # steady state: in-place (long += long, no promotion, not aliased);
-            # the first timestep must broadcast the (1,) init up, which add_ cannot
+            # Matching long state updates in place without aliasing another timestep.
             self.seq_idx.add_(x_long)
         else:
             expanded = self.seq_idx.add(x_long).detach()
             self.seq_idx.resize_as_(expanded).copy_(expanded)
 
         if self.has_bias:
-            # bias bit advances unconditionally, one position per timestep (bool add
-            # promotes to ntype, same values as an explicit cast)
-            b_bit = torch.gt(self.b_prob, self.num_seq[(self.timestep_cur - 1) % self.len])
+            # Bias advances once per timestep; bool promotion preserves its 0/1 value.
+            b_prob = ((self.bias + 1) / 2 if self._is_bipolar else self.bias).type(self.ntype)
+            b_bit = torch.gt(b_prob, self.num_seq[(self.timestep_cur - 1) % self.len])
             psum = psum + b_bit
 
         if self._is_bipolar:
-            # input-0 path: complemented weight bit against complemented input spike
-            thr_inv = self.num_seq[self.seq_idx_inv]                          # (..., in)
-            w_bit_inv = torch.le(self.w_prob, thr_inv.unsqueeze(-2)).type(self.ntype)
+            thr_inv = self.num_seq[self.seq_idx_inv]
+            w_bit_inv = torch.le(w_prob, thr_inv.unsqueeze(-2)).type(self.ntype)
             psum = psum + torch.matmul(w_bit_inv, (1 - xf).unsqueeze(-1)).squeeze(-1)
             if self.seq_idx_inv.shape == x_long.shape:
                 self.seq_idx_inv.add_(1 - x_long)
@@ -186,4 +188,4 @@ class linear_ugemm(napl_base):
                 expanded = self.seq_idx_inv.add(1 - x_long).detach()
                 self.seq_idx_inv.resize_as_(expanded).copy_(expanded)
 
-        return self.acc(psum, entry=self.entry, dim=None)                     # (..., out)
+        return self.acc(psum, entry=self.entry, dim=None)

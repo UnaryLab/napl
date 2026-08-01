@@ -27,13 +27,12 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "tanh_hard.vec"
 
-# test_tanh_hard.py codec_config: the encoder feeding tanh_hard.
+# Encoder settings mirror test_tanh_hard.py.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
 def build_stream():
-    # exhaustive both 1-bit values (full characterization of this stateless op)
-    # followed by the test's encoder streams for representative operands.
+    # The prefix exhausts both input bits before encoded operand streams.
     stream = [0, 1, 1, 0]
     for v in rep_values(CODEC["polarity"]):
         stream += encode_value(CODEC, v)

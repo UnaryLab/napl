@@ -47,10 +47,15 @@ class sync_skewed_int(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational synchronizer.
         self.hw = hw_params(pp_delay=0)
 
+        #: Width of the stored integer stream-skew counter in bits.
         self.width = config['width']
+        #: Largest accumulated first-stream count retained by the synchronizer.
         self.cnt_max = 2**self.width - 1
+        #: Per-element first-stream count awaiting release by the second stream.
+        self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
 
 
@@ -81,19 +86,13 @@ class sync_skewed_int(napl_base):
             first, second = sync(torch.tensor([1], dtype=torch.int8),
                                  torch.tensor([1], dtype=torch.int8))
         """
-        # input 2 is kept unchanged at output.
-        # if input 1 is smaller than input 2, this module works the same as sync_skewed;
-        # if input 1 is larger than input 2, spikes of input 1 aggregate in the counter and are
-        # released as integer digits (possibly > 1) whenever input 2 spikes, so output 1 is an
-        # integer digit stream rather than a {0, 1} spike stream.
+        # input_2 passes through unchanged. Excess input_1 spikes accumulate and are released
+        # as integer digits when input_2 spikes.
         input_2_eq_1 = torch.eq(input_2, 1)
-        # accumulate the incoming input 1 spike; type promotion casts input_1 to ntype inside
-        # the add, and broadcasts cnt up to the input shape on the first call
+        # ntype addition broadcasts the scalar counter on first use.
         temp_sum = self.cnt + input_1
-        # when input 2 spikes, output 1 releases the clipped accumulated count, otherwise 0
         output_1 = input_2_eq_1 * temp_sum.clamp(0, self.cnt_max)
         if temp_sum.shape == output_1.shape:
-            # temp_sum is fresh each call: reuse it in place for the counter (all ntype, no promotion)
             updated = temp_sum.sub_(output_1).clamp_(0, self.cnt_max)
         else:
             updated = (temp_sum - output_1).clamp_(0, self.cnt_max)

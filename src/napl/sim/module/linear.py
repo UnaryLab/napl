@@ -7,7 +7,7 @@ from loguru import logger
 
 
 def _init_linear_params(module, in_features, out_features, bias, weight_ext, bias_ext):
-    """Give `module` nn.Linear-style learnable weight/bias (or adopt external tensors)."""
+    """Give ``module`` ``nn.Linear``-style trainable parameters."""
     module.weight = torch.nn.Parameter(torch.empty(out_features, in_features))
     torch.nn.init.kaiming_uniform_(module.weight, a=math.sqrt(5))
     if bias:
@@ -52,8 +52,9 @@ class linear(napl_base):
     dimension from the input (so the operand streams are decorrelated), multiplied with
     the incoming input spikes (XNOR for bipolar, AND for unipolar), and the partial
     products are summed by a scaled unary adder. The decoded output value is the inner
-    product divided by `scale` (default in_features + has_bias) so it stays in unary
-    range, so it represents ``(W x + b) / scale``.
+    product divided by ``scale``, which defaults to
+    ``in_features + has_bias``, so it represents ``(W x + b) / scale`` within
+    the unary range.
 
     .. rubric:: Example
 
@@ -105,43 +106,49 @@ class linear(napl_base):
                 * **name** - Optional instance label. Defaults to ``None``.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # lazy import: operation.mul_csg imports module.encoder, so importing operation at
-        # module top would create an import cycle with module/__init__.
+        # These imports stay local to avoid the module-operation import cycle.
         from napl.sim.operation import add_any
         from napl.sim.module.encoder import encoder
 
         assert weight.dim() == 2, logger.error(f'linear weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
-        self.weight = weight
-        self.out_features, self.in_features = weight.shape
+        #: Trainable numeric weight encoded into a spike stream.
+        self.weight = torch.nn.Parameter(weight)
+        #: Optional trainable numeric bias encoded on its own sequence.
+        self.bias = torch.nn.Parameter(bias) if bias is not None else None
+        #: Number of features produced by the layer.
+        self.out_features = weight.shape[0]
+        #: Number of features consumed by the layer.
+        self.in_features = weight.shape[1]
+        #: Whether an encoded bias contributes to each output sum.
         self.has_bias = bias is not None
+        #: Unary-adder fan-in, including the bias when present.
         self.entry = self.in_features + (1 if self.has_bias else 0)
         scale = config.get('scale', None)
+        #: Divisor implemented by the streaming unary adder.
         self.scale = self.entry if scale is None else scale
 
-        # the scaled accumulator must hold a per-step partial sum up to `entry`; if the
-        # accumulator range 2**(width-1) is smaller it saturates and silently returns
-        # near-maximal error, so reject that configuration outright.
+        # The signed accumulator range must contain every per-step partial sum.
         width = config.get('width', 12)
         assert 2 ** (width - 1) >= self.entry, logger.error(
             f'linear accumulator width <{width}> too small for fan-in <{self.entry}>: '
             f'2**(width-1) must be >= entry or partial sums saturate. Increase width.')
 
         dim = config.get('dim', 2)
-        # weight encoder on its own RNG dim; input is encoded by the caller on a different dim.
-        # NB: decorrelation-by-dim only works for the sobol family; lfsr/tc/temporal ignore
-        # dim and yield identical sequences across operands, biasing the result.
+        # Only Sobol-family generators decorrelate input and weight streams by dimension.
         if config['generator'].lower() not in ['sobol', 'rc', 'rate']:
             logger.warning(
                 f'linear decorrelates operands via distinct sobol dimensions, but generator '
                 f'<{config["generator"]}> does not decorrelate by dim (identical sequences across '
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
+        #: Encoder that converts the numeric weight to spikes.
         self.w_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
+        #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': config.get('width', 12)})
 
         if self.has_bias:
-            self.bias = bias
+            #: Encoder that converts the optional numeric bias to spikes.
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
@@ -168,18 +175,16 @@ class linear(napl_base):
         updates the adder accumulator. External weight and bias tensors are not
         modified.
         """
-        # input_spike: (..., in_features) spike tensor for the current timestep
-        w_spike = self.w_encoder(self.weight)                       # (out_features, in_features)
+        w_spike = self.w_encoder(self.weight)
         xf = input_spike.type(self.ntype)
         wf = w_spike.type(self.ntype)
-        # partial sum of the AND (unipolar) / XNOR (bipolar) spike products, without
-        # materializing the (..., out, in) elementwise product; bit-exact (small integers)
-        psum = torch.matmul(xf, wf.t())                             # (..., out_features)
+        psum = torch.matmul(xf, wf.t())
         if self.polarity == 'bipolar':
+            # Bipolar XNOR count is 2*sum(xw) - sum(x) - sum(w) + in_features.
             psum = 2 * psum - xf.sum(-1, keepdim=True) - wf.sum(-1) + self.in_features
         if self.has_bias:
-            psum = psum + self.b_encoder(self.bias).type(self.ntype)  # bias spike joins the sum
-        return self.acc(psum, entry=self.entry, dim=None)           # (..., out_features)
+            psum = psum + self.b_encoder(self.bias).type(self.ntype)
+        return self.acc(psum, entry=self.entry, dim=None)
 
 
 class linear_pc(napl_base):
@@ -188,14 +193,16 @@ class linear_pc(napl_base):
     Use this streaming layer when downstream logic needs the raw product count
     rather than a scaled output bitstream. It returns the per-timestep binary inner-product
     count of the input spikes against freshly encoded weight spikes, before any accumulation
-    into a bitstream. This is the `linear` partial sum without its scaled unary adder.
+    into a bitstream. This is the :class:`linear` partial sum without its scaled
+    unary adder.
 
     Each timestep the weights (and bias) are encoded into spikes on a distinct RNG dimension
     from the input (decorrelated operands). For unipolar this returns the AND-count
-    sum(input & weight) (+ bias spike); for bipolar it returns the XNOR-count
-    sum(input == weight) (+ bias spike, added on the input-1 path only, matching FSULinearPC).
-    The count per timestep lies in [0, entry] with entry = in_features + has_bias; accumulating
-    the count over T timesteps and dividing by T recovers the unipolar inner product directly,
+    ``sum(input & weight)`` plus the bias spike; for bipolar it returns the
+    XNOR count ``sum(input == weight)`` plus the bias spike on the input-``1``
+    path, matching ``FSULinearPC``. The count per timestep lies in
+    ``[0, entry]``, where ``entry = in_features + has_bias``. Accumulating the
+    count over ``T`` timesteps and dividing by ``T`` recovers the unipolar inner product directly,
     or the bipolar inner product as ``2 * mean - entry``. This class matches
     UnarySim ``FSULinearPC``.
 
@@ -239,14 +246,21 @@ class linear_pc(napl_base):
                 instance label and defaults to ``None``.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # lazy import: operation.mul_csg imports module.encoder, so importing at module top would
-        # create an import cycle with module/__init__.
+        # This import stays local to avoid the module-operation import cycle.
         from napl.sim.module.encoder import encoder
 
         assert weight.dim() == 2, logger.error(f'linear_pc weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
-        self.weight = weight
-        self.out_features, self.in_features = weight.shape
+        #: Trainable numeric weight encoded into a spike stream.
+        self.weight = torch.nn.Parameter(weight)
+        #: Optional trainable numeric bias encoded on its own sequence.
+        self.bias = torch.nn.Parameter(bias) if bias is not None else None
+        #: Number of features produced by the counter.
+        self.out_features = weight.shape[0]
+        #: Number of features consumed by the counter.
+        self.in_features = weight.shape[1]
+        #: Whether an encoded bias contributes to each output count.
         self.has_bias = bias is not None
+        #: Parallel-count fan-in, including the bias when present.
         self.entry = self.in_features + (1 if self.has_bias else 0)
 
         dim = config.get('dim', 2)
@@ -256,10 +270,11 @@ class linear_pc(napl_base):
                 f'<{config["generator"]}> does not decorrelate by dim (identical sequences across '
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
+        #: Encoder that converts the numeric weight to spikes.
         self.w_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
         if self.has_bias:
-            self.bias = bias
+            #: Encoder that converts the optional numeric bias to spikes.
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
@@ -285,35 +300,32 @@ class linear_pc(napl_base):
         The call advances the counter and its encoders. It does not accumulate
         counts across timesteps.
         """
-        # input_spike: (..., in_features) spike tensor for the current timestep
-        w_spike = self.w_encoder(self.weight)                       # (out_features, in_features)
+        w_spike = self.w_encoder(self.weight)
         xf = input_spike.type(self.ntype)
         wf = w_spike.type(self.ntype)
-        # AND-count of the input-1 path, without materializing the (..., out, in) product
-        and_count = torch.matmul(xf, wf.t())                        # (..., out_features)
+        and_count = torch.matmul(xf, wf.t())
         pc = and_count
         if self.has_bias:
-            # bias spike joins the input-1 path only (matches FSULinearPC bias placement)
+            # Bias contributes only to the input-one path.
             pc = pc + self.b_encoder(self.bias).type(self.ntype)
         if self.polarity == 'bipolar':
-            # XNOR-count: add the input-0 path sum((1-input)&(1-weight)). Computed
-            # algebraically from the AND-count instead of a second matmul over the
-            # materialized (1-input)/(1-weight) tensors (bit-exact integer identity:
-            # sum((1-x)(1-w)) = in - sum(x) - sum(w) + sum(xw)), saving a matmul and two
-            # full-tensor allocations per timestep.
+            # sum((1-x)(1-w)) = in_features - sum(x) - sum(w) + sum(xw).
             input0 = self.in_features - xf.sum(-1, keepdim=True) - wf.sum(-1) + and_count
             pc = pc + input0
-        return pc                                                   # (..., out_features)
+        return pc
 
 
 class _linear_fxp_fn(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, max_abs_i, max_abs_w):
+    def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, max_abs_i, max_abs_w,
+                full_signed_range=False):
         ctx.save_for_backward(input, weight, bias)
-        bot_i, top_i = 1 - max_abs_i, max_abs_i - 1
+        bot_i = -max_abs_i if full_signed_range else 1 - max_abs_i
+        top_i = max_abs_i - 1
         i_round = pow2_rshift(input, rshift_i)
         i_round.round_().clamp_(bot_i, top_i)
-        bot_w, top_w = 1 - max_abs_w, max_abs_w - 1
+        bot_w = -max_abs_w if full_signed_range else 1 - max_abs_w
+        top_w = max_abs_w - 1
         w_round = pow2_rshift(weight, rshift_w)
         w_round.round_().clamp_(bot_w, top_w)
         output = torch.matmul(i_round, w_round.t())
@@ -324,16 +336,17 @@ class _linear_fxp_fn(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _linear_ste_grads(ctx, grad_output) + (None, None, None, None, None)
+        return _linear_ste_grads(ctx, grad_output) + (None,) * (len(ctx.needs_input_grad) - 3)
 
 
 class linear_fxp(napl_base):
     """Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
 
     Use this single-shot layer for quantization-aware evaluation or training. It dynamically scales input and weight
-    to widthi/widthw-bit fixed point (via rshift_offset over their quantile magnitude),
-    matmul, then shift the output back. Single-shot; trains via STE (exact linear
-    gradient) and approximates ``nn.Linear`` within the quantization bound.
+    to ``widthi``- and ``widthw``-bit fixed point through ``rshift_offset``,
+    multiplies them, then restores the output scale. It is single-shot, trains
+    through a straight-through estimator, and approximates ``nn.Linear`` within
+    the quantization bound.
 
     .. rubric:: Example
 
@@ -378,13 +391,23 @@ class linear_fxp(napl_base):
                 optional instance label and defaults to ``None``.
         """
         super().__init__(config, [])
-        self.in_features, self.out_features = in_features, out_features
+        #: Number of features consumed by the layer.
+        self.in_features = in_features
+        #: Number of features produced by the layer.
+        self.out_features = out_features
+        #: Fixed-point width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Fixed-point width used for weight values.
         self.widthw = config.get('widthw', 8)
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during fixed-point conversion.
         self.rounding = config.get('rounding', 'round').lower()
+        #: Largest input magnitude represented by the quantized kernel.
         self.max_abs_i = 2 ** self.widthi
+        #: Largest weight magnitude represented by the quantized kernel.
         self.max_abs_w = 2 ** self.widthw
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
@@ -426,7 +449,7 @@ def _hub_rng_seq(width, rng='sobol'):
     if rng in ('sobol', 'rc'):
         seq = torch.quasirandom.SobolEngine(1).draw(seq_len)[:, 0].view(seq_len) * seq_len
     elif rng in ('race', 'tc'):
-        seq = torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len            # ascending
+        seq = torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len
     elif rng in ('race10', 'tc10'):
         seq = torch.flip(torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len, [0])
     else:
@@ -442,15 +465,14 @@ def _build_hub_map(widthi, widthw, rngi, rngw, ntype):
     Returns (cycle_max, mapcbsg). Shared by linear_hub and conv_hub. Requires widthi==widthw.
     """
     cmax = 2 ** (max(widthi, widthw) - 1)
-    rngctler = _hub_rng_seq(widthi - 1, rngi)   # controller = input
-    rngctlee = _hub_rng_seq(widthw - 1, rngw)   # controllee = weight
-    levels = torch.arange(cmax, dtype=torch.float).unsqueeze(1)               # (cmax,1)
-    ctler_bit = torch.gt(levels.expand(cmax, cmax), rngctler.unsqueeze(0))    # [i,j] = i > rngctler[j]
-    mapctler = torch.sum(ctler_bit, 1).type(torch.long)                      # one-count per input level
-    ctlee_bit = torch.gt(levels.expand(cmax, cmax), rngctlee.unsqueeze(0))    # [i,j] = i > rngctlee[j]
+    rngctler = _hub_rng_seq(widthi - 1, rngi)
+    rngctlee = _hub_rng_seq(widthw - 1, rngw)
+    levels = torch.arange(cmax, dtype=torch.float).unsqueeze(1)
+    ctler_bit = torch.gt(levels.expand(cmax, cmax), rngctler.unsqueeze(0))
+    mapctler = torch.sum(ctler_bit, 1).type(torch.long)
+    ctlee_bit = torch.gt(levels.expand(cmax, cmax), rngctlee.unsqueeze(0))
     mapcbsg = torch.empty(cmax, cmax, dtype=torch.long)
     for c in range(cmax):
-        # over the input-on cycles (first mapctler[c] positions), count weight-on overlaps
         mapcbsg[c] = torch.sum(ctlee_bit[:, 0:mapctler[c]], 1)
     return cmax, mapcbsg.type(ntype)
 
@@ -460,17 +482,13 @@ class _linear_hub_fn(torch.autograd.Function):
     def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, cycle, mapcbsg):
         ctx.save_for_backward(input, weight, bias)
         assert input.dim() == 2, logger.error('linear_hub input needs 2 dims (batch, in_features).')
-        # quantize |input|, |weight| to unary levels [0, cycle); keep their signs separately
-        buf_i = pow2_rshift(input, rshift_i).unsqueeze(1).round().abs().clamp(0, cycle - 1).type(torch.long)   # (batch,1,in)
-        buf_w = pow2_rshift(weight, rshift_w).unsqueeze(0).round().abs().clamp(0, cycle - 1).type(torch.long)  # (1,out,in)
-        act_input = torch.sign(input).unsqueeze(1)                       # (batch,1,in)
-        act_wght = torch.sign(weight).unsqueeze(0)                       # (1,out,in)
-        # look up the unary product magnitude for each (input level, weight level), apply weight
-        # sign; advanced indexing broadcasts (batch,1,in) against (1,out,in) to (batch,out,in)
-        # without materializing the batch-expanded index/sign tensors.
-        prod = mapcbsg[buf_i, buf_w].type(act_wght.dtype) * act_wght    # (batch,out,in)
-        output = torch.matmul(act_input, prod.transpose(1, 2))          # (batch,1,out)
-        output = pow2_rshift(output, rshift_o).squeeze(1)               # (batch,out)
+        buf_i = pow2_rshift(input, rshift_i).unsqueeze(1).abs().type(torch.long).clamp(0, cycle - 1)
+        buf_w = pow2_rshift(weight, rshift_w).unsqueeze(0).abs().type(torch.long).clamp(0, cycle - 1)
+        act_input = torch.sign(input).unsqueeze(1)
+        act_wght = torch.sign(weight).unsqueeze(0)
+        prod = mapcbsg[buf_i, buf_w].type(act_wght.dtype) * act_wght
+        output = torch.matmul(act_input, prod.transpose(1, 2))
+        output = pow2_rshift(output, rshift_o).squeeze(1)
         if bias is not None:
             output = output + bias.unsqueeze(0).expand_as(output)
         return output
@@ -487,7 +505,8 @@ class linear_hub(napl_base):
     unary multiplication value map while the interface remains numeric. Input and weight are
     quantized to sign-magnitude fixed point, and each absolute input-weight product is looked
     up from a precomputed value map that emulates the unary (bitstream-AND) multiplication
-    under the chosen RNG. Single-shot; trains via STE. Approximates nn.Linear
+    under the chosen RNG. It is single-shot, trains through a straight-through
+    estimator, and approximates ``nn.Linear``
     within the unary-multiplication bound. Rate coding, sign-magnitude.
     Requires ``widthi == widthw``.
 
@@ -548,20 +567,34 @@ class linear_hub(napl_base):
         are trainable parameters.
         """
         super().__init__(config, [])
-        self.in_features, self.out_features = in_features, out_features
+        #: Number of features consumed by the layer.
+        self.in_features = in_features
+        #: Number of features produced by the layer.
+        self.out_features = out_features
+        #: Quantization width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Quantization width used for weight values.
         self.widthw = config.get('widthw', 8)
         assert self.widthi == self.widthw, \
             logger.error(f'linear_hub requires widthi == widthw (got {self.widthi}, {self.widthw}).')
+        #: Number-sequence generator used for input values.
         self.rngi = config.get('rngi', 'sobol').lower()
+        #: Number-sequence generator used for weight values.
         self.rngw = config.get('rngw', 'sobol').lower()
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during quantization.
         self.rounding = config.get('rounding', 'round').lower()
-        # signmag is always True: one cycle bit is the sign, so cycle_max = 2**(width-1)
+        # Sign-magnitude encoding reserves one bit, so cycle_max is 2**(width-1).
+        #: Maximum cycle count supported by the unary product map.
         self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
         cycle_cfg = config.get('cycle', None)
+        #: Cycle count used for each unary product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
+        #: Lookup map used to evaluate unary products.
+        self.mapcbsg: torch.Tensor
         self.register_buffer('mapcbsg', mapcbsg)
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
@@ -597,7 +630,7 @@ class linear_hub(napl_base):
 def _tlut_decompose(mag, widtht, degree, cycle_neg, cycle_pos):
     """
     Temporal LUT decomposition: split a truncated fixed-point magnitude tensor into a
-    sum of `degree` `widtht`-bit temporal digits (each clamped to the run cycle range).
+    sum of ``degree`` ``widtht``-bit temporal digits, each clamped to the run cycle range.
     Returns the recomposed magnitude. Shared by the TLUT forward modes.
     """
     out = torch.zeros_like(mag)
@@ -675,7 +708,7 @@ class _linear_tlut_fpfp_fn(torch.autograd.Function):
         try:
             mantissa, exponent = torch.frexp(src)
         except NotImplementedError:
-            # frexp has no MPS kernel; compute it on cpu and move the results back (bit-exact).
+            # MPS lacks frexp; CPU results are bit-exact after transfer back.
             mantissa, exponent = torch.frexp(src.cpu())
             mantissa, exponent = mantissa.to(src.device), exponent.to(src.device)
         mantissa = _tlut_decompose(pow2_lshift(mantissa, width), widtht, degree, cycle_neg, cycle_pos)
@@ -702,11 +735,12 @@ class linear_tlut(napl_base):
     """Apply a temporal-LUT approximation of ``torch.nn.Linear``.
 
     Use this single-shot trainable layer to decompose either the input or weight
-    into temporal digits while retaining a numeric interface. The chosen operand (input or
-    weight) is decomposed into a sum of widtht-bit temporal digits and accumulated, while
-    the other operand stays fixed-point (fxp) or floating-point (fp). Three modes follow
-    from the (formati, formatw) pair: fxpfxp, fxpfp, fpfp. Single-shot; trains via
-    STE and approximates ``nn.Linear`` within the temporal-decomposition bound.
+    into temporal digits while retaining a numeric interface. The chosen operand
+    is decomposed into a sum of ``widtht``-bit temporal digits and accumulated,
+    while the other operand stays fixed-point or floating-point. The
+    ``(formati, formatw)`` pair selects ``fxpfxp``, ``fxpfp``, or ``fpfp`` mode.
+    The layer is single-shot, trains through a straight-through estimator, and
+    approximates ``nn.Linear`` within the temporal-decomposition bound.
 
     .. rubric:: Example
 
@@ -768,40 +802,62 @@ class linear_tlut(napl_base):
                 * **name** - Optional instance label. Defaults to ``None``.
         """
         super().__init__(config, [])
-        self.in_features, self.out_features = in_features, out_features
+        #: Number of features consumed by the layer.
+        self.in_features = in_features
+        #: Number of features produced by the layer.
+        self.out_features = out_features
+        #: Operand decomposed into temporal digits.
         self.temporal = config.get('temporal', 'i').lower()
+        #: Number of bits represented by each temporal digit.
         self.widtht = config.get('widtht', 4)
+        #: Numeric format used for input values.
         self.formati = config.get('formati', 'fxp').lower()
+        #: Numeric format used for weight values.
         self.formatw = config.get('formatw', 'fxp').lower()
+        #: Fixed-point width used for input values.
         self.widthi = config.get('widthi', 8)
+        #: Fixed-point width used for weight values.
         self.widthw = config.get('widthw', 8)
+        #: Input-magnitude quantile used to choose the scaling shift.
         self.quantilei = config.get('quantilei', 1)
+        #: Weight-magnitude quantile used to choose the scaling shift.
         self.quantilew = config.get('quantilew', 1)
+        #: Rounding mode used during fixed-point conversion.
         self.rounding = config.get('rounding', 'round').lower()
         assert self.temporal in ('i', 'input', 'w', 'weight'), \
             logger.error(f"linear_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}.")
 
         if self.formati == 'fxp' and self.formatw == 'fxp':
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fxpfxp'
         elif self.formati != 'fxp' and self.formatw != 'fxp':
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fpfp'
         else:
+            #: Arithmetic path selected from the input and weight formats.
             self.mode = 'fxpfp'
 
+        #: Maximum number of temporal cycles per product.
         self.cycle_max = 2 ** self.widtht
         cycle_cfg = config.get('cycle', None)
+        #: Number of temporal cycles used per product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
+        #: Input magnitude width excluding its sign bit.
         self.widthi_mag = self.widthi - 1
+        #: Weight magnitude width excluding its sign bit.
         self.widthw_mag = self.widthw - 1
 
-        # bit-width of the temporal operand's magnitude
         if self.temporal in ('i', 'input'):
             fmt = self.formati
+            #: Bit width of the operand decomposed into temporal digits.
             self.width = self.widthi - 1 if fmt == 'fxp' else _TLUT_FP_WIDTH[fmt]
         else:
             fmt = self.formatw
+            #: Bit width of the operand decomposed into temporal digits.
             self.width = self.widthw - 1 if fmt == 'fxp' else _TLUT_FP_WIDTH[fmt]
+        #: Number of temporal digits required for the selected operand.
         self.degree = int(math.ceil(self.width / self.widtht))
+        #: Leading padding bits in the temporal decomposition.
         self.delta = int(self.degree * self.widtht - self.width)
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)

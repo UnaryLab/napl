@@ -40,9 +40,8 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "dff.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "dff_params.vh"
 
-# test_dff.py dff_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_dff.py.
 DFF = {"depth": 1}
-# test_dff.py codec_config: the encoder feeding dff.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -50,17 +49,14 @@ def main():
     model = dff(config=dict(DFF))
     model.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
     stream = []
     for v in rep_values(CODEC["polarity"]):
         stream += encode_value(CODEC, v)
 
-    # mid-stream reset point: roughly halfway, to dirty the FIFO then prove the
-    # model and RTL both return to the all-zeros reset state.
+    # The midpoint marker tests reset after the FIFO has changed.
     reset_at = len(stream) // 2
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     PARAMS.write_text(
         f"`define GEN_DEPTH {DFF['depth']}\n"
         f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"

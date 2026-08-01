@@ -14,8 +14,8 @@ caps cycle at 2**(width-1)). This keeps the cycle/bitwidth pairing faithful to t
 upstream knobs.
 
 Run (from the repo root, napl env), after train_fp.py:
-    conda run -n napl python examples/usystolic/eval_sweep.py
-    conda run -n napl python examples/usystolic/eval_sweep.py --test-size 2000 --device cpu
+    conda run -n napl python zoo/usystolic/eval_sweep.py
+    conda run -n napl python zoo/usystolic/eval_sweep.py --test-size 2000 --device cpu
 """
 import argparse
 import csv
@@ -31,7 +31,7 @@ DATA_DIR = HERE / "data"
 CKPT = HERE / "checkpoints" / "convnet_mnist.pt"
 RESULT_CSV = HERE / "results" / "convnet_mnist_result.csv"
 
-# (cycle, bitwidth) pairs with cycle = 2**(bitwidth-1), matching the upstream sweep.
+# Each pair satisfies cycle == 2**(bitwidth - 1).
 SWEEP = [(32, 6), (64, 7), (128, 8), (256, 9), (512, 10), (1024, 11)]
 
 

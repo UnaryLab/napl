@@ -43,7 +43,7 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sqrt_emit.vec"
 
-# test_sqrt_emit.py codec_config: the encoder feeding sqrt_emit.
+# Encoder settings mirror test_sqrt_emit.py.
 CODEC = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 4}
 
 
@@ -53,12 +53,9 @@ def main():
     uni.reset()
     bip.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
-    # mark the FIRST cycle of each operand segment except the very first so we
-    # can inject a mid-stream reset partway through the stream (dirtied state).
+    # rst marks the first cycle of the selected reset segment.
     stream = []          # list of (bit, rst_flag)
     vals = rep_values(CODEC["polarity"])
-    # pick a reset point well into the stream (start of the 3rd operand segment)
     reset_seg = 2 if len(vals) > 2 else len(vals) - 1
     for si, v in enumerate(vals):
         seg = encode_value(CODEC, v)

@@ -1,28 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// GEN_WIDTH is emitted by gen/gen_mul_csg.py from the op's sizing config, so the
-// DUT WIDTH parameter is inherited from the Python model. iverilog resolves this
-// include relative to the compile cwd (imp/), not ../vec.
+// Generated WIDTH mirrors the Python model configuration.
 `include "mul_csg/vec/mul_csg_params.vh"
-//==============================================================================
-// Self-checking testbench for mul_csg (unipolar + bipolar).
-//
-// Reads golden vectors produced by gen/gen_mul_csg.py (from the napl Python
-// model, config timestep=256 generator='sobol') and asserts both polarity RTL
-// modules reproduce them cycle for cycle. Prints "PASS ..." iff every vector
-// matches; the Makefile greps for that line to decide the exit status.
-//
-// Vector columns:  rst in_0 in_1u out_uni in_1b out_bi
-//   rst==1 marks the first cycle of an independent sequence: we pulse i_rst_n
-//   low so the ROM-index counters reload to 0 (matching the model's reset()).
-//
-// Timing: the model output at cycle t uses the counter state BEFORE its t-th
-// increment. In the RTL the output is combinational in the current seq_idx
-// register, so per cycle we (1) drive inputs, (2) let the output settle, (3)
-// check, then (4) pulse a clock edge to advance the counters for cycle t+1.
-//
-// Run (from src/napl/imp/):  make test OP=mul_csg
-//==============================================================================
+// Python golden rows are <rst> <in_0> <in_1u> <out_u> <in_1b> <out_b>.
+// Outputs use pre-update ROM indices; rst=1 first clears both counters.
+// Co-sim: make test OP=mul_csg
 module mul_csg_tb;
     reg                 i_clk;
     reg                 i_rst_n;
@@ -83,7 +65,6 @@ module mul_csg_tb;
                     #1;
                 end
 
-                // drive inputs and let the combinational output settle
                 i_input_0  = a;
                 i_input_1u = in1u[`GEN_WIDTH:0];
                 i_input_1b = in1b[`GEN_WIDTH:0];

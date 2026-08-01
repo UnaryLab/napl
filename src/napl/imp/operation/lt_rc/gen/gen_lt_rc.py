@@ -33,7 +33,7 @@ from _gen_common import encode_value, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "lt_rc.vec"
 
-# test_lt_rc.py codec_config1/2: the two encoders feeding lt_rc, distinct dims.
+# Encoder settings mirror test_lt_rc.py and use distinct Sobol dimensions.
 CODEC0 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2}
 

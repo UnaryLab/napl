@@ -1,19 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for min_rc.
-//
-// Reads golden vectors produced by gen/gen_min_rc.py (from the napl Python
-// model) and drives the same per-cycle spike stream into the DUT. Pulses
-// i_rst_n low first so the co-sim starts from the post-reset() state (cnt=0,
-// dff=0). Each vector is applied for exactly one posedge i_clk -- one Python
-// forward() timestep == one clock -- and the registered/combinational outputs
-// are sampled just before the edge. Prints "PASS ..." iff every vector matches;
-// the Makefile greps for that line to decide the exit status.
-//
-// Run (from src/napl/imp/):
-//   make test OP=min_rc
-//==============================================================================
+// Python golden min/argmin outputs are checked before each posedge advances
+// state. The reset flag clears result and cnt before its row.
+// Co-sim: make test OP=min_rc
 module min_rc_tb;
     reg  clk, rst_n;
     reg  in_0, in_1;
@@ -54,16 +43,11 @@ module min_rc_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b %b %b %b\n", a, b, exp_min, exp_arg, rst_mid);
             if (code == 5) begin
-                // mid-stream reset: pulse i_rst_n low so the DUT re-enters the
-                // post-reset() state (cnt=0, dff=0) exactly where the Python
-                // model calls reset() again, proving reset equivalence from a
-                // dirtied state.
                 if (rst_mid) begin
                     rst_n = 1'b0;
                     @(posedge clk);
                     #1 rst_n = 1'b1;
                 end
-                // drive inputs for this timestep, settle combinational paths
                 in_0 = a;
                 in_1 = b;
                 #1;

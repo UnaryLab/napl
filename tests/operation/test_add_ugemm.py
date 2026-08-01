@@ -13,7 +13,6 @@ from napl.sim.metric import accuracy
 class napl_add_ugemm(napl_base):
     def __init__(self, codec_config, add_ugemm_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
@@ -22,7 +21,6 @@ class napl_add_ugemm(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.add_ugemm(i_spike, dim=-1)
         self.decoder(o_spike)
@@ -49,10 +47,10 @@ def run_case(polarity, scaled, input, device, timestep=256):
 
     entry = input.size(-1)
     if scaled:
-        # scaled mode averages: output ~= sum/entry
+        # Scaled mode averages across entries.
         r_value = torch.sum(input, dim=-1) / entry
     else:
-        # non-scaled mode: output ~= sum, clipped to the polarity range
+        # Non-scaled mode clips the sum to the polarity range.
         lo = -1.0 if polarity == 'bipolar' else 0.0
         r_value = torch.sum(input, dim=-1).clamp(lo, 1.0)
 
@@ -76,10 +74,10 @@ def _kernel_specific_checks():
     entry = 8
     width = math.log2(timestep)
 
-    # identical inputs across devices and variants
+    # Reuse inputs across devices and variants.
     input_scaled_uni = gen_rand_tensor('unipolar', shape=(2000, entry), width=width).type(global_config.ntype)
     input_scaled_bi = gen_rand_tensor('bipolar', shape=(2000, entry), width=width).type(global_config.ntype)
-    # keep the sum inside the output range for non-scaled mode
+    # Keep non-scaled sums within the output range.
     input_ns_uni = input_scaled_uni / entry
     input_ns_bi = input_scaled_bi / entry
 

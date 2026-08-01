@@ -3,7 +3,6 @@ import subprocess
 import sys
 
 
-# Change this to the root directory if needed
 root_dir = os.path.abspath(os.path.dirname(__file__))
 log_file = root_dir + '/sweep_test.log'
 

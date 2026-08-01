@@ -8,15 +8,13 @@ is random and the train loop uses RANDOM labels purely as a smoke test that the
 training path executes.
 
 Run:
-    /Users/diwu/anaconda3/envs/napl/bin/python examples/ubrain/run_fp.py
-(equivalently `conda run -n napl python ...`; see README for the env note.)
+    conda run -n napl python zoo/ubrain/run_fp.py
 """
 
 import time
 import torch
 
 from model import Cascade_CNN_RNN_FP
-from napl.utils._shared_test import devices
 
 
 def sync(device):
@@ -27,8 +25,17 @@ def sync(device):
 
 
 def eeg_input(batch, win, input_sz, device):
-    # EEG-shaped random input: (batch, win, h, w), values in a plausible [-1, 1] range.
+    # EEG-shaped input uses (batch, win, height, width) and values in [-1, 1].
     return (torch.rand(batch, win, input_sz[0], input_sz[1], device=device) * 2 - 1)
+
+
+def devices():
+    available = ['cpu']
+    if torch.cuda.is_available():
+        available.append('cuda')
+    if torch.backends.mps.is_available():
+        available.append('mps')
+    return available
 
 
 def main():
@@ -48,7 +55,6 @@ def main():
         model.eval()
         x = eeg_input(batch, win, input_sz, device)
 
-        # forward
         sync(device)
         t0 = time.perf_counter()
         with torch.no_grad():
@@ -61,8 +67,7 @@ def main():
             print(f'  head[{k}] (num_class={num_class[k]}) shape {tuple(h.shape)}, '
                   f'range [{h.min().item():.3f}, {h.max().item():.3f}]')
 
-        # tiny SYNTHETIC train loop (RANDOM labels) -- NOT a result, only proves
-        # the training path runs end-to-end.
+        # Random labels exercise the synthetic training path; they are not results.
         model.train()
         opt = torch.optim.SGD(model.parameters(), lr=1e-2)
         lossfn = torch.nn.CrossEntropyLoss()

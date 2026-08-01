@@ -37,9 +37,8 @@ from _gen_common import encode_value, rep_values
 VEC = Path(__file__).resolve().parent.parent / "vec" / "signabs.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "signabs_params.vh"
 
-# test_signabs.py signabs_config: the sizing param the op is built with.
+# Sizing and encoder settings mirror test_signabs.py.
 SIGNABS = {"width": 3}
-# test_signabs.py codec_config: the encoder feeding signabs.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -47,21 +46,17 @@ def main():
     model = signabs(config=SIGNABS)
     model.reset()
 
-    # the test's encoder streams for representative operands, concatenated.
-    # Each (bit, reset_flag) pair: reset_flag=1 means apply reset() BEFORE this
-    # timestep, dirtying the accumulator first to prove reset equivalence.
+    # reset_flag requests reset before the corresponding timestep.
     values = rep_values(CODEC["polarity"])
     mid = len(values) // 2
     items = []
     for idx, v in enumerate(values):
         bits = encode_value(CODEC, v)
         for j, bit in enumerate(bits):
-            # mid-stream reset: at the first bit of the middle operand segment.
             reset_flag = 1 if (idx == mid and j == 0) else 0
             items.append((bit, reset_flag))
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    # Emit the param header the testbench includes to override the RTL parameter.
     PARAMS.write_text(f"`define GEN_WIDTH {SIGNABS['width']}\n")
 
     rows = 0

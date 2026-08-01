@@ -58,7 +58,6 @@ def rep_pairs(p0, p1, n=8, seed=0, range0=None, range1=None):
     a = rep_values(p0, n_draw=3, seed=seed, value_range=range0)
     b = rep_values(p1, n_draw=3, seed=seed + 1, value_range=range1)
     pairs = []
-    # corner cross-product (rails + mids of each), then zipped draws
     for x in a[:5]:
         for y in b[:5]:
             pairs.append((x, y))
@@ -94,7 +93,6 @@ def rep_values(polarity, n_draw=4, seed=0, value_range=None):
     sweep = [lo + (hi - lo) * k / 6 for k in range(1, 6)]
     g = torch.Generator().manual_seed(seed)
     draws = (lo + (hi - lo) * torch.rand(n_draw, generator=g)).tolist()
-    # de-dup while preserving order
     out, seen = [], set()
     for x in corners + sweep + draws:
         key = round(x, 6)

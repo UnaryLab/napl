@@ -32,7 +32,7 @@ with `torch.mps.synchronize()`); they are per-workload, not comparable across ro
 
 
 def cell(s):
-    # pipes break markdown table columns; escape them
+    # Escape pipes to preserve Markdown table columns.
     return str(s).replace("|", "\\|").strip()
 
 
@@ -53,24 +53,23 @@ def main():
     row = "| " + " | ".join(cell(x) for x in (
         date, a.module, a.ref, a.bitexact, a.agreement, a.cpu, a.gpu, a.regimes)) + " |"
 
-    # collect existing data rows (the table body), if any
     new = not os.path.exists(a.file)
     rows = []
     if not new:
         with open(a.file) as f:
             lines = f.read().splitlines()
-        # data rows are pipe-rows after the header/separator that are not the separator itself
+        # Keep table data rows, excluding the separator.
         for ln in lines:
             s = ln.strip()
             if s.startswith("|") and "Date | napl module" not in s and set(s) - set("|-: "):
                 rows.append(ln.rstrip())
 
     rows.append(row)
-    # rank the log by module name (col 2) only, not by date
+    # Sort by module name, independent of record date.
     def key(r):
         parts = [c.strip() for c in r.strip().strip("|").split("|")]
-        return parts[1].lower()  # module name only
-    rows = sorted(dict.fromkeys(rows), key=key)  # dedupe identical rows, then sort
+        return parts[1].lower()
+    rows = sorted(dict.fromkeys(rows), key=key)
 
     os.makedirs(os.path.dirname(a.file) or ".", exist_ok=True)
     with open(a.file, "w") as f:

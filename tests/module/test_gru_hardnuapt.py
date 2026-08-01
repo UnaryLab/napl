@@ -30,14 +30,14 @@ def _kernel_specific_checks():
         x = (torch.rand(b, isz, device=device) * 2 - 1)
         hx = (torch.rand(b, hsz, device=device) * 2 - 1)
 
-        # hard=True vs independent reference
+        # Check hard activations against an independent reference.
         y = cell(x, hx)
         ref = _ref_gru_hard(x, hx, cell.weight_ih, cell.weight_hh, cell.bias_ih, cell.bias_hh)
         assert y.shape == (b, hsz)
         assert torch.allclose(y, ref, atol=1e-6), device
-        assert cell(x).shape == (b, hsz)  # hx=None default
+        assert cell(x).shape == (b, hsz)  # Default hx=None path.
 
-        # hard=False vs nn.GRUCell with identical weights
+        # Check soft activations against nn.GRUCell with identical weights.
         soft = gru_hardnuapt(isz, hsz, bias=True, config={'hard': False}).to(device)
         gru = torch.nn.GRUCell(isz, hsz, bias=True).to(device)
         with torch.no_grad():
@@ -47,16 +47,15 @@ def _kernel_specific_checks():
             gru.bias_hh.copy_(soft.bias_hh)
         assert torch.allclose(soft(x, hx), gru(x, hx), atol=1e-5), device
 
-        # gradients flow
         xg = x.clone().requires_grad_(True)
         cell(xg, hx).sum().backward()
         assert torch.isfinite(xg.grad).all()
         assert torch.isfinite(cell.weight_ih.grad).all()
 
-        # performance vs nn.GRUCell baseline, identical inputs
+        # Compare against nn.GRUCell on identical inputs.
         xb = torch.rand(256, isz, device=device) * 2 - 1
         hb = torch.rand(256, hsz, device=device) * 2 - 1
-        for _ in range(3):  # warmup
+        for _ in range(3):  # Warm up before timing.
             cell(xb, hb)
             gru(xb, hb)
         sync(device)

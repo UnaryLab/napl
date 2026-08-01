@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_sqrt_traceiscb(napl_base):
     def __init__(self, codec_config, sqrt_traceiscb_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sqrt_traceiscb = sqrt_traceiscb(sqrt_traceiscb_config)
@@ -23,7 +22,6 @@ class napl_sqrt_traceiscb(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.sqrt_traceiscb(i_spike)
         self.decoder(o_spike)
@@ -45,10 +43,8 @@ def _kernel_specific_checks():
         'polarity': 'bipolar',
     }
     
-    # Generate random inputs based on polarity, ensure positive numbers
     input_cpu = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
 
-    # generate the napl_sqrt_traceiscb instance
     for device in devices():
         input = input_cpu.to(device)
         sqrt_traceiscb_inst = napl_sqrt_traceiscb(codec_config, sqrt_traceiscb_config).to(device)
@@ -101,5 +97,19 @@ def test_sqrt_traceiscb():
     streaming_suite(CONFIG)
 
 
+def test_sqrt_traceiscb_matches_unarysim_trace():
+    expected = torch.tensor([0, 0, 0, 1], dtype=global_config.stype)
+
+    for polarity in ('unipolar', 'bipolar'):
+        operation = sqrt_traceiscb({'polarity': polarity})
+        output = torch.stack([
+            operation(torch.zeros((2, 3), dtype=global_config.stype))
+            for _ in range(4)
+        ])
+
+        assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
+
+
 if __name__ == '__main__':
     test_sqrt_traceiscb()
+    test_sqrt_traceiscb_matches_unarysim_trace()

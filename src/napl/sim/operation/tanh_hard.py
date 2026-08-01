@@ -35,6 +35,7 @@ class tanh_hard(napl_base):
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
         super().__init__(config, [], polarity_required=False)
+        #: Hardware latency and timing metadata for the combinational hard tanh.
         self.hw = hw_params(pp_delay=0)
 
 

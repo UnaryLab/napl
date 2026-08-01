@@ -1,27 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for relu_sat.
-//
-// Reads golden vectors produced by gen/gen_relu_sat.py (from the napl Python
-// model) and asserts the RTL reproduces them cycle-for-cycle. relu_sat is
-// stateful and combinational from state (pp_delay=0): each vector row is one
-// timestep "<rst> <i_input> <o_out>".
-//
-//   * rst=0 : a normal timestep. Drive i_input, sample o_out in the same cycle
-//             (combinational from the accumulators), then pulse one posedge
-//             i_clk to commit the accumulator update.
-//   * rst=1 : the model called reset() BEFORE this timestep. Assert i_rst_n low
-//             across a posedge so the async reset loads acc_sub=acc_add=0, then
-//             release it and proceed as a normal cycle. This appears at the
-//             stream start AND mid-stream (after the accumulators are dirtied),
-//             proving the RTL's async i_rst_n reproduces model.reset() exactly.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=relu_sat
-//==============================================================================
+// Python golden rows are <rst> <input> <out>. Output is checked before each
+// posedge updates state; rst=1 first clears both accumulators.
+// Co-sim: make test OP=relu_sat
 module relu_sat_tb;
     reg  i_clk;
     reg  i_rst_n;
@@ -35,7 +16,7 @@ module relu_sat_tb;
         .o_out  (o_out)
     );
 
-    // 10ns clock
+    // 10 ns clock period.
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
@@ -67,17 +48,15 @@ module relu_sat_tb;
                     @(negedge i_clk);
                     i_rst_n = 1'b1;
                 end
-                // Drive the input on a negedge so it is stable; o_out is
-                // combinational from the (now possibly reset) accumulators.
                 i_input = in_b;
-                #1;                     // let the combinational output settle
+                #1;
                 n = n + 1;
                 if (o_out !== exp_out) begin
                     $display("FAIL cycle %0d: rst=%b i_input=%b got %b exp %b",
                              n, rst_b, in_b, o_out, exp_out);
                     fails = fails + 1;
                 end
-                @(posedge i_clk);       // advance the accumulator state
+                @(posedge i_clk);
                 @(negedge i_clk);
             end
         end

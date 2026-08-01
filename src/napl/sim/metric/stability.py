@@ -66,11 +66,15 @@ class stability(napl_base):
         """
         super().__init__(config, ['polarity', 'threshold'], polarity_required=True)
 
+        #: Expected decoded value used as the per-element stability reference.
+        self.source: torch.Tensor
         self.register_buffer('source', source)
+        #: Maximum absolute progressive error treated as stable.
         self.threshold = config['threshold']
-        # inner progressive-error monitor
+        #: Progressive decoder and error monitor for the observed spike stream.
         self.accuracy = accuracy({'polarity': self.polarity})
-        # last timestep (per element) at which the error was still above threshold
+        #: Last timestep at which each element exceeded :attr:`threshold`.
+        self.cycle_to_stable: torch.Tensor
         self.register_buffer('cycle_to_stable', torch.zeros_like(source))
 
 
@@ -102,19 +106,11 @@ class stability(napl_base):
 
             metric(torch.tensor([1.0]))
         """
-        # accumulate progressive precision; only the per-element error is needed here, so
-        # take it directly rather than via analyze (which also runs unused reductions).
         self.accuracy(spike)
         spike_value = self.accuracy.spike_value
-        # per-element error vs source; sub_/abs_ in place on the fresh spike_value
-        # (the spike_value property returns a new tensor on each access, so mutating
-        # it here leaves self.source and accuracy's state untouched). Both
-        # operands are float, so in-place subtraction does not change dtype.
-        # mark this cycle as the last unstable one wherever the error exceeds threshold;
-        # masked_fill_ is the in-place conditional assignment cycle_to_stable[mask] = cycle
+        # spike_value is fresh float state, so in-place error math cannot alias stored data.
         unstable = spike_value.sub_(self.source).abs_() > self.threshold
         self.cycle_to_stable.masked_fill_(unstable, self.accuracy.timestep_cur)
-        # no return: readers access .stability on demand.
 
 
     @property
@@ -161,7 +157,6 @@ class stability(napl_base):
             value, result = metric.analyze()
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
-        # one property access: stability computes from cycle_to_stable on each read
         stability = self.stability
         result = analyze(
             stability,

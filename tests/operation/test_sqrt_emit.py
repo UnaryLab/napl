@@ -14,7 +14,6 @@ from napl.sim.metric import accuracy
 class napl_sqrt_emit(napl_base):
     def __init__(self, codec_config, sqrt_emit_config):
         super().__init__()
-        # set up encoder, decoder, adder, and accuracy
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.sqrt_emit = sqrt_emit(sqrt_emit_config)
@@ -23,7 +22,6 @@ class napl_sqrt_emit(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        # forward is a description of the circuit
         i_spike = self.encoder(input)
         o_spike = self.sqrt_emit(i_spike)
         self.decoder(o_spike)
@@ -45,11 +43,8 @@ def _kernel_specific_checks():
         'polarity': 'unipolar',
     }
     
-    # Generate random inputs based on polarity, ensure positive numbers
     input_cpu = gen_rand_tensor('unipolar', shape=(10000,), width=math.log2(codec_config['timestep'])).type(global_config.ntype)
-    # input = gen_arange_tensor('unipolar', width=math.log2(codec_config['timestep'])).type(global_config.ntype).to(device)
 
-    # generate the napl_sqrt_emit instance
     for device in devices():
         input = input_cpu.to(device)
         sqrt_emit_inst = napl_sqrt_emit(codec_config, sqrt_emit_config).to(device)

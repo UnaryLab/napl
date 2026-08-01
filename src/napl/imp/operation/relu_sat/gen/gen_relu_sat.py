@@ -36,7 +36,7 @@ from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "relu_sat.vec"
 
-# test_relu_sat.py codec_config: the encoder feeding relu_sat.
+# Encoder settings mirror test_relu_sat.py.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 
@@ -55,7 +55,7 @@ def main():
     VEC.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with VEC.open("w") as f:
-        # the first row after reset() carries rst=1 (tb pulses i_rst_n low).
+        # rst marks the first cycle after reset().
         first = True
         for b in rep_stream():
             out = int(model(torch.tensor(b, dtype=model.stype)).item())
@@ -63,11 +63,7 @@ def main():
             first = False
             rows += 1
 
-        # --- mid-stream reset equivalence ---------------------------------
-        # Dirty the accumulators with a run of all-1s (drives them up to the
-        # saturation rail), then reset() and replay a fresh stream. The first
-        # post-reset row carries rst=1; the RTL's async i_rst_n must reproduce
-        # the model's reset() so outputs match from a dirtied state onward.
+        # Saturate the accumulators before testing a mid-stream reset.
         for _ in range(16):
             b = 1
             out = int(model(torch.tensor(b, dtype=model.stype)).item())

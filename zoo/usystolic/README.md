@@ -14,11 +14,11 @@ Upstream source: `UnarySim/app/uSystolic/convnet_mnist/` (branch `stable-v0`).
 The HUB and FXP conv/linear cells are napl's existing single-shot, binary-domain
 kernels, used as-is (nothing in `src/napl/` was modified):
 
-- `napl.sim.module.conv_hub`, `napl.sim.module.linear_hub` -- the uSystolic unary-MAC model.
+- `napl.conv_hub`, `napl.linear_hub` -- the uSystolic unary-MAC model.
   Input and weight are quantized to sign-magnitude fixed point and each
   `|input| x |weight|` product is read from a precomputed unary-multiplication value
   map. Knob: `cycle` (the unary MAC cycle count).
-- `napl.sim.module.conv_fxp`, `napl.sim.module.linear_fxp` -- the fixed-point model. Input and
+- `napl.conv_fxp`, `napl.linear_fxp` -- the fixed-point model. Input and
   weight are dynamically scaled to `widthi`/`widthw`-bit fixed point, matmul'd, then
   shifted back. Knob: `bitwidth` (= widthi = widthw).
 
@@ -56,9 +56,9 @@ log_softmax
 ## Run (from the repo root, napl env)
 
 ```sh
-conda run -n napl python examples/usystolic/train_fp.py
-conda run -n napl python examples/usystolic/eval_sweep.py            # MPS if available, 2000 test imgs
-conda run -n napl python examples/usystolic/eval_sweep.py --test-size 10000 --device cpu  # full set on CPU
+conda run -n napl python zoo/usystolic/train_fp.py
+conda run -n napl python zoo/usystolic/eval_sweep.py            # MPS if available, 2000 test imgs
+conda run -n napl python zoo/usystolic/eval_sweep.py --test-size 10000 --device cpu  # full set on CPU
 ```
 
 The scripts use sibling imports (`from model import ...`), so run them as shown

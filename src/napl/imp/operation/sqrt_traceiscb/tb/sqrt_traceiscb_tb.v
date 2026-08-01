@@ -1,30 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
-//==============================================================================
-// Self-checking testbench for sqrt_traceiscb (unipolar + bipolar variants).
-//
-// Reads golden vectors produced by gen/gen_sqrt_traceiscb.py (from the napl
-// Python model) and asserts both polarity DUTs reproduce them cycle by cycle.
-//
-// Timing contract (matches the Python forward()): the output at timestep t is
-// combinational from the current input and the registered state at the START of
-// the cycle. So per cycle we (1) drive i_input, (2) let the combinational o_out
-// settle, (3) check it against the expected column, then (4) pulse one posedge
-// i_clk to advance the registered state. i_rst_n is held low first so the co-sim
-// starts from the exact post-reset() state (all registers 0).
-//
-// Each vector also carries a reset marker (first column). When it is 1, the
-// model applied reset() at the START of that cycle; the tb mirrors this by
-// pulsing i_rst_n low across a posedge (reloading the post-reset() state) before
-// driving the input. The generator injects one such mid-stream reset from a
-// dirtied state, so the co-sim proves the RTL reset matches reset() at an
-// arbitrary point, not only at t=0.
-//
-// Prints "PASS ..." iff every vector matches; the Makefile greps for that line.
-//
-// Run (from src/napl/imp/):
-//   make test OP=sqrt_traceiscb
-//==============================================================================
+// Python golden outputs for both polarities are checked before each posedge
+// advances state. The reset column requests active-low reset before its row.
+// Co-sim: make test OP=sqrt_traceiscb
 module sqrt_traceiscb_tb;
     reg  clk;
     reg  rst_n;
@@ -49,20 +27,16 @@ module sqrt_traceiscb_tb;
     integer fd, code, n, fails;
     reg a, exp_uni, exp_bi, rst_mark;
 
-    // Free-running clock: 10ns period.
+    // 10 ns clock period.
     initial clk = 1'b0;
     always #5 clk = ~clk;
 
     initial begin
         in_bit = 1'b0;
 
-        // Assert active-low reset across a posedge so every register loads its
-        // post-reset() value (all zero). Release reset ON the negedge that
-        // immediately precedes the first checked cycle, so NO extra posedge
-        // advances the state before the first input is driven (the first checked
-        // state is the exact post-reset() state).
+        // Release reset on the negedge immediately before the first checked row.
         rst_n = 1'b0;
-        @(posedge clk);   // async reset already holds; this edge keeps state at 0
+        @(posedge clk);
         @(negedge clk);
         rst_n = 1'b1;
 
@@ -77,21 +51,15 @@ module sqrt_traceiscb_tb;
         while (!$feof(fd)) begin
             code = $fscanf(fd, "%b %b %b %b\n", rst_mark, a, exp_uni, exp_bi);
             if (code == 4) begin
-                // We are on a negedge: registers are stable. If this cycle is a
-                // reset cycle, pulse i_rst_n low across a posedge to reload the
-                // post-reset() state (mirrors the model's mid-stream reset()),
-                // then return to a negedge before driving the input.
                 if (rst_mark) begin
                     rst_n = 1'b0;
-                    @(posedge clk);   // async reset reloads all registers to 0
+                    @(posedge clk);
                     @(negedge clk);
                     rst_n = 1'b1;
                 end
-                // Drive this cycle's input, let o_out (combinational) settle,
-                // then check both DUTs.
                 n = n + 1;
                 in_bit = a;
-                #1;  // let combinational outputs settle
+                #1;
                 if (out_uni !== exp_uni) begin
                     $display("FAIL uni cyc=%0d in=%b : got %b exp %b", n, a, out_uni, exp_uni);
                     fails = fails + 1;
@@ -100,8 +68,8 @@ module sqrt_traceiscb_tb;
                     $display("FAIL bi  cyc=%0d in=%b : got %b exp %b", n, a, out_bi, exp_bi);
                     fails = fails + 1;
                 end
-                @(posedge clk);   // advance registered state
-                @(negedge clk);   // settle for the next check
+                @(posedge clk);
+                @(negedge clk);
             end
         end
         $fclose(fd);

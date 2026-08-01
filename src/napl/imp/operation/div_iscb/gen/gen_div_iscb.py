@@ -42,15 +42,13 @@ from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "div_iscb.vec"
 
-# test_div_iscb.py codec_config1/2: both bipolar on distinct sobol dims (1, 2).
-# The test sorts so |dividend| <= |divisor| (proper-fraction quotient) and the
-# divisor != 0.
+# Inputs mirror test_div_iscb.py: distinct Sobol dimensions and
+# |dividend| <= |divisor| with a nonzero divisor.
 CODEC0 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2}
 
 
 def build_streams():
-    # representative pairs with |dividend| <= |divisor| (!=0), mirroring the test.
     pairs = []
     for x, y in rep_pairs("bipolar", "bipolar"):
         lo, hi = (x, y) if abs(x) <= abs(y) else (y, x)
@@ -67,7 +65,6 @@ def main():
 
     dividend_stream, divisor_stream = build_streams()
     total = len(dividend_stream)
-    # mid-stream reset point: after the models are well dirtied, before the end.
     reset_at = total // 2
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
@@ -75,9 +72,7 @@ def main():
     with VEC.open("w") as f:
         for i, (dd, ds) in enumerate(zip(dividend_stream, divisor_stream)):
             if i == reset_at:
-                # Emit a reset-marker row: TB pulses i_rst_n low; outputs on this
-                # row are don't-care (1'bx) so they are not checked. Then reset
-                # the models so subsequent rows compare from the post-reset state.
+                # Reset rows carry don't-care outputs and reset both models before replay.
                 f.write(f"1 {dd} {ds} x x\n")
                 rows += 1
                 uni.reset()

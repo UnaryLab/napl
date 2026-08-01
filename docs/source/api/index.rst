@@ -1,8 +1,8 @@
 API reference
 =============
 
-These pages are generated from the signatures and docstrings in
-``src/napl/sim``.
+These pages are generated from the signatures and docstrings of the public
+callables exported by :mod:`napl`.
 
 .. toctree::
    :maxdepth: 1
@@ -12,3 +12,4 @@ These pages are generated from the signatures and docstrings in
    operations
    metrics
    algorithms
+   utilities

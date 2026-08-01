@@ -16,7 +16,11 @@ Module API
    conv_ugemm
    decoder
    encoder
+   gen_num_seq
+   get_lfsr_seq
+   get_sysrand_seq
    gru_hardnuapt
+   input_scale
    linear
    linear_fxp
    linear_gaines1
