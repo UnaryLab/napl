@@ -221,3 +221,4 @@ src/napl/imp/operation/*/vec/*.vh
 
 # Agent coordination state
 .peon-tasks.md
+.peon-code-task.md
