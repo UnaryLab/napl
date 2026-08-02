@@ -12,6 +12,7 @@ from napl.utils._shared_test import benchmark, devices
 
 
 def test_butterfly_spike():
+    """Verify the streaming complex butterfly matches the decoded FFT reference across devices."""
     torch.manual_seed(0)
     timestep = 256
     codec_config = {

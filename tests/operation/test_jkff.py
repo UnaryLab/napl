@@ -8,9 +8,7 @@ from napl.utils._shared_test import devices, sync
 
     
 def test_jkff():
-    """
-    Test jkff with a simple configuration.
-    """
+    """Verify JK flip-flop state transitions and reset behavior for known J/K sequences."""
 
     first_j = torch.tensor([[0., 0., 1., 1.]]).type(global_config.stype)
     first_k = torch.tensor([[0., 1., 0., 1.]]).type(global_config.stype)

@@ -61,6 +61,7 @@ CONFIG = {
 
 
 def test_signabs_interleave():
+    """Verify signabs_interleave against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

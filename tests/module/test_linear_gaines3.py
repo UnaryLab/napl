@@ -198,6 +198,7 @@ CONFIG = {
 
 
 def test_linear_gaines3():
+    """Verify linear_gaines3 against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

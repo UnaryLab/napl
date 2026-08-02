@@ -105,10 +105,12 @@ CONFIG = {
 
 
 def test_add_any():
+    """Verify add_any against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_add_any_uses_unarysim_strict_carry_threshold():
+    """Verify add_any uses UnarySim's strict carry threshold for exact-boundary sums."""
     input = torch.ones((2, 2), dtype=global_config.stype)
 
     for polarity in ('unipolar', 'bipolar'):

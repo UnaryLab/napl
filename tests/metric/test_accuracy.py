@@ -73,6 +73,7 @@ def make_inputs(timestep):
 
 
 def test_known_answer():
+    """Verify accuracy decoding and error statistics for known unipolar and bipolar streams."""
     cases = (
         (
             'unipolar',
@@ -107,6 +108,7 @@ def test_known_answer():
 
 
 def test_scaled_reference():
+    """Verify reference scaling changes accuracy errors without changing decoded spike values."""
     reference = torch.tensor([2.0, 1.0])
 
     for device in devices():
@@ -128,6 +130,7 @@ def test_scaled_reference():
 
 
 def test_fidelity():
+    """Verify accuracy matches decoder values and product references within stochastic tolerance."""
     timestep = 256
     input_0, input_1 = make_inputs(timestep)
 
@@ -148,6 +151,7 @@ def test_fidelity():
 
 
 def test_reset():
+    """Verify resetting accuracy clears its counters and reproduces the decoded stream."""
     timestep = 256
     input_0, input_1 = make_inputs(timestep)
 
@@ -169,6 +173,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify accuracy updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     shape = (100000,)
     torch.manual_seed(0)

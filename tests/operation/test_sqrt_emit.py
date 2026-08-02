@@ -95,6 +95,7 @@ CONFIG = {
 
 
 def test_sqrt_emit():
+    """Verify sqrt_emit against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

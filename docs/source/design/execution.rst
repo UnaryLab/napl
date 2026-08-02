@@ -11,8 +11,8 @@ Streaming classes model time-explicit dataflow: state and spike values advance
 through a composed network one timestep at a time. The shared lifecycle is
 defined by :class:`napl.napl_base`; see its :meth:`~napl.napl_base.__call__`,
 :attr:`~napl.napl_base.valid`, and :meth:`~napl.napl_base.reset` API entries.
-The :func:`napl.napl_sim_timesteps` and
-:func:`napl.napl_sim_timesteps_func` API entries define the repetition helpers.
+The :func:`napl.napl_sim_timesteps` decorator repeats module methods and free
+functions.
 
 A typical streaming loop is::
 

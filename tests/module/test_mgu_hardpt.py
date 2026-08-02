@@ -144,6 +144,7 @@ CONFIG = {
 
 
 def test_mgu_hardpt():
+    """Verify mgu_hardpt quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

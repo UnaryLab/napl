@@ -65,6 +65,7 @@ CONFIG = {
 
 
 def test_mul_shiftreg():
+    """Verify mul_shiftreg against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

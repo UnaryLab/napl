@@ -142,6 +142,7 @@ CONFIG = {
 
 
 def test_linear_tlut():
+    """Verify linear_tlut quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

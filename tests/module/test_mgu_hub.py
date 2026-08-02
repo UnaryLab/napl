@@ -9,11 +9,7 @@ from napl.sim.module import mgu_hard, mgu_hub
 
 
 def test_mgu_hub():
-    """
-    The hybrid mgu_hub (which runs the streaming mgu inner cell over 2**width cycles and
-    decodes with the accuracy metric) reproduces the float mgu_hard within a stochastic-
-    computing bound, validating both mgu and mgu_hub.
-    """
+    """Verify mgu_hub decodes close to mgu_hard within the stochastic error bound."""
     ntype = global_config.ntype
     torch.manual_seed(0)
     isz, hsz, b = 6, 4, 3

@@ -119,10 +119,12 @@ CONFIG = {
 
 
 def test_div_iscb():
+    """Verify div_iscb against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_div_iscb_matches_unarysim_history():
+    """Verify div_iscb reproduces UnarySim's initial quotient history by polarity."""
     cases = {
         'unipolar': ([0, 0], [0, 0], [0, 1]),
         'bipolar': ([0, 0], [1, 0], [0, 0]),

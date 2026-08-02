@@ -111,6 +111,7 @@ CONFIG = {
 
 
 def test_bi2uni():
+    """Verify bi2uni against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

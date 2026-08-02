@@ -304,42 +304,23 @@ class napl_base(torch.nn.Module):
 
 
 def napl_sim_timesteps(timestep_func):
-    """
-    This function is a decorator to simulate multiple timesteps in the NAPL framework.
-    """
-    @wraps(timestep_func)
-    def timesteps_wrapper(self, *args, **kwargs):
-        assert 'timesteps' in kwargs, \
-            logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
-        
-        timesteps = kwargs.pop('timesteps', 256)
-        verbose = kwargs.pop('verbose', False)
-        if verbose:
-            logger.info(f'Simulating <{timesteps}> timesteps in NAPL class <{self.__class__.__name__}>...')
-
-        for _ in range(timesteps):
-            output = timestep_func(self, *args, **kwargs)
-        return output
-    
-    return timesteps_wrapper
-
-
-def napl_sim_timesteps_func(timestep_func):
-    """
-    This function is a decorator to simulate multiple timesteps in the NAPL framework.
-    """
+    """Repeat a NAPL method or free function for a requested number of timesteps."""
     @wraps(timestep_func)
     def timesteps_wrapper(*args, **kwargs):
         assert 'timesteps' in kwargs, \
             logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
-        
+
         timesteps = kwargs.pop('timesteps', 256)
         verbose = kwargs.pop('verbose', False)
         if verbose:
-            logger.info(f'Simulating <{timesteps}> timesteps in NAPL function...')
+            if args and isinstance(args[0], napl_base):
+                target = f'class <{args[0].__class__.__name__}>'
+            else:
+                target = f'function <{timestep_func.__name__}>'
+            logger.info(f'Simulating <{timesteps}> timesteps in NAPL {target}...')
 
         for _ in range(timesteps):
-            out = timestep_func(*args, **kwargs)
-        return out
-    
+            output = timestep_func(*args, **kwargs)
+        return output
+
     return timesteps_wrapper

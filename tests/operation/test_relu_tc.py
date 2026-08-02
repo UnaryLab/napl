@@ -38,6 +38,7 @@ CONFIG = {
 
 
 def test_relu_tc():
+    """Verify relu_tc against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

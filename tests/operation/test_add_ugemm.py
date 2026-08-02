@@ -136,6 +136,7 @@ CONFIGS[-1]['extra_checks'] = _kernel_specific_checks
 
 
 def test_add_ugemm():
+    """Verify add_ugemm against analytic and known-answer streams, including reset and timing."""
     for config in CONFIGS:
         streaming_suite(config)
 

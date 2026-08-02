@@ -176,6 +176,7 @@ CONFIG = {
 
 
 def test_linear_ugemm():
+    """Verify linear_ugemm against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

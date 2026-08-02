@@ -118,6 +118,7 @@ CONFIG = {
 
 
 def test_sync_skewed():
+    """Verify sync_skewed against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

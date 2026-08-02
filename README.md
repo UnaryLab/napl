@@ -44,7 +44,7 @@ Run the full suite, which walks `tests/` and runs every `test_*.py` as a standal
 conda run -n napl python tests/sweep_test.py
 ```
 
-## Documentation
+### Documentation
 
 The Sphinx sources live under [`docs/`](docs/). Build the design documentation
 and docstring-based API reference as static HTML with:

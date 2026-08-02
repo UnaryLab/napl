@@ -61,6 +61,7 @@ CONFIG = {
 
 
 def test_signabs_shiftreg():
+    """Verify signabs_shiftreg against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

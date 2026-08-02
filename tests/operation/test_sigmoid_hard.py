@@ -95,10 +95,12 @@ CONFIG = {
 
 
 def test_sigmoid_hard():
+    """Verify sigmoid_hard against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_sigmoid_hard_matches_unarysim_carry_sequence():
+    """Verify sigmoid_hard reproduces UnarySim's carry sequence for both polarities."""
     input_values = [1, 1, 0]
     expected = torch.tensor([0, 1, 1], dtype=global_config.stype)
 

@@ -39,6 +39,7 @@ def run_stability_norm(val, device, timestep, modules=None):
 
 
 def test_fidelity():
+    """Verify normalized stability remains bounded and consistent across supported devices."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
     results = {}
@@ -58,6 +59,7 @@ def test_fidelity():
 
 
 def test_known_answer():
+    """Verify normalized stability reaches one for a constant matching stream."""
     timestep = 256
 
     for device in devices():
@@ -91,6 +93,7 @@ def test_known_answer():
 
 
 def test_reset():
+    """Verify resetting normalized stability clears nested state and reproduces its result."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
@@ -111,6 +114,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify normalized stability meets the configured runtime bounds across supported devices."""
     timestep = 64
     torch.manual_seed(0)
     stream = torch.randint(0, 2, (timestep, 256)).float()

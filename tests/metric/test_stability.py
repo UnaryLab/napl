@@ -38,6 +38,7 @@ def run_stability(val, device, timestep, modules=None):
 
 
 def test_fidelity():
+    """Verify stability scores remain bounded and identify convergent bipolar streams."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
@@ -55,6 +56,7 @@ def test_fidelity():
 
 
 def test_known_answer():
+    """Verify stability reports exact cycle-to-stable values for a known stream."""
     timestep = 4
     source = torch.ones(2)
     spike = torch.tensor([1.0, 0.0])
@@ -90,6 +92,7 @@ def test_known_answer():
 
 
 def test_reset():
+    """Verify resetting stability clears nested state and reproduces its result."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
@@ -107,6 +110,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify stability updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
     stream = torch.randint(0, 2, (timestep, 1000)).float()

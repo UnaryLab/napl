@@ -81,6 +81,7 @@ CONFIG = {
 
 
 def test_sigmoid_hub():
+    """Verify sigmoid_hub quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

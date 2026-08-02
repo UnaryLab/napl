@@ -120,10 +120,12 @@ CONFIG = {
 
 
 def test_div_cordiv():
+    """Verify div_cordiv against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_div_cordiv_matches_unarysim_history_order():
+    """Verify div_cordiv reproduces UnarySim's quotient history update order."""
     dividends = [0, 1, 0, 1, 1, 0]
     divisors = [0, 0, 1, 0, 1, 0]
     expected = torch.tensor([0, 1, 0, 0, 1, 1], dtype=global_config.stype)

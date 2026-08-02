@@ -13,6 +13,7 @@ from napl.utils._shared_test import devices
 
 
 def test_timer():
+    """Verify timer records successful and exceptional regions without swallowing errors."""
     for device in devices():
         with timer(device) as elapsed:
             torch.arange(64, dtype=torch.float32, device=device).square().sum()
@@ -37,6 +38,7 @@ def _expect_mismatch(candidate_inputs, baseline_inputs):
 
 
 def test_clone_inputs_and_equality():
+    """Verify cloned inputs are independent, device-local, and compared with configured tolerances."""
     shared_cpu = (
         torch.arange(6, dtype=torch.float32).reshape(2, 3),
         torch.tensor([1, 0, 1], dtype=torch.int8),
@@ -68,6 +70,7 @@ def test_clone_inputs_and_equality():
 
 
 def test_multirank_inputs():
+    """Verify multirank input expansion preserves scalars and adds higher-rank variants."""
     scalar = torch.tensor(1.0)
     vector = torch.arange(3)
     matrix = torch.arange(6).reshape(2, 3)
@@ -86,6 +89,7 @@ def test_multirank_inputs():
 
 
 def test_benchmark():
+    """Verify benchmarking reports positive runtimes and enforces configured device bounds."""
     warmup_runs = 2
     trials = 4
     runtimes = {}
@@ -155,6 +159,7 @@ def _mul_and_known_answer(polarity):
 
 
 def test_streaming_suite():
+    """Verify streaming_suite exercises fidelity, known answers, reset replay, rank, and timing."""
     streaming_suite({
         'polarities': ('unipolar', 'bipolar'),
         'tolerance_scale': 1.0,
@@ -215,6 +220,7 @@ def _fxp_expected_gradients(candidate, inputs, grad_output):
 
 
 def test_single_shot_suite():
+    """Verify single_shot_suite exercises quantization, known answers, gradients, rank, and timing."""
     single_shot_suite({
         'quantization_atol': 0.05,
         'known_answer_atol': 0.0,
@@ -231,6 +237,7 @@ def test_single_shot_suite():
 
 
 def test_suite_config_validation():
+    """Verify shared suites reject missing requirements and unknown configuration keys."""
     def expect(error_type, fragment, cfg, suite):
         try:
             suite(cfg)

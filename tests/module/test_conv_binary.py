@@ -21,6 +21,7 @@ def _binary_conv_reference(module, input, linear_reference):
 
 
 def test_conv_unarysim_quantization_semantics():
+    """Verify conv_fxp follows UnarySim operand, bias, and accumulator quantization semantics."""
     input_fxp = torch.linspace(-0.34, 0.33, 64).reshape(2, 2, 4, 4)
     weight_fxp = torch.linspace(-0.34, 0.32, 36).reshape(2, 2, 3, 3)
     bias_fxp = torch.tensor([0.05, -0.075])
@@ -184,6 +185,7 @@ CONFIG = {
 
 
 def test_conv_binary():
+    """Verify conv_binary quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

@@ -45,6 +45,7 @@ CONFIG = {
 
 
 def test_dff():
+    """Verify dff against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
@@ -56,6 +57,7 @@ def test_dff():
     ],
 )
 def test_mutable_input_delay(values, expected):
+    """Verify dff delays values correctly when the same input tensor is mutated in place."""
     for device in devices():
         operation = dff({'depth': _DEPTH}).to(device)
         input = torch.zeros(1, dtype=global_config.stype, device=device)

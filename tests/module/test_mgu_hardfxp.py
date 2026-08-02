@@ -143,6 +143,7 @@ CONFIG = {
 
 
 def test_mgu_hardfxp():
+    """Verify mgu_hardfxp quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

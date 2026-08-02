@@ -109,6 +109,7 @@ CONFIG = {
 
 
 def test_min_tc():
+    """Verify min_tc against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

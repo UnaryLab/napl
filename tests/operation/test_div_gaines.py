@@ -152,6 +152,7 @@ CONFIG = {
 
 
 def test_div_gaines():
+    """Verify div_gaines against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

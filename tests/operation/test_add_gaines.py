@@ -253,6 +253,7 @@ OR_CONFIG = {
 
 
 def test_add_gaines():
+    """Verify add_gaines against analytic and known-answer streams, including reset and timing."""
     streaming_suite(SCALED_CONFIG)
     streaming_suite(OR_CONFIG)
 

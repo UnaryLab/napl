@@ -75,6 +75,7 @@ def run_correlation(val, device, timestep, modules=None):
 
 
 def test_fidelity():
+    """Verify correlation distinguishes identical, inverse, and independent spike streams."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
 
@@ -99,6 +100,7 @@ def test_fidelity():
 
 
 def test_known_answer():
+    """Verify correlation returns exact coefficients for canonical paired streams."""
     stream = torch.tensor([1, 1, 0, 0]).repeat(64)
     independent = torch.tensor([1, 0, 1, 0]).repeat(64)
     cases = (
@@ -126,6 +128,7 @@ def test_known_answer():
 
 
 def test_reset():
+    """Verify resetting correlation clears pair counts and reproduces all coefficients."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
@@ -151,6 +154,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify correlation updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
     stream_1 = torch.randint(0, 2, (timestep, 1000)).float()

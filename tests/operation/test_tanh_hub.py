@@ -83,6 +83,7 @@ CONFIG = {
 
 
 def test_tanh_hub():
+    """Verify tanh_hub quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

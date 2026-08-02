@@ -9,6 +9,7 @@ from napl.utils._shared_test import devices, single_shot_suite, sync
 
 
 def test_linear_hub_truncates_scaled_magnitudes():
+    """Verify linear_hub truncates scaled operands before accumulation like UnarySim."""
     input = torch.linspace(-0.49, 0.47, 18).reshape(3, 6)
     weight = torch.linspace(-0.46, 0.49, 24).reshape(4, 6)
     bias = torch.tensor([0.025, -0.04, 0.075, -0.09])
@@ -139,6 +140,7 @@ CONFIG = {
 
 
 def test_linear_hub():
+    """Verify linear_hub quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

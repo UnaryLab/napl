@@ -54,6 +54,7 @@ CONFIG = {
 
 
 def test_single_shot_trainable():
+    """TODO: state the behavior this test verifies."""
     single_shot_suite(CONFIG)
 
 

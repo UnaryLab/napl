@@ -5,9 +5,7 @@ from napl.sim.base import global_config
 
 
 def test_global_config():
-    """
-    Test the global configuration loading.
-    """
+    """Verify the global configuration file exists and selects supported tensor types."""
     assert global_config.config_file is not None, 'Global config file should be set.'
     assert os.path.exists(global_config.config_file), f'Global config file {global_config.config_file} does not exist.'
     

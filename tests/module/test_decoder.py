@@ -11,9 +11,7 @@ from napl.utils._shared_test import devices, sync
 
 
 def test_decoder():
-    """
-    Test the decoder with a simple configuration.
-    """
+    """Verify decoder and accuracy agree on bipolar streams across supported devices."""
     config={
         'polarity': 'bipolar',
         'timestep': 1024,
@@ -72,6 +70,7 @@ def test_decoder():
 
 
 def test_decoder_rank2():
+    """Verify decoder preserves rank-two shape and matches accuracy decoding."""
     config = {
         'polarity': 'bipolar',
         'timestep': 16,

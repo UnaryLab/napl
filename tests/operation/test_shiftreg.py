@@ -45,6 +45,7 @@ CONFIG = {
 
 
 def test_shiftreg():
+    """Verify shiftreg against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
@@ -56,6 +57,7 @@ def test_shiftreg():
     ],
 )
 def test_mutable_input_delay(values, expected):
+    """Verify shiftreg delays values correctly when the same input tensor is mutated in place."""
     for device in devices():
         operation = shiftreg({'depth': _DEPTH}).to(device)
         input = torch.zeros(1, dtype=global_config.stype, device=device)

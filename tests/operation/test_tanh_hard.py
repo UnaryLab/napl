@@ -47,6 +47,7 @@ CONFIG = {
 
 
 def test_tanh_hard():
+    """Verify tanh_hard against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

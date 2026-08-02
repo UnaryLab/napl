@@ -129,6 +129,7 @@ CONFIG = {
 
 
 def test_exp_n1():
+    """Verify exp_n1 against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

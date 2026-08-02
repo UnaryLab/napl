@@ -50,6 +50,7 @@ def run_flux(val_1, val_2, device, timestep, modules=None):
 
 
 def test_fidelity():
+    """Verify stability flux equals the ratio of its two component stability scores."""
     timestep = 256
     val_1 = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
     val_2 = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
@@ -64,6 +65,7 @@ def test_fidelity():
 
 
 def test_known_answer():
+    """Verify stability flux handles equal, zero, and random known-answer streams."""
     timestep = 256
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
 
@@ -127,6 +129,7 @@ def test_known_answer():
 
 
 def test_reset():
+    """Verify resetting stability flux clears nested state and reproduces its result."""
     timestep = 256
     val_1 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
     val_2 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
@@ -152,6 +155,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify stability flux updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
     stream_1 = torch.randint(0, 2, (timestep, 1000)).float()

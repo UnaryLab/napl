@@ -59,10 +59,12 @@ CONFIG = {
 
 
 def test_mul_gaines():
+    """Verify mul_gaines against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_mul_gaines_truth_table():
+    """Verify mul_gaines implements unipolar AND and bipolar XNOR truth tables."""
     a = torch.tensor([0, 0, 1, 1], dtype=global_config.stype)
     b = torch.tensor([0, 1, 0, 1], dtype=global_config.stype)
     for device in devices():

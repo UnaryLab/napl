@@ -45,44 +45,6 @@ class timer:
         self.seconds = perf_counter() - self._start
 
 
-class count_readout(torch.nn.Module):
-    """Accumulate a numeric per-timestep count and expose its running mean."""
-
-    streaming = True
-
-
-    def __init__(self):
-        super().__init__()
-        self.timestep_cur = 0
-        self.register_buffer('spike_count', torch.zeros(1))
-
-
-    def __call__(self, *args, **kwargs):
-        self.timestep_cur += 1
-        return super().__call__(*args, **kwargs)
-
-
-    def forward(self, value):
-        if self.spike_count.shape == value.shape:
-            self.spike_count.add_(value)
-        else:
-            self.spike_count = self.spike_count.add(value)
-
-
-    @property
-    def spike_value(self):
-        if self.timestep_cur == 0:
-            return torch.zeros_like(self.spike_count)
-        return self.spike_count / self.timestep_cur
-
-
-    def reset(self):
-        self.timestep_cur = 0
-        self.spike_count = torch.zeros(
-            1, dtype=self.spike_count.dtype, device=self.spike_count.device
-        )
-
-
 def clone_inputs(
     inputs: Sequence[torch.Tensor], device: Optional[Device] = None
 ) -> InputTuple:

@@ -58,6 +58,7 @@ CONFIG = {
 
 
 def test_mul_and():
+    """Verify mul_and against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

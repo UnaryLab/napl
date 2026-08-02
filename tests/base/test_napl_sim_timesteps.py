@@ -1,5 +1,4 @@
 import math
-import time
 
 import torch
 import napl
@@ -7,7 +6,7 @@ import napl
 from napl.sim.base import napl_base, napl_sim_timesteps
 from napl.sim.module import encoder, decoder
 from napl.sim.metric import accuracy
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, timer
 
 
 class codec(napl_base):
@@ -58,10 +57,8 @@ class reset_parent(napl_base):
 
 
 def test_napl_sim_timesteps_class():
-    """
-    Test the napl_sime_timesteps decorator with a simple configuration.
-    """
-    config={
+    """Verify the decorator repeats a streaming module for the requested timesteps."""
+    config = {
         'polarity': 'bipolar',
         'timestep': 256,
         'generator': 'sobol',
@@ -72,28 +69,26 @@ def test_napl_sim_timesteps_class():
     for device in devices():
         input = input_cpu.to(device)
         codec_inst = codec(config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        codec_inst(input, timesteps=config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            codec_inst(input, timesteps=config['timestep'])
 
         error, _ = codec_inst.accuracy.analyze(input, verbose=True)
         assert error.pow(2).mean().sqrt() <= 1.0 / math.sqrt(config['timestep'])
         assert codec_inst.encoder.timestep_cur == config['timestep']
         assert codec_inst.decoder.timestep_cur == config['timestep']
-        print(f'[{device}] time={elapsed * 1000:.1f}ms')
+        print(f'[{device}] time={elapsed.seconds * 1000:.1f}ms')
 
         codec_inst.reset()
         assert codec_inst.timestep_cur == 0
         assert codec_inst.encoder.timestep_cur == 0
         assert codec_inst.decoder.timestep_cur == 0
         assert codec_inst.accuracy.timestep_cur == 0
-    
+
     print('Test passed.')
 
 
 def test_napl_sim_timesteps_class_rank2():
+    """Verify decorated streaming modules preserve rank-two shapes and decoding accuracy."""
     config = {
         'polarity': 'bipolar',
         'timestep': 16,
@@ -113,7 +108,34 @@ def test_napl_sim_timesteps_class_rank2():
         )
 
 
+def test_napl_sim_timesteps_free_function_positional():
+    """Verify the decorator repeats free functions with positional arguments."""
+    calls = []
+
+    @napl_sim_timesteps
+    def run(value):
+        calls.append(value)
+        return len(calls)
+
+    assert run('spike', timesteps=3) == 3
+    assert calls == ['spike'] * 3
+
+
+def test_napl_sim_timesteps_free_function_keyword_only():
+    """Verify the decorator repeats free functions with keyword-only arguments."""
+    calls = []
+
+    @napl_sim_timesteps
+    def run(*, value):
+        calls.append(value)
+        return len(calls)
+
+    assert run(value='spike', timesteps=2) == 2
+    assert calls == ['spike'] * 2
+
+
 def test_reset_lifecycle():
+    """Verify reset clears parent and child timestep state and invokes each reset hook."""
     for shape in ((1,), (2, 3)):
         module = reset_parent()
         input = torch.ones(shape)
@@ -129,6 +151,7 @@ def test_reset_lifecycle():
 
 
 def test_reset_hook_format():
+    """Verify every concrete NAPL simulation class defines its own reset hook."""
     classes = {
         value
         for value in vars(napl).values()
@@ -144,5 +167,7 @@ def test_reset_hook_format():
 if __name__ == '__main__':
     test_napl_sim_timesteps_class()
     test_napl_sim_timesteps_class_rank2()
+    test_napl_sim_timesteps_free_function_positional()
+    test_napl_sim_timesteps_free_function_keyword_only()
     test_reset_lifecycle()
     test_reset_hook_format()

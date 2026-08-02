@@ -9,6 +9,7 @@ from napl.utils._shared_test import devices, sync
 
 
 def test_utils():
+    """Verify shared shape, synchronization, power-of-two, and tensor utility contracts."""
     assert num2tuple(3) == (3, 3)
     assert num2tuple((2, 4)) == (2, 4)
 

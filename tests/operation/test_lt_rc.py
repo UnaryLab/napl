@@ -122,6 +122,7 @@ CONFIG = {
 
 
 def test_lt_rc():
+    """Verify lt_rc against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

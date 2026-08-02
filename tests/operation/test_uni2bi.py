@@ -101,6 +101,7 @@ CONFIG = {
 
 
 def test_uni2bi():
+    """Verify uni2bi against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

@@ -26,6 +26,7 @@ def capture_log(call):
 
 
 def test_analyze_known_answer():
+    """Verify tensor analysis returns the expected extrema, means, RMS, and indices."""
     for device in devices():
         input = torch.tensor([[-2.0, 1.0, 0.0]], device=device)
         result = analyze(input)
@@ -42,6 +43,7 @@ def test_analyze_known_answer():
 
 
 def test_analyze_report():
+    """Verify tensor analysis logs a labeled report only when verbose output is requested."""
     input = torch.tensor([[-2.0, 1.0, 0.0]])
     result = analyze(input)
     assert capture_log(lambda: analyze(input)) == []
@@ -77,6 +79,7 @@ def test_analyze_report():
 
 
 def test_accuracy_analyze_returns_local_results():
+    """Verify accuracy analysis returns local results without registering derived tensor state."""
     for device in devices():
         metric = accuracy({'polarity': 'unipolar'}).to(device)
         metric(torch.tensor([[1, 0]], dtype=metric.stype, device=device))
@@ -114,6 +117,7 @@ def test_accuracy_analyze_returns_local_results():
 
 
 def test_metric_analyze_returns_local_results():
+    """Verify metric analyses return local summaries without retaining derived tensor state."""
     for device in devices():
         source = torch.ones(2)
         spike = source.to(device)
@@ -162,6 +166,7 @@ def test_metric_analyze_returns_local_results():
 
 
 def test_metric_persistent_tensor_state():
+    """Verify metric tensor state is buffer-backed, non-trainable, and device portable."""
     source = torch.tensor([-1.0, 1.0])
     config = {'polarity': 'bipolar', 'threshold': 0.05}
     metrics = (

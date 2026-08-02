@@ -21,6 +21,7 @@ def _run(stream_encoder, stream_accuracy, input, timestep):
 
 
 def test_encoder():
+    """Verify encoder fidelity, reset replay, device coverage, and timing."""
     torch.manual_seed(0)
     config = {
         'polarity': 'bipolar',
@@ -83,6 +84,7 @@ def test_encoder():
 
 
 def test_encoder_rank2():
+    """Verify encoder preserves rank-two shape and meets stochastic error tolerance."""
     config = {
         'polarity': 'bipolar',
         'timestep': 16,
@@ -106,6 +108,7 @@ def test_encoder_rank2():
 
 
 def test_number_sequences():
+    """Verify supported random-number generators produce valid deterministic sequences."""
     width = 4
     length = 2**width
 
@@ -135,6 +138,7 @@ def test_number_sequences():
 
 
 def test_input_scale():
+    """Verify input_scale normalizes a tensor by its largest absolute value."""
     input = torch.tensor([-4.0, -2.0, 0.0, 2.0, 4.0])
     assert torch.equal(input_scale(input), input / 4)
 

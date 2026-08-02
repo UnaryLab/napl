@@ -26,6 +26,8 @@ The generator builds the NAPL Python operation from one configuration, emits exp
 
 Golden-vector co-simulation is the source of functional truth. Expected outputs must come from the NAPL Python model, never from a hand-written truth table. A single `<op>.vec` file carries the expected outputs for every variant; the testbench instantiates all of an operation's variant modules, must compare every output on the corresponding cycle, and the verification command must exit nonzero on any mismatch.
 
+Every Python `test_*` function used by this verification flow starts with a concise one-line docstring that states the behavior it verifies.
+
 For each RTL-backed change:
 
 1. Run the operation's Python test under the rules in [RULE_SIM.md](RULE_SIM.md).

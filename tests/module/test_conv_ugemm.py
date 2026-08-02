@@ -168,6 +168,7 @@ CONFIG = {
 
 
 def test_conv_ugemm():
+    """Verify conv_ugemm against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

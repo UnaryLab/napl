@@ -3,9 +3,9 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
+from napl.sim.metric import accuracy
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import (
-    count_readout,
     devices,
     streaming_suite,
     sync,
@@ -173,13 +173,16 @@ CONFIG = {
     'make_values': make_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
-    'make_readout': lambda _polarity, _timestep, _device: count_readout(),
+    'make_readout': lambda _polarity, _timestep, _device: accuracy(
+        {'polarity': 'unipolar'}
+    ),
     'timesteps': 256,
     'extra_checks': _kernel_specific_checks,
 }
 
 
 def test_conv_pc():
+    """Verify conv_pc against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

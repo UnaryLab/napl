@@ -30,6 +30,7 @@ class napl_mul_csg(napl_base):
 
 
 def test_mul_csg_rank2():
+    """Verify mul_csg preserves rank-two spike tensors when multiplied by one."""
     config = {
         'polarity': 'bipolar',
         'timestep': 4,
@@ -53,9 +54,7 @@ def test_mul_csg_rank2():
 
     
 def test_mul_csg():
-    """
-    Test mul_csg with a simple configuration.
-    """
+    """Verify mul_csg tracks real multiplication within stochastic tolerance across devices."""
 
     codec_config={
         'polarity': 'bipolar',

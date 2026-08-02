@@ -90,6 +90,7 @@ CONFIG = {
 
 
 def test_relu_hub():
+    """Verify relu_hub quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 

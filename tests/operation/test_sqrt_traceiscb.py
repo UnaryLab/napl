@@ -94,10 +94,12 @@ CONFIG = {
 
 
 def test_sqrt_traceiscb():
+    """Verify sqrt_traceiscb against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_sqrt_traceiscb_matches_unarysim_trace():
+    """Verify sqrt_traceiscb reproduces UnarySim's startup trace for both polarities."""
     expected = torch.tensor([0, 0, 0, 1], dtype=global_config.stype)
 
     for polarity in ('unipolar', 'bipolar'):

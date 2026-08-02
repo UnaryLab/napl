@@ -60,6 +60,7 @@ def run_measured(val, device, timestep, threshold, normstability):
 
 
 def test_fidelity():
+    """Verify stability_builder reconstructs values within its configured threshold."""
     timestep = 256
     threshold = 0.05
     val = gen_rand_tensor('bipolar', shape=(20, 50), width=8)
@@ -74,6 +75,7 @@ def test_fidelity():
 
 
 def test_known_answer():
+    """Verify stability_builder emits the expected finite bipolar stream and completion state."""
     source = torch.tensor([-1.0, 1.0])
     expected = torch.tensor(
         [[0, 1], [0, 1], [0, 1], [0, 0]],
@@ -142,6 +144,7 @@ def test_known_answer():
 
 
 def test_reset():
+    """Verify resetting stability_builder clears state and reproduces its emitted stream."""
     timestep = 256
     threshold = 0.05
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
@@ -164,6 +167,7 @@ def test_reset():
 
 
 def test_performance():
+    """Verify stability_builder meets the configured runtime bounds across supported devices."""
     timestep = 256
     threshold = 0.05
     val = gen_rand_tensor('bipolar', shape=(1000,), width=8)

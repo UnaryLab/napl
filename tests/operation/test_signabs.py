@@ -100,6 +100,7 @@ CONFIG = {
 
 
 def test_signabs():
+    """Verify signabs against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

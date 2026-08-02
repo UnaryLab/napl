@@ -38,10 +38,12 @@ CONFIG = {
 
 
 def test_sqrt_tracejkff():
+    """Verify sqrt_tracejkff against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 def test_reset_children():
+    """Verify sqrt_tracejkff reset clears its JK flip-flop and polarity-conversion children."""
     for device in devices():
         for polarity in CONFIG['polarities']:
             operation = make_operation(polarity, 1, device).to(device)

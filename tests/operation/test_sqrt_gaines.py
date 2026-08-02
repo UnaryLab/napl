@@ -114,6 +114,7 @@ CONFIG = {
 
 
 def test_sqrt_gaines():
+    """Verify sqrt_gaines against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 

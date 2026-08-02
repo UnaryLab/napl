@@ -37,7 +37,7 @@ Streaming classes inherit `napl_base` and use its default `streaming = True`.
 - `reset()` returns `timestep_cur` and module-specific state to their initial values.
 - `valid` is true after at least one timestep has run since construction or reset.
 
-The `@napl_sim_timesteps` decorator repeats a module method, and `napl_sim_timesteps_func` repeats a free function. Both require `timesteps=` as a keyword argument. The decorated body still represents one timestep.
+The `@napl_sim_timesteps` decorator repeats a module method or free function. It requires `timesteps=` as a keyword argument. The decorated body still represents one timestep.
 
 The usual streaming path is:
 

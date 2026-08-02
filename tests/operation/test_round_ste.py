@@ -20,6 +20,7 @@ class round_reference(torch.nn.Module):
 
 
 def test_round_ste_dtype_and_boundaries():
+    """Verify round_ste preserves dtype and matches clamped fixed-point boundary rounding."""
     for device in devices():
         input = torch.tensor(
             [-100.0, -0.3, 0.1, 100.0],
@@ -38,6 +39,7 @@ def test_round_ste_dtype_and_boundaries():
 
 
 def test_round_ste_rank2():
+    """Verify round_ste preserves rank-two shape and matches fixed-point rounding."""
     for device in devices():
         input = torch.tensor(
             [[-0.3, 0.1], [0.26, 1.99]],
