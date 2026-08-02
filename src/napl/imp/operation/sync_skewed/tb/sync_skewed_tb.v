@@ -5,6 +5,8 @@
 // Python golden outputs use the pre-update counter and are checked before each
 // posedge. RST requests active-low reset before replay continues.
 // Co-sim: make test OP=sync_skewed
+
+
 module sync_skewed_tb;
     reg  clk;
     reg  rst_n;

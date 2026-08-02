@@ -4,6 +4,7 @@
 // Unipolar Gaines square root with squared-output counter feedback.
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=sqrt_gaines
+
 module sqrt_gaines_unipolar #(
     parameter integer WIDTH = 5  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

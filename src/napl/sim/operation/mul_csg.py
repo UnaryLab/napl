@@ -34,6 +34,8 @@ class mul_csg(napl_base):
 
         *uGEMM: Unary Computing for GEMM Applications*.
     """
+
+
     def __init__(
             self,
             config={

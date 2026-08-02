@@ -3,6 +3,8 @@
 // Python golden rows are <rst> <input> <out>. Output is checked before each
 // posedge updates state; rst=1 first clears both accumulators.
 // Co-sim: make test OP=relu_sat
+
+
 module relu_sat_tb;
     reg  i_clk;
     reg  i_rst_n;

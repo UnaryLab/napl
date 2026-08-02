@@ -5,6 +5,8 @@
 // Python golden output is checked before each posedge updates acc. R requests
 // active-low reset before replay continues.
 // Co-sim: make test OP=uni2bi
+
+
 module uni2bi_tb;
     reg  i_clk;
     reg  i_rst_n;
@@ -23,6 +25,7 @@ module uni2bi_tb;
     reg in_bit, exp_out;
 
     // Reset clears acc across a clock edge.
+
     task do_reset;
         begin
             i_rst_n = 1'b0;
@@ -31,6 +34,7 @@ module uni2bi_tb;
             #1;
         end
     endtask
+
 
     initial begin
         i_clk   = 1'b0;

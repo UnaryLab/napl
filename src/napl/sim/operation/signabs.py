@@ -22,6 +22,8 @@ class signabs(napl_base):
         operation = signabs({'width': 3})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
     """
+
+
     def __init__(
             self,
             config={

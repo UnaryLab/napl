@@ -22,6 +22,8 @@ class add_any(napl_base):
         adder = add_any({'polarity': 'unipolar', 'scale': 2, 'width': 10})
         output = adder(torch.tensor([[1, 0], [1, 1]], dtype=torch.int8), dim=0)
     """
+
+
     def __init__(
             self,
             config={

@@ -54,6 +54,7 @@ class Cascade_CNN_RNN_FP(nn.Module):
     UnarySim app/uBrain/model/model_fp.py with linear_act='scalerelu'.
     """
 
+
     def __init__(self,
                  input_sz=(10, 11),       # 10-10 MI grid
                  cnn_chn=16,
@@ -90,10 +91,12 @@ class Cascade_CNN_RNN_FP(nn.Module):
 
         self._init_weight(init_std)
 
+
     def _init_weight(self, std):
         with torch.no_grad():
             for weight in (self.conv1.weight, self.conv2.weight, self.fc3.weight, self.fc5.weight):
                 weight.copy_(truncated_normal(torch.empty_like(weight), 0.0, std))
+
 
     def forward(self, x):
         # x: (batch, win, h, w)
@@ -112,6 +115,7 @@ class Cascade_CNN_RNN_FP(nn.Module):
         out = self.out_act(self.fc5(hx))
         return out                                                  # (batch, sum(num_class))
 
+
     def split_heads(self, out):
         """Split the flat output into per-head logits."""
         return list(torch.split(out, list(self.num_class), dim=1))
@@ -126,6 +130,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
     `width` is the unary bitwidth: conv/linear use cycle=2**(width-1) and the MGU
     streams 2**width cycles per call (so keep width modest; the MGU dominates cost).
     """
+
 
     def __init__(self,
                  input_sz=(10, 11),
@@ -178,6 +183,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
         self.fc3_act = relu_hub({'scale': 1.0})
         self.out_act = tanh_hub()
 
+
     def forward(self, x):
         # x: (batch, win, h, w)
         o = x.view(-1, 1, self.input_sz[0], self.input_sz[1])
@@ -194,6 +200,7 @@ class Cascade_CNN_RNN_HUB(nn.Module):
 
         out = self.out_act(self.fc5(hx))
         return out
+
 
     def split_heads(self, out):
         return list(torch.split(out, list(self.num_class), dim=1))

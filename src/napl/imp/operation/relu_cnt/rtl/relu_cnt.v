@@ -3,6 +3,8 @@
 // Bipolar relu_cnt equivalent with a WIDTH-bit saturating accumulator.
 // Output is combinational (pp_delay=0); each posedge updates acc by the emitted
 // spike. Active-low reset loads HALF=2**(WIDTH-1).
+
+
 module relu_cnt #(
     parameter integer WIDTH = 3  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

@@ -2,6 +2,8 @@
 `default_nettype none
 // Python golden vectors check the zero-latency identity output.
 // Co-sim: make test OP=tanh_hard
+
+
 module tanh_hard_tb;
     reg  i_input;
     wire o_out;

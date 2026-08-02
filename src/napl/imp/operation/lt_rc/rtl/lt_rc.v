@@ -3,6 +3,8 @@
 // Rate-coded lt_rc equivalent with a width-2 sync_skewed counter.
 // o_out is the pre-update result register, so pp_delay=1.
 // Each posedge is one Python timestep; active-low reset clears result and cnt.
+
+
 module lt_rc (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

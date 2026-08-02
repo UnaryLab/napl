@@ -33,10 +33,12 @@ class timer:
         self.device = device
         self.seconds = None
 
+
     def __enter__(self):
         sync(self.device)
         self._start = perf_counter()
         return self
+
 
     def __exit__(self, exc_type, exc_value, traceback):
         sync(self.device)
@@ -48,14 +50,17 @@ class count_readout(torch.nn.Module):
 
     streaming = True
 
+
     def __init__(self):
         super().__init__()
         self.timestep_cur = 0
         self.register_buffer('spike_count', torch.zeros(1))
 
+
     def __call__(self, *args, **kwargs):
         self.timestep_cur += 1
         return super().__call__(*args, **kwargs)
+
 
     def forward(self, value):
         if self.spike_count.shape == value.shape:
@@ -63,11 +68,13 @@ class count_readout(torch.nn.Module):
         else:
             self.spike_count = self.spike_count.add(value)
 
+
     @property
     def spike_value(self):
         if self.timestep_cur == 0:
             return torch.zeros_like(self.spike_count)
         return self.spike_count / self.timestep_cur
+
 
     def reset(self):
         self.timestep_cur = 0

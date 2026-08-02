@@ -27,6 +27,8 @@ class stability_flux(napl_base):
             metric(torch.ones(1), torch.ones(1))
         ratio, result = metric.analyze()
     """
+
+
     def __init__(
             self,
             source_1,

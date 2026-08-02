@@ -11,6 +11,8 @@
 // continuous stream; this is equivalent to the Python model for all later
 // timesteps and does not reset between encoded values.
 //==============================================================================
+
+
 module relu_tc #(
     parameter integer WIDTH = 8   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

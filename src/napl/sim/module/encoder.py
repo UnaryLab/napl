@@ -8,7 +8,6 @@ from loguru import logger
 from pylfsr import LFSR
 
 
-
 def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
     """
     return a lfsr sequence of length 2**width within [0, 1]
@@ -115,6 +114,7 @@ class encoder(napl_base):
                        "generator": "sobol"})
         output_spike = enc(torch.tensor([0.25, 0.75]))
     """
+
 
     def __init__(
             self,

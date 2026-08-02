@@ -3,6 +3,8 @@
 // Python golden rows are <rst_n> <input> <out>. Output is checked before each
 // posedge updates acc; rst_n=0 first clears acc.
 // Co-sim: make test OP=sigmoid_hard
+
+
 module sigmoid_hard_tb;
     reg  i_clk;
     reg  i_rst_n;

@@ -3,6 +3,8 @@
 // Unipolar sqrt_traceiscb equivalent with a depth-2 cordiv using Sobol indices
 // [0,1]. Output is combinational (pp_delay=0).
 // Active-low reset clears trace, dff, buffer, and index.
+
+
 module sqrt_traceiscb_unipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

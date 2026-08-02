@@ -577,11 +577,14 @@ class NN_SC_Weight_Clipper(object):
     the full range on the first call, then 'clip' clamps on subsequent calls; both
     quantize to `bitwidth` bits. Apply via module.apply(clipper).
     """
+
+
     def __init__(self, frequency=1, mode="bipolar", method="clip", bitwidth=8):
         self.frequency = frequency
         self.mode = mode
         self.method = method
         self.scale = 2 ** bitwidth
+
 
     def __call__(self, module):
         self.method = "clip" if self.frequency > 1 else "norm"
@@ -590,6 +593,7 @@ class NN_SC_Weight_Clipper(object):
         if hasattr(module, 'bias') and module.bias is not None:
             self.clipping(module.bias.data)
         self.frequency = self.frequency + 1
+
 
     def clipping(self, w):
         if self.mode == "unipolar":

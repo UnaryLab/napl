@@ -5,6 +5,8 @@
 // Python golden rows are <rst> <input> <unipolar> <bipolar>. Outputs are checked
 // before the posedge advances the delay; rst=1 first clears it.
 // Co-sim: make test OP=square_dff
+
+
 module square_dff_tb;
     reg  i_clk;
     reg  i_rst_n;

@@ -2,6 +2,8 @@
 `default_nettype none
 // Python golden vectors check the combinational output.
 // Co-sim: make test OP=max_tc
+
+
 module max_tc_tb;
     reg  i_input_0, i_input_1;
     wire o_out;

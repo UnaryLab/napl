@@ -3,6 +3,8 @@
 // Unipolar sqrt_tracejkff equivalent: output=trace|input and
 // trace_next=(~trace)&output. Output is combinational (pp_delay=0).
 // Active-low reset clears trace.
+
+
 module sqrt_tracejkff_unipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset() (trace=0)

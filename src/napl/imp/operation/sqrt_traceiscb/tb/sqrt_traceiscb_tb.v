@@ -3,6 +3,8 @@
 // Python golden outputs for both polarities are checked before each posedge
 // advances state. The reset column requests active-low reset before its row.
 // Co-sim: make test OP=sqrt_traceiscb
+
+
 module sqrt_traceiscb_tb;
     reg  clk;
     reg  rst_n;

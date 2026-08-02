@@ -4,6 +4,8 @@
 // core, then uni2bi(3), with quotient sign applied by XOR.
 // Output is combinational (pp_delay=0); state advances each posedge.
 // Active-low reset loads signabs acc=4 and clears all other state.
+
+
 module div_iscb_bipolar (
     input  wire i_clk,        // one posedge == one Python forward() timestep
     input  wire i_rst_n,      // active-low; maps to Python reset()

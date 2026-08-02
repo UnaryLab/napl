@@ -5,6 +5,8 @@
 // values above 2*SCALE, and subtracts 2*SCALE on a fire. Parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears the accumulator to match reset().
+
+
 module add_any_bipolar #(
     parameter integer SCALE = 8,     // inherited from config['scale']; tb overrides via `GEN_SCALE
     parameter integer WIDTH = 20,    // inherited from config['width']; tb overrides via `GEN_WIDTH
@@ -16,6 +18,8 @@ module add_any_bipolar #(
     output wire                  o_out
 );
     // ---- ceil(log2(x)) constant function (Verilog-2001) ----
+
+
     function integer clog2;
         input integer value;
         integer v;
@@ -27,6 +31,7 @@ module add_any_bipolar #(
     endfunction
 
     // ---- derived sizing (all magic constants trace to the parameters) ----
+
     localparam integer TWO_OFS = ENTRY - SCALE;      // 2*offset = entry - scale
     localparam integer TWO_SCL = 2 * SCALE;          // 2*scale
     localparam integer ACC_HI  = (2 ** WIDTH) - 2;   // 2*(2^(WIDTH-1)-1)

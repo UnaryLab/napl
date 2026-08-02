@@ -2,6 +2,8 @@
 `default_nettype none
 // Unipolar square_dff equivalent: AND the current input with its DEPTH-delayed
 // copy. Output is combinational (pp_delay=0); active-low reset clears the delay.
+
+
 module square_dff_unipolar #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

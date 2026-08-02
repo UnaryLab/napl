@@ -3,6 +3,8 @@
 // Rate-coded min_rc equivalent with a width-2 sync_skewed counter.
 // o_min uses the pre-update arg register; o_argmin inverts its next value. Both
 // are combinational (pp_delay=0). Active-low reset clears arg and cnt.
+
+
 module min_rc (
     input  wire i_clk,
     input  wire i_rst_n,

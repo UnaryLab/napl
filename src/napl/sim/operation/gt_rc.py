@@ -23,6 +23,8 @@ class gt_rc(napl_base):
         result = compare(torch.tensor([1], dtype=torch.int8),
                          torch.tensor([0], dtype=torch.int8))
     """
+
+
     def __init__(
             self,
             config = {}

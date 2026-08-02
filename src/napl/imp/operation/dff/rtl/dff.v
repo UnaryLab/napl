@@ -2,6 +2,8 @@
 `default_nettype none
 // DEPTH-cycle delay equivalent to napl.sim.operation.dff; pp_delay=DEPTH.
 // Generated DEPTH mirrors Python. Active-low reset clears every FIFO cell.
+
+
 module dff #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

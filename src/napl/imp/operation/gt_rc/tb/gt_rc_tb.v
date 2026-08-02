@@ -3,6 +3,8 @@
 // Python golden rows are <rst_n> <in_0> <in_1> <out>. Output is checked before
 // the posedge updates state; rst_n=0 restores result=1 and cnt=0.
 // Co-sim: make test OP=gt_rc
+
+
 module gt_rc_tb;
     reg clk, rst_n, in_0, in_1;
     wire out;

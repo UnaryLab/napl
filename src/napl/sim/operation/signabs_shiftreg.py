@@ -22,6 +22,7 @@ class signabs_shiftreg(napl_base):
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
     """
 
+
     def __init__(self, config={'depth': 8}):
         """
         Configure the sign-estimation shift register.
@@ -64,6 +65,7 @@ class signabs_shiftreg(napl_base):
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
 
+
     def _reset(self):
         """
         Restore the alternating register seed, count, head, and first-call flag.
@@ -74,6 +76,7 @@ class signabs_shiftreg(napl_base):
         self.count.resize_(1).zero_()
         self.head = 0
         self.is_first_call = True
+
 
     def forward(self, input: torch.Tensor):
         """

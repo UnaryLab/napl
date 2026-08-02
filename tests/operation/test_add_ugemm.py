@@ -26,6 +26,7 @@ class napl_add_ugemm(napl_base):
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
+
 def run_case(polarity, scaled, input, device, timestep=256):
     codec_config = {
         'polarity': polarity,

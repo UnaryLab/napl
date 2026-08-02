@@ -21,6 +21,8 @@ class min_tc(napl_base):
         output = minimum(torch.tensor([1], dtype=torch.int8),
                          torch.tensor([0], dtype=torch.int8))
     """
+
+
     def __init__(
             self,
             config = {}

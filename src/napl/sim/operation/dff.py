@@ -22,6 +22,8 @@ class dff(napl_base):
         first = delay(torch.tensor([1], dtype=torch.int8))
         second = delay(torch.tensor([0], dtype=torch.int8))
     """
+
+
     def __init__(
             self,
             config={'depth': 1}

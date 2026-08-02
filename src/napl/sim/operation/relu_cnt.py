@@ -20,6 +20,8 @@ class relu_cnt(napl_base):
         operation = relu_cnt()
         output = operation(torch.tensor([0.0, 1.0]))
     """
+
+
     def __init__(
             self,
             config={

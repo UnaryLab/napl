@@ -27,6 +27,8 @@ class butterfly_spike(napl_base):
         inputs = tuple(torch.zeros(1) for _ in range(6))
         y0r, y0i, y1r, y1i = operation(*inputs, timesteps=4)
     """
+
+
     def __init__(
             self,
             codec_config,
@@ -97,6 +99,7 @@ class butterfly_spike(napl_base):
         # Cached stacks are valid only for the same tensor identity, version, and shape.
         self._stack_cache = None
 
+
     def _reset(self):
         """
         Clear the class-local cache of tensors derived from the inputs.
@@ -105,6 +108,7 @@ class butterfly_spike(napl_base):
         module before calling this hook. This hook returns ``None``.
         """
         self._stack_cache = None
+
 
     @napl_sim_timesteps
     def forward(self, x0r, x0i, x1r, x1i, wr, wi):
@@ -159,6 +163,7 @@ class butterfly_spike(napl_base):
 
         return y.narrow(0, 0, b), y.narrow(0, b, b), y.narrow(0, 2 * b, b), y.narrow(0, 3 * b, b)
 
+
     def _stacks(self, x0r, x0i, x1r, x1i, wr, wi):
         key = tuple((t.data_ptr(), t._version, t.shape) for t in (x0r, x0i, x1r, x1i, wr, wi))
         if self._stack_cache is not None and self._stack_cache[0] == key:
@@ -194,6 +199,8 @@ class butterfly_binary(torch.nn.Module):
         inputs = tuple(torch.zeros(1) for _ in range(6))
         y0r, y0i, y1r, y1i = operation(*inputs)
     """
+
+
     def __init__(self):
         """
         Construct the stateless binary-domain butterfly.
@@ -205,6 +212,7 @@ class butterfly_binary(torch.nn.Module):
             ``None``.
         """
         super().__init__()
+
 
     def forward(self, x0r, x0i, x1r, x1i, wr, wi):
         """

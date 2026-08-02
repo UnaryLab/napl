@@ -20,6 +20,8 @@ class relu_sat(napl_base):
         operation = relu_sat()
         output = operation(torch.tensor([0.0, 1.0]))
     """
+
+
     def __init__(
             self,
             config={}

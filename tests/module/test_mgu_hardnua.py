@@ -82,6 +82,7 @@ class mgu_reference(torch.nn.Module):
         for name in ('weight_f', 'bias_f', 'weight_n', 'bias_n'):
             self.register_buffer(name, getattr(candidate, name).detach().clone())
 
+
     def forward(self, input, hx):
         return _ref_mgu_nua(
             input, hx,

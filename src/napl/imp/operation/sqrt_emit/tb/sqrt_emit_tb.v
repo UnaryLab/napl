@@ -3,6 +3,8 @@
 // Python golden outputs for both polarities are checked before each posedge
 // advances state. Reset clears state and loads the alternating shift register.
 // Co-sim: make test OP=sqrt_emit
+
+
 module sqrt_emit_tb;
     reg  clk;
     reg  rst_n;

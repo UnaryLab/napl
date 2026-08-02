@@ -31,6 +31,8 @@ class add_gaines(napl_base):
 
         B. R. Gaines, *Stochastic Computing Systems*, 1969.
     """
+
+
     def __init__(
         self,
         config={

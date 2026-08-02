@@ -5,6 +5,8 @@
 // The Python golden output is the oldest cell before the posedge shifts input.
 // R requests an active-low reset that clears every cell.
 // Co-sim: make test OP=dff
+
+
 module dff_tb;
     reg  clk;
     reg  rst_n;

@@ -26,6 +26,7 @@ class mul_shiftreg(napl_base):
                           torch.tensor([1], dtype=torch.int8))
     """
 
+
     def __init__(
         self,
         config={
@@ -96,6 +97,7 @@ class mul_shiftreg(napl_base):
         #: Whether the register and index tensors must be expanded for the input shape.
         self.is_first_call = True
 
+
     def _reset(self):
         """
         Restore the alternating register contents and restart sequence state.
@@ -109,6 +111,7 @@ class mul_shiftreg(napl_base):
         self.count.resize_(1).zero_()
         self.head = 0
         self.is_first_call = True
+
 
     def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """

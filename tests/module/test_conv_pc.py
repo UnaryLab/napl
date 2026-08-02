@@ -17,16 +17,20 @@ from napl.sim.module.conv import conv
 
 class napl_conv_pc(napl_base):
     """Wire encoder -> conv_pc and accumulate the per-timestep PC count."""
+
+
     def __init__(self, codec_config, pc_config, weight, bias, stride, padding):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.pc = conv_pc(weight, bias, stride=stride, padding=padding, config=pc_config)
         self.acc = None
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         count = self.pc(self.encoder(input_x))
         self.acc = count if self.acc is None else self.acc + count
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0

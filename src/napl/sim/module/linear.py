@@ -71,6 +71,8 @@ class linear(napl_base):
     ----------
     *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
+
+
     def __init__(
             self,
             weight,
@@ -152,6 +154,7 @@ class linear(napl_base):
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
+
     def _reset(self):
         """Reset state owned directly by the layer.
 
@@ -159,6 +162,7 @@ class linear(napl_base):
         resets the weight and bias encoders and the unary adder.
         """
         pass
+
 
     def forward(self, input_spike):
         """Process one input-spike timestep.
@@ -222,6 +226,8 @@ class linear_pc(napl_base):
     ----------
     *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
+
+
     def __init__(
             self,
             weight,
@@ -278,6 +284,7 @@ class linear_pc(napl_base):
             self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
+
     def _reset(self):
         """Reset state owned directly by the counter.
 
@@ -285,6 +292,7 @@ class linear_pc(napl_base):
         resets its registered encoders.
         """
         pass
+
 
     def forward(self, input_spike):
         """Count spike products for one timestep.
@@ -334,6 +342,7 @@ class _linear_fxp_fn(torch.autograd.Function):
             output = output + bias
         return output
 
+
     @staticmethod
     def backward(ctx, grad_output):
         return _linear_ste_grads(ctx, grad_output) + (None,) * (len(ctx.needs_input_grad) - 3)
@@ -359,6 +368,8 @@ class linear_fxp(napl_base):
         output = layer(torch.zeros(1, 2))
     """
     streaming = False
+
+
     def __init__(
             self,
             in_features,
@@ -411,6 +422,7 @@ class linear_fxp(napl_base):
         self.max_abs_w = 2 ** self.widthw
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -418,6 +430,7 @@ class linear_fxp(napl_base):
         ``None`` without changing trainable parameters.
         """
         pass
+
 
     def forward(self, input):
         """Apply the fixed-point linear approximation.
@@ -493,6 +506,7 @@ class _linear_hub_fn(torch.autograd.Function):
             output = output + bias.unsqueeze(0).expand_as(output)
         return output
 
+
     @staticmethod
     def backward(ctx, grad_output):
         return _linear_ste_grads(ctx, grad_output) + (None, None, None, None, None)
@@ -522,6 +536,8 @@ class linear_hub(napl_base):
         output = layer(torch.zeros(1, 2))
     """
     streaming = False
+
+
     def __init__(
             self,
             in_features,
@@ -599,6 +615,7 @@ class linear_hub(napl_base):
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -606,6 +623,7 @@ class linear_hub(napl_base):
         trainable parameters are unchanged.
         """
         pass
+
 
     def forward(self, input):
         """Apply the HUB linear approximation.
@@ -666,6 +684,7 @@ class _linear_tlut_fxpfxp_fn(torch.autograd.Function):
             output = output + bias.unsqueeze(0).expand_as(output)
         return output
 
+
     @staticmethod
     def backward(ctx, grad_output):
         return _linear_ste_grads(ctx, grad_output) + (None,) * 11
@@ -693,6 +712,7 @@ class _linear_tlut_fxpfp_fn(torch.autograd.Function):
         if bias is not None:
             output = output + bias.unsqueeze(0).expand_as(output)
         return output
+
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -722,6 +742,7 @@ class _linear_tlut_fpfp_fn(torch.autograd.Function):
         if bias is not None:
             output = output + bias.unsqueeze(0).expand_as(output)
         return output
+
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -755,6 +776,8 @@ class linear_tlut(napl_base):
         output = layer(torch.zeros(1, 2))
     """
     streaming = False
+
+
     def __init__(
             self,
             in_features,
@@ -862,6 +885,7 @@ class linear_tlut(napl_base):
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -869,6 +893,7 @@ class linear_tlut(napl_base):
         ``None`` without changing trainable parameters.
         """
         pass
+
 
     def forward(self, input):
         """Apply the selected temporal-LUT linear approximation.

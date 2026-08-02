@@ -46,6 +46,8 @@ class linear_gaines3(napl_base):
     ----------
     B. R. Gaines, *Stochastic Computing Systems*.
     """
+
+
     def __init__(
             self,
             weight,
@@ -119,6 +121,7 @@ class linear_gaines3(napl_base):
             self.cnt: torch.Tensor
             self.register_buffer('cnt', torch.full((1,), float(self.half_cnt)))
 
+
     def _reset(self):
         """Reset the local non-scaled counter.
 
@@ -127,6 +130,7 @@ class linear_gaines3(napl_base):
         """
         if not self.scaled:
             self.cnt.resize_(1).fill_(self.half_cnt)
+
 
     def forward(self, input_spike):
         """Process one input-spike timestep.

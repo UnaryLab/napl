@@ -3,6 +3,8 @@
 // Bipolar sqrt_traceiscb equivalent with width-2 bi2uni and depth-2 cordiv
 // using Sobol indices [0,1]. Output is combinational (pp_delay=0).
 // Active-low reset clears trace, dff, accumulator, buffer, and index.
+
+
 module sqrt_traceiscb_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

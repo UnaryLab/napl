@@ -5,6 +5,7 @@
 // Coefficient streams come from the Python-generated ROM.
 // State uses an asynchronous active-low reset to the Python reset values.
 // Verify from src/napl/imp with: make test OP=tanh_p1
+
 module tanh_p1 #(
     parameter integer WIDTH = 8  // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (

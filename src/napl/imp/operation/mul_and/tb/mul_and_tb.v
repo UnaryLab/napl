@@ -2,6 +2,8 @@
 `default_nettype none
 // Python golden vectors check both polarity variants.
 // Co-sim: make test OP=mul_and
+
+
 module mul_and_tb;
     reg  in_0, in_1;
     wire out_uni, out_bi;

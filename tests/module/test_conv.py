@@ -16,6 +16,7 @@ class napl_conv(napl_base):
         self.decoder = decoder(codec_config)
         self.conv = conv(weight, bias, stride=stride, padding=padding, config=conv_config)
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         self.decoder(self.conv(self.encoder(input_x)))

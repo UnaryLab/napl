@@ -3,6 +3,7 @@
 
 // Unipolar uGEMM adder. SCALED mirrors the Python configuration at elaboration.
 // Verify from src/napl/imp with: make test OP=add_ugemm
+
 module add_ugemm_unipolar #(
     parameter integer SCALED = 1,      // inherited from config['scaled']; tb overrides via `GEN_SCALED
     parameter integer ENTRY = 8,       // # addends (reduction dim); tb overrides via `GEN_ENTRY

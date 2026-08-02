@@ -2,6 +2,7 @@
 `default_nettype none
 `include "tanh_p1/vec/tanh_p1_params.vh"
 
+
 module tanh_p1_tb;
     reg i_clk;
     reg i_rst_n;
@@ -25,6 +26,7 @@ module tanh_p1_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_dut;
         begin
             i_rst_n = 1'b0;
@@ -33,6 +35,7 @@ module tanh_p1_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_rst_n = 1'b1;

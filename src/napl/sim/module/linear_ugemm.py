@@ -36,6 +36,8 @@ class linear_ugemm(napl_base):
     ----------
     *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
+
+
     def __init__(
             self,
             weight,
@@ -134,6 +136,7 @@ class linear_ugemm(napl_base):
         #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
 
+
     def _reset(self):
         """Reset the local conditional-generator indices.
 
@@ -144,6 +147,8 @@ class linear_ugemm(napl_base):
         self.seq_idx.resize_(1).zero_()
         if self._is_bipolar:
             self.seq_idx_inv.resize_(1).zero_()
+
+
     def forward(self, input_spike):
         """Process one input-spike timestep.
 

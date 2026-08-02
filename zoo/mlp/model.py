@@ -16,6 +16,7 @@ import torch.nn.functional as F
 class MLP3(nn.Module):
     """3-layer MLP: in_size -> width -> width -> 10. Trained in floating point."""
 
+
     def __init__(self, in_size=32 * 32, width=512, p=0.5):
         super().__init__()
         self.in_size = in_size
@@ -25,6 +26,7 @@ class MLP3(nn.Module):
 
         self.do1 = nn.Dropout(p=p)
         self.do2 = nn.Dropout(p=p)
+
 
     def forward(self, x):
         x = x.view(-1, self.in_size)
@@ -45,6 +47,7 @@ class MLP3_clamp_train(nn.Module):
     baseline instead of collapsing to chance. Ported from UnarySim MLP3_clamp_train.
     """
 
+
     def __init__(self, in_size=32 * 32, width=512, p=0.2):
         super().__init__()
         self.in_size = in_size
@@ -53,6 +56,7 @@ class MLP3_clamp_train(nn.Module):
         self.fc2 = nn.Linear(width, width)
         self.fc2_drop = nn.Dropout(p)
         self.fc3 = nn.Linear(width, 10)
+
 
     def forward(self, x):
         x = x.view(-1, self.in_size)
@@ -71,6 +75,7 @@ class MLP3_clamp_eval(nn.Module):
     (fc1_out, relu1_out, ...) as attributes so they can be used as references.
     """
 
+
     def __init__(self, in_size=32 * 32, width=512):
         super().__init__()
         self.in_size = in_size
@@ -83,6 +88,7 @@ class MLP3_clamp_eval(nn.Module):
         self.fc2_out = torch.zeros(1)
         self.relu2_out = torch.zeros(1)
         self.fc3_out = torch.zeros(1)
+
 
     def forward(self, x):
         x = x.view(-1, self.in_size)

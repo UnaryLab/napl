@@ -80,6 +80,7 @@ class gru_reference(torch.nn.Module):
         for name in ('weight_ih', 'bias_ih', 'weight_hh', 'bias_hh'):
             self.register_buffer(name, getattr(candidate, name).detach().clone())
 
+
     def forward(self, input, hx):
         return _ref_gru_hard(
             input, hx,

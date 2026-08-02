@@ -11,11 +11,14 @@ from napl.sim.module.linear import linear
 
 class napl_linear_gaines3(napl_base):
     """Wire encoder -> linear_gaines3 and count the output spikes."""
+
+
     def __init__(self, codec_config, lin_config, weight, bias):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.lin = linear_gaines3(weight, bias, lin_config)
         self.acc = None
+
 
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
@@ -23,6 +26,7 @@ class napl_linear_gaines3(napl_base):
         o_spike = self.lin(i_spike)
         count = o_spike.type(global_config.ntype)
         self.acc = count if self.acc is None else self.acc + count
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0

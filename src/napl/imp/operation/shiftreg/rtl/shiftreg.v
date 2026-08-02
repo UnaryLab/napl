@@ -3,6 +3,8 @@
 // DEPTH-cycle delay equivalent to napl.sim.operation.shiftreg; pp_delay=DEPTH.
 // Generated DEPTH mirrors Python. Active-low reset loads reg[i]=i%2, and the
 // oldest cell is emitted first.
+
+
 module shiftreg #(
     parameter integer DEPTH = 2   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

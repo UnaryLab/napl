@@ -3,6 +3,7 @@
 
 // Gaines adder. SCALED selects the RNG-driven MUX or the unscaled OR circuit
 // at elaboration. Verify from src/napl/imp with: make test OP=add_gaines
+
 module add_gaines #(
     parameter integer SCALED = 1,       // inherited from config['scaled']; tb overrides via `GEN_SCALED
     parameter integer ENTRY = 8,        // inherited from config['entry']; tb overrides via `GEN_ENTRY

@@ -25,6 +25,7 @@ class decoder(napl_base):
         value = dec.spike_value
     """
 
+
     def __init__(
             self,
             config:dict={

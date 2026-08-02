@@ -27,6 +27,7 @@ from napl import conv_fxp, conv_hub, linear_fxp, linear_hub
 class ConvNetFP(nn.Module):
     """FP32 baseline LeNet-ish CNN (trained by train_fp.py)."""
 
+
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
@@ -35,6 +36,7 @@ class ConvNetFP(nn.Module):
         self.dropout2 = nn.Dropout(0.5)
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
+
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -65,6 +67,7 @@ class ConvNetHUB(nn.Module):
     cycle count; weights/biases are loaded from the FP checkpoint (no retraining).
     """
 
+
     def __init__(self, state_dict, cycle, width=8, rng="sobol"):
         super().__init__()
         w = _state_to_tensors(state_dict)
@@ -77,6 +80,7 @@ class ConvNetHUB(nn.Module):
         self.dropout2 = nn.Dropout(0.5)
         self.fc1 = linear_hub(9216, 128, weight_ext=w[4], bias_ext=w[5], config=cfg)
         self.fc2 = linear_hub(128, 10, weight_ext=w[6], bias_ext=w[7], config=cfg)
+
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -97,6 +101,7 @@ class ConvNetFXP(nn.Module):
     has no o-res split). Weights/biases come from the FP checkpoint (no retraining).
     """
 
+
     def __init__(self, state_dict, bitwidth):
         super().__init__()
         w = _state_to_tensors(state_dict)
@@ -108,6 +113,7 @@ class ConvNetFXP(nn.Module):
         self.dropout2 = nn.Dropout(0.5)
         self.fc1 = linear_fxp(9216, 128, weight_ext=w[4], bias_ext=w[5], config=cfg)
         self.fc2 = linear_fxp(128, 10, weight_ext=w[6], bias_ext=w[7], config=cfg)
+
 
     def forward(self, x):
         x = F.relu(self.conv1(x))

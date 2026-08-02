@@ -26,6 +26,8 @@ class exp_ng(napl_base):
 
         B. D. Brown and H. C. Card, *Stochastic neural computation I: Computational elements*.
     """
+
+
     def __init__(
             self,
             config={

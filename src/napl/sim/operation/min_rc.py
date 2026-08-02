@@ -23,6 +23,8 @@ class min_rc(napl_base):
         spike, index = minimum(torch.tensor([0], dtype=torch.int8),
                                torch.tensor([1], dtype=torch.int8))
     """
+
+
     def __init__(
             self,
             config = {}

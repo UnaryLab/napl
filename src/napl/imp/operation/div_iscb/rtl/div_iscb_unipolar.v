@@ -3,6 +3,8 @@
 // Unipolar div_iscb equivalent: width-3 sync_skewed followed by a depth-2
 // div_cordiv with Sobol indices [0,1]. Output is combinational (pp_delay=0);
 // state advances each posedge. Active-low reset clears cnt, buffer, and index.
+
+
 module div_iscb_unipolar (
     input  wire i_clk,        // one posedge == one Python forward() timestep
     input  wire i_rst_n,      // active-low; maps to Python reset()

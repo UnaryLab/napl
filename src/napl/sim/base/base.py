@@ -74,15 +74,6 @@ class global_config_check:
         logger.error(f'Invalid non-spike type: <{ntype}>; legal types: [torch.float, torch.bfloat16].')
 
 
-global_config_check.__init__.__doc__ = """Initialize global dtype validation.
-
-Args:
-    root_path: NAPL package root. Defaults to the installed package path.
-    config_file: YAML file to read. Defaults to
-        ``sim/base/global_config.yaml`` below ``root_path``.
-"""
-global_config_check.__init__.__annotations__.pop('return', None)
-
 global_config = global_config_check()
 
 
@@ -115,19 +106,6 @@ class pvt_corner:
     mode: str = 'func'
 
 
-pvt_corner.__init__.__doc__ = """Initialize an immutable hardware corner.
-
-Args:
-    node: Technology node identifier, such as ``"asap7"``.
-    process: Process corner or library set, such as ``"ss"``.
-    voltage: Supply voltage in volts.
-    temp: Junction temperature in degrees Celsius.
-    rc: Interconnect corner. Defaults to ``"typ"``.
-    mode: Functional mode. Defaults to ``"func"``.
-"""
-pvt_corner.__init__.__annotations__.pop('return', None)
-
-
 @dataclass
 class timing:
     """Store non-overlapping timing segments for one hardware module.
@@ -150,20 +128,6 @@ class timing:
     ir_delay: float = 0.0
     #: Last-register-to-output-port delay in nanoseconds.
     or_delay: float = 0.0
-
-
-timing.__init__.__doc__ = """Initialize timing-segment delays.
-
-Args:
-    cp_delay: Worst internal combinational delay in nanoseconds. For a registered
-        module this is the register-to-register path; for a combinational module
-        it is the input-to-output delay. Defaults to ``0.0``.
-    ir_delay: Input-port-to-first-register delay in nanoseconds. Defaults to
-        ``0.0``.
-    or_delay: Last-register-to-output-port delay in nanoseconds. Defaults to
-        ``0.0``.
-"""
-timing.__init__.__annotations__.pop('return', None)
 
 
 @dataclass
@@ -190,17 +154,6 @@ class hw_params:
     timing: dict = field(default_factory=dict)
 
 
-hw_params.__init__.__doc__ = """Initialize hardware latency and timing data.
-
-Args:
-    pp_delay: Input-to-output latency in clock cycles, equal to the number of
-        register stages. ``0`` means purely combinational. Defaults to ``0``.
-    timing: Mapping from :class:`pvt_corner` objects to :class:`timing` values.
-        Defaults to an empty mapping.
-"""
-hw_params.__init__.__annotations__.pop('return', None)
-
-
 class napl_base(torch.nn.Module):
     """Provide shared execution state and reset behavior for NAPL modules.
 
@@ -222,6 +175,7 @@ class napl_base(torch.nn.Module):
     """
     #: Whether each call represents one streaming timestep.
     streaming = True
+
 
     def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
         """Initialize shared configuration, execution state, and hardware metadata.
@@ -259,6 +213,7 @@ class napl_base(torch.nn.Module):
         #: Hardware latency and characterized timing metadata for this module.
         self.hw = hw_params()
 
+
     def _reset(self):
         """Reset state owned directly by the base class.
 
@@ -267,6 +222,7 @@ class napl_base(torch.nn.Module):
         callers use :meth:`reset` instead.
         """
         pass
+
 
     @property
     def valid(self):
@@ -279,6 +235,7 @@ class napl_base(torch.nn.Module):
         single-shot modules because they do not advance ``timestep_cur``.
         """
         return self.timestep_cur > 0
+
 
     def tick(self):
         """Advance a streaming module by one timestep.
@@ -295,6 +252,7 @@ class napl_base(torch.nn.Module):
             assert module.timestep_cur == 1
         """
         self.timestep_cur += 1
+
 
     def __call__(self, *args, **kwargs):
         """Run ``forward()`` and update streaming execution state.
@@ -314,6 +272,7 @@ class napl_base(torch.nn.Module):
         if self.streaming:
             self.tick()
         return super().__call__(*args, **kwargs)
+
 
     def reset(self, verbose=False):
         """

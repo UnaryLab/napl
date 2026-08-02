@@ -23,6 +23,8 @@ class tanh_hub(napl_base):
     """
     #: Marks this activation as a single-shot tensor operation.
     streaming = False
+
+
     def __init__(
         self,
         config={},
@@ -40,11 +42,13 @@ class tanh_hub(napl_base):
         #: Modeled scalar latency of the single-shot hard tanh.
         self.delay = 0
 
+
     def _reset(self):
         """
         Reset no local state; this single-shot kernel is stateless.
         """
         pass
+
 
     def forward(self, input: torch.tensor):
         """

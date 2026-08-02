@@ -4,6 +4,8 @@
 // Each cycle clamps acc+(2*input-1) to the WIDTH-derived range, emits when the
 // updated value is at least one, then subtracts the emitted bit.
 // Output is combinational (pp_delay=0); active-low reset clears acc.
+
+
 module bi2uni #(
     parameter integer WIDTH = 2   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

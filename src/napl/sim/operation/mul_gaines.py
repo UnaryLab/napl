@@ -28,6 +28,8 @@ class mul_gaines(napl_base):
 
         B. R. Gaines, *Stochastic Computing Systems*.
     """
+
+
     def __init__(
             self,
             config={

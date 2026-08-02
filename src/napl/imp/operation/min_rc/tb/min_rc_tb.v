@@ -3,6 +3,8 @@
 // Python golden min/argmin outputs are checked before each posedge advances
 // state. The reset flag clears result and cnt before its row.
 // Co-sim: make test OP=min_rc
+
+
 module min_rc_tb;
     reg  clk, rst_n;
     reg  in_0, in_1;

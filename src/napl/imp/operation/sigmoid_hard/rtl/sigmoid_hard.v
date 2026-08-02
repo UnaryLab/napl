@@ -3,6 +3,8 @@
 // Streaming sigmoid_hard equivalent to add_any(scale=2,width=3) on input+1.
 // Each cycle clamps acc+input+1 to [-4,3], emits at two, then subtracts two.
 // Output is combinational (pp_delay=0); active-low reset clears acc.
+
+
 module sigmoid_hard (
     input  wire i_clk,    // one posedge per Python forward() timestep
     input  wire i_rst_n,  // active-low reset -> Python reset() (acc <- 0)

@@ -32,6 +32,8 @@ class accuracy(napl_base):
 
         *Fast and accurate computation using stochastic circuits*.
     """
+
+
     def __init__(
             self,
             config={
@@ -53,7 +55,7 @@ class accuracy(napl_base):
               - **polarity**: Choose ``"unipolar"`` for values in ``[0, 1]`` or ``"bipolar"`` for values in ``[-1, 1]``; the default is ``"bipolar"``.
               - **name**: Optional instance label; the default is ``None``.
         """
-        super().__init__(config, ['polarity'])
+        super().__init__(config, ['polarity'], polarity_required=True)
 
         #: Running count of one-valued spikes for each observed stream element.
         self.spike_count: torch.Tensor

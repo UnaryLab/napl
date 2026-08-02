@@ -8,6 +8,8 @@
 // path uses its complement, with independent RNG indices. Both paths observe
 // the current shift-register count before the register update.
 //==============================================================================
+
+
 module mul_shiftreg_bipolar #(
     parameter integer WIDTH = 4   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

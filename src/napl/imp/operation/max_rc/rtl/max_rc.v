@@ -4,6 +4,7 @@
 // Rate-coded max_rc equivalent with a width-2 sync_skewed counter.
 // o_max uses the pre-update arg register; o_arg uses its next value. Both are
 // combinational (pp_delay=0). Active-low reset clears arg and cnt.
+
 module max_rc (
     input  wire i_clk,
     input  wire i_rst_n,

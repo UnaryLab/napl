@@ -21,6 +21,8 @@ class avgpool2d(napl_base):
         output_spike = pool(torch.ones(1, 1, 2, 2))
         assert output_spike.shape == (1, 1, 1, 1)
     """
+
+
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
                  count_include_pad=True, divisor_override=None,
                  config={'polarity': 'bipolar'}):
@@ -54,6 +56,7 @@ class avgpool2d(napl_base):
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
+
     def _reset(self):
         """Clear the local pooling accumulator.
 
@@ -61,6 +64,7 @@ class avgpool2d(napl_base):
         shape on demand. This hook returns ``None`` and is called by ``reset()``.
         """
         self.accumulator.resize_(1).zero_()
+
 
     def forward(self, input_spike):
         """Process one spatial spike tensor.

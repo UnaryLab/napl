@@ -5,6 +5,8 @@
 // Golden rows are <rst> <unipolar input/output> <bipolar input/output>. Reset precedes
 // the marked row; outputs are checked before the posedge updates state.
 // Co-sim: make test OP=add_any
+
+
 module add_any_tb;
     reg              i_clk;
     reg              i_rst_n;

@@ -13,6 +13,8 @@
 //
 // Verify from src/napl/imp/: conda run -n napl make test OP=jkff
 //==============================================================================
+
+
 module jkff (
     input  wire i_clk,
     input  wire i_rst_n,

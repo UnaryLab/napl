@@ -17,6 +17,7 @@ class napl_linear(napl_base):
         self.accuracy = accuracy(codec_config)
         self.linear = linear(weight, bias, lin_config)
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         i_spike = self.encoder(input_x)

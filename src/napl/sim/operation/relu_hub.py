@@ -23,6 +23,8 @@ class relu_hub(napl_base):
     """
     #: Marks this activation as a single-shot tensor operation.
     streaming = False
+
+
     def __init__(
             self,
             config={
@@ -45,11 +47,13 @@ class relu_hub(napl_base):
         #: Upper bound applied to the clipped output tensor.
         self.scale = config.get('scale', 1.0)
 
+
     def _reset(self):
         """
         Reset no local state; this single-shot kernel is stateless.
         """
         pass
+
 
     def forward(self, input):
         """

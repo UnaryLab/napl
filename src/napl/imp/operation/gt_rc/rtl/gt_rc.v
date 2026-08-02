@@ -3,6 +3,8 @@
 // Rate-coded gt_rc equivalent with a width-2 sync_skewed counter.
 // o_out is the pre-update result register, so pp_delay=1.
 // Each posedge is one Python timestep; active-low reset loads result=1, cnt=0.
+
+
 module gt_rc (
     input  wire i_clk,
     input  wire i_rst_n,

@@ -4,6 +4,7 @@
 
 // Self-checking co-simulation testbench for relu_shiftreg. Each row is one
 // scalar Python forward() timestep; reset rows pulse the active-low reset first.
+
 module relu_shiftreg_tb;
     reg i_clk, i_rst_n, i_input;
     wire o_out;
@@ -18,6 +19,7 @@ module relu_shiftreg_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_dut;
         begin
             i_rst_n = 1'b0;
@@ -26,6 +28,7 @@ module relu_shiftreg_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_rst_n = 1'b1;

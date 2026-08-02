@@ -21,6 +21,8 @@ class add_ugemm(napl_base):
         adder = add_ugemm({'polarity': 'unipolar', 'scaled': True})
         output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
     """
+
+
     def __init__(
             self,
             config={

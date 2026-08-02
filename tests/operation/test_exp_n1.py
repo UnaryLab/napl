@@ -26,6 +26,7 @@ class napl_exp_n1(napl_base):
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
+
 def _kernel_specific_checks():
     """
     Test exp_n1 (exp(-x), unipolar) on every available device: correctness

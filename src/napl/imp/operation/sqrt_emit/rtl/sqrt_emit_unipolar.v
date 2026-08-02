@@ -4,6 +4,8 @@
 // alternating shift register gated by o_out.
 // Output is combinational (pp_delay=0); state advances each posedge.
 // Active-low reset clears emit/acc and loads sr[i]=i%2.
+
+
 module sqrt_emit_unipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

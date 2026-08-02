@@ -7,6 +7,8 @@
 // signabs_interleave.forward(). The accumulator itself is committed at the
 // following clock edge, so both output paths have zero cycle latency.
 //==============================================================================
+
+
 module signabs_interleave #(
     parameter integer WIDTH = 5   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

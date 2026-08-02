@@ -30,6 +30,8 @@ class square_dff(napl_base):
 
         *uGEMM: Unary Computing for GEMM Applications*.
     """
+
+
     def __init__(
             self,
             config={

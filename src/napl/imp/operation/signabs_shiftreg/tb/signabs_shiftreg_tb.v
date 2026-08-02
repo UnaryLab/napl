@@ -3,6 +3,7 @@
 `include "signabs_shiftreg/vec/signabs_shiftreg_params.vh"
 
 // Self-checking co-simulation testbench for signabs_shiftreg.
+
 module signabs_shiftreg_tb;
     reg i_clk, i_rst_n, i_input;
     wire o_sign, o_magnitude;
@@ -18,6 +19,7 @@ module signabs_shiftreg_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_dut;
         begin
             i_rst_n = 1'b0;
@@ -26,6 +28,7 @@ module signabs_shiftreg_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_rst_n = 1'b1;

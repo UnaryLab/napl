@@ -2,6 +2,7 @@
 `default_nettype none
 `include "sync_skewed_int/vec/sync_skewed_int_params.vh"
 
+
 module sync_skewed_int_tb;
     reg i_clk;
     reg i_rst_n;
@@ -30,6 +31,7 @@ module sync_skewed_int_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_dut;
         begin
             i_rst_n = 1'b0;
@@ -38,6 +40,7 @@ module sync_skewed_int_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_input_1 = 1'b0;

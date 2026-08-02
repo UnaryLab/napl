@@ -4,6 +4,7 @@
 // Bipolar mul_csg equivalent. The WIDTH+1 operand spans [0,2**WIDTH]; two
 // input-gated counters address the Python-generated number-sequence ROM.
 // Output is combinational (pp_delay=0); active-low reset clears both counters.
+
 module mul_csg_bipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (

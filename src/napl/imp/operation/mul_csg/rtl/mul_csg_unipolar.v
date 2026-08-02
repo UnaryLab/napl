@@ -4,6 +4,7 @@
 // Unipolar mul_csg equivalent. The WIDTH+1 operand spans [0,2**WIDTH]; an
 // input-gated counter addresses the Python-generated number-sequence ROM.
 // Output is combinational (pp_delay=0); active-low reset clears the counter.
+
 module mul_csg_unipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
 ) (

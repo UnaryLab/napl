@@ -3,6 +3,8 @@
 `timescale 1ns / 1ps
 `default_nettype none
 `include "max_rc/vec/max_rc_params.vh"
+
+
 module max_rc_tb;
     reg  clk;
     reg  rst_n;

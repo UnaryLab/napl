@@ -11,17 +11,21 @@ from napl.sim.module.linear_ugemm import linear_ugemm
 
 class napl_linear_ugemm(napl_base):
     """Wire encoder -> linear_ugemm -> decoder (canonical streaming round-trip)."""
+
+
     def __init__(self, codec_config, lin_config, weight, bias):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.linear = linear_ugemm(weight, bias, lin_config)
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         i_spike = self.encoder(input_x)
         o_spike = self.linear(i_spike)
         self.decoder(o_spike)
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0

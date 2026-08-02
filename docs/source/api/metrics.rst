@@ -8,9 +8,7 @@ Metric API
    :nosignatures:
 
    accuracy
-   analyze
    correlation
-   search_max_stab
    stability
    stability_builder
    stability_flux

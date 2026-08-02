@@ -5,6 +5,8 @@
 // Python golden rows are <rst> <in_0> <in_1u> <out_u> <in_1b> <out_b>.
 // Outputs use pre-update ROM indices; rst=1 first clears both counters.
 // Co-sim: make test OP=mul_csg
+
+
 module mul_csg_tb;
     reg                 i_clk;
     reg                 i_rst_n;

@@ -22,6 +22,7 @@ class relu_tc(napl_base):
         output = operation(torch.tensor([0.0, 1.0]))
     """
 
+
     def __init__(self, config={'width': 8}):
         """
         Configure the temporal-code width.
@@ -52,12 +53,14 @@ class relu_tc(napl_base):
         #: Number of temporal-code bits processed since reset.
         self.cycle = 0
 
+
     def _reset(self):
         """
         Clear the temporal accumulator and restart the local cycle counter.
         """
         self.acc.resize_(1).zero_()
         self.cycle = 0
+
 
     def forward(self, input: torch.Tensor):
         """

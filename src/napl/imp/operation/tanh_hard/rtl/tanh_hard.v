@@ -14,6 +14,8 @@
 // Stateless and combinational: the output is the input in the same cycle, so
 // pp_delay = 0.
 //==============================================================================
+
+
 module tanh_hard (
     input  wire i_input,    // input spike stream
     output wire o_out    // output spike (identity)

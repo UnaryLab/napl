@@ -3,6 +3,8 @@
 `include "jkff/vec/jkff_params.vh"
 // Python golden output is checked after each posedge; R clears q before replay.
 // Co-sim: make test OP=jkff
+
+
 module jkff_tb;
     reg  i_clk, i_rst_n, i_input_j, i_input_k;
     wire o_q;

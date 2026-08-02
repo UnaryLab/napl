@@ -5,6 +5,8 @@
 // Python golden output is the oldest cell before the posedge shifts input.
 // R requests active-low reset to the alternating pattern.
 // Co-sim: make test OP=shiftreg
+
+
 module shiftreg_tb;
     reg  clk;
     reg  rst_n;

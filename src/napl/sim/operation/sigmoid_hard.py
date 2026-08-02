@@ -21,6 +21,8 @@ class sigmoid_hard(napl_base):
         operation = sigmoid_hard({'polarity': 'bipolar'})
         output = operation(torch.tensor([0.0, 1.0]))
     """
+
+
     def __init__(
         self,
         config={

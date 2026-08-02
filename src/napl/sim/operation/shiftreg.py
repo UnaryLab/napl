@@ -23,6 +23,8 @@ class shiftreg(napl_base):
         delay = shiftreg({'depth': 2})
         output = delay(torch.tensor([1], dtype=torch.int8))
     """
+
+
     def __init__(
             self,
             config={'depth': 1}

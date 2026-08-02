@@ -22,6 +22,7 @@ class signabs_interleave(napl_base):
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
     """
 
+
     def __init__(self, config={'width': 5}):
         """
         Configure the interleaving counter.
@@ -54,11 +55,13 @@ class signabs_interleave(napl_base):
             torch.full((1,), self.acc_half, dtype=self.ntype),
         )
 
+
     def _reset(self):
         """
         Restore the interleaving accumulator to its half-scale initial state.
         """
         self.acc.resize_(1).fill_(self.acc_half)
+
 
     def forward(self, input: torch.Tensor):
         """

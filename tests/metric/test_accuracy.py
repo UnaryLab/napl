@@ -24,6 +24,7 @@ class napl_mul_csg(napl_base):
         self.mul_csg = mul_csg(mul_csg_config)
         self.accuracy = accuracy(acc_config)
 
+
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
         i_spike = self.encoder(input_0)

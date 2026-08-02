@@ -31,6 +31,8 @@ class tanh_p1(napl_base):
 
         K. Parhi and Y. Liu, *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2017, Fig. 10.
     """
+
+
     def __init__(
             self,
             config={

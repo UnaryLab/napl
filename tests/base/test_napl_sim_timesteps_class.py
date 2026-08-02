@@ -33,8 +33,10 @@ class reset_leaf(napl_base):
         super().__init__()
         self.reset_count = 0
 
+
     def _reset(self):
         self.reset_count += 1
+
 
     def forward(self, input):
         return input
@@ -46,8 +48,10 @@ class reset_parent(napl_base):
         self.child = reset_leaf()
         self.reset_count = 0
 
+
     def _reset(self):
         self.reset_count += 1
+
 
     def forward(self, input):
         return self.child(input)

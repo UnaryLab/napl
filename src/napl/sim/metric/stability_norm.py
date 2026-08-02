@@ -85,6 +85,8 @@ class stability_norm(napl_base):
 
         *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*.
     """
+
+
     def __init__(
             self,
             source,

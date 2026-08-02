@@ -2,6 +2,7 @@
 `default_nettype none
 `include "div_gaines/vec/div_gaines_params.vh"
 
+
 module div_gaines_tb;
     reg i_clk;
     reg i_rst_n;
@@ -38,6 +39,7 @@ module div_gaines_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_duts;
         begin
             i_rst_n = 1'b0;
@@ -46,6 +48,7 @@ module div_gaines_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_rst_n = 1'b1;

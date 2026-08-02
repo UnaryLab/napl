@@ -12,6 +12,8 @@ from napl.sim.module.linear import linear
 
 class napl_linear_gaines4(napl_base):
     """Canonical wiring: encoder -> linear_gaines4 -> decoder."""
+
+
     def __init__(self, codec_config, layer_config, weight, bias):
         super().__init__()
         self.encoder = encoder(codec_config)
@@ -19,11 +21,13 @@ class napl_linear_gaines4(napl_base):
         self.decoder = decoder({'polarity': layer_config['polarity'],
                                 'timestep': codec_config['timestep']})
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         i_spike = self.encoder(input_x)
         o_spike = self.layer(i_spike)
         self.decoder(o_spike)
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0

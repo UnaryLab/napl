@@ -15,17 +15,21 @@ from napl.sim.module.linear import linear
 
 class napl_linear_pc(napl_base):
     """Wire encoder -> linear_pc and accumulate the per-timestep PC count."""
+
+
     def __init__(self, codec_config, pc_config, weight, bias):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.pc = linear_pc(weight, bias, pc_config)
         self.acc = None
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         i_spike = self.encoder(input_x)
         count = self.pc(i_spike)
         self.acc = count if self.acc is None else self.acc + count
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0

@@ -4,7 +4,6 @@ import torch.nn.functional as F
 
 from napl.utils import *
 from napl.sim.base import napl_base
-
 # Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
@@ -29,6 +28,8 @@ class gru_hardnuapt(napl_base):
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
+
+
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the GRU cell and initialize trainable parameters.
 
@@ -76,6 +77,7 @@ class gru_hardnuapt(napl_base):
             if w is not None:
                 w.data = truncated_normal(w, 0.0, stdv)
 
+
     def _reset(self):
         """Reset local recurrent state.
 
@@ -83,6 +85,7 @@ class gru_hardnuapt(napl_base):
         ``None`` without changing trainable parameters.
         """
         pass
+
 
     def forward(self, input, hx=None):
         """Compute one GRU recurrence.

@@ -32,6 +32,8 @@ class correlation(napl_base):
 
         *Exploiting Correlation in Stochastic Circuit Design*.
     """
+
+
     def __init__(
             self,
             config={}

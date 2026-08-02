@@ -21,6 +21,8 @@ class tanh_hard(napl_base):
         operation = tanh_hard()
         output = operation(torch.tensor([0.0, 1.0]))
     """
+
+
     def __init__(
         self,
         config={},

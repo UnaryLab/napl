@@ -22,6 +22,7 @@ class relu_shiftreg(napl_base):
         output = operation(torch.tensor([0.0, 1.0]))
     """
 
+
     def __init__(self, config={'depth': 8}):
         """
         Configure the shift-register estimator.
@@ -67,6 +68,7 @@ class relu_shiftreg(napl_base):
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
 
+
     def _reset(self):
         """
         Restore the alternating register seed, counters, head, and first-call flag.
@@ -78,6 +80,7 @@ class relu_shiftreg(napl_base):
         self.count_delayed.resize_(1).zero_()
         self.head = 0
         self.is_first_call = True
+
 
     def forward(self, input: torch.Tensor):
         """

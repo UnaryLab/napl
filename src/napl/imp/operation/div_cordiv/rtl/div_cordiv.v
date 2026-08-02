@@ -6,6 +6,8 @@
 // Output is combinational (pp_delay=0); each posedge shifts on a divisor spike
 // and advances the index. Generated DEPTH/WIDTH mirror Python.
 // Active-low reset clears the buffer and index.
+
+
 module div_cordiv #(
     parameter integer DEPTH = 2,  // inherited from config['depth']; tb overrides via `GEN_DEPTH
     parameter integer WIDTH = 1   // inherited from log2(config['depth']); tb overrides via `GEN_WIDTH

@@ -3,6 +3,8 @@
 // signabs equivalent with a WIDTH-derived saturating accumulator.
 // The current input produces acc_next before sign and magnitude are read, so
 // outputs are combinational (pp_delay=0). Active-low reset loads ACC_MED.
+
+
 module signabs #(
     parameter integer WIDTH = 3   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

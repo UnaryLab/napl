@@ -13,6 +13,8 @@
 // WIDTH is inherited from config['width']; DEPTH and every internal size derive
 // from it. The generated RNG ROM comes from the same Python model config.
 //==============================================================================
+
+
 module mul_shiftreg_unipolar #(
     parameter integer WIDTH = 4   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

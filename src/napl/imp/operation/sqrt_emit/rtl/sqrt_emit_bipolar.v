@@ -4,6 +4,8 @@
 // from a depth-2 alternating shift register gated by bi2uni(o_out).
 // Output is combinational (pp_delay=0); state advances each posedge.
 // Active-low reset clears emit/accumulators and loads sr[i]=i%2.
+
+
 module sqrt_emit_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()

@@ -3,6 +3,8 @@
 // Python golden outputs must be checked before the committing posedge; checking
 // later advances trace one cycle early after reset. R clears trace and acc.
 // Co-sim: make test OP=sqrt_tracejkff
+
+
 module sqrt_tracejkff_tb;
     reg  clk;
     reg  rst_n;

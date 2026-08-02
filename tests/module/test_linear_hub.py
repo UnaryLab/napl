@@ -82,6 +82,7 @@ class linear_reference(torch.nn.Module):
         self.register_buffer('weight', weight.detach().clone())
         self.register_buffer('bias', bias.detach().clone())
 
+
     def forward(self, input):
         return F.linear(input, self.weight, self.bias)
 

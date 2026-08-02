@@ -3,6 +3,7 @@ import torch
 from napl.sim.base import napl_base
 from napl.utils import pow2_lshift, pow2_rshift
 
+
 class _round_ste_fn(torch.autograd.Function):
     """
     Straight-through rounding: round to a fixed-point grid on the forward pass, pass
@@ -11,6 +12,8 @@ class _round_ste_fn(torch.autograd.Function):
     Semantics: round(x << f).clamp(min,max) >> f, using the float-safe pow2 shift shims
     instead of integer operators.
     """
+
+
     @staticmethod
     def forward(ctx, input, fracwidth, min_val, max_val):
         # pow2_lshift returns a fresh tensor, so in-place rounding cannot modify input.
@@ -18,9 +21,11 @@ class _round_ste_fn(torch.autograd.Function):
         scaled.round_().clamp_(min_val, max_val)
         return pow2_rshift(scaled, fracwidth)
 
+
     @staticmethod
     def backward(ctx, grad_output):
         return grad_output, None, None, None
+
 
 def round_ste(input, fracwidth=0, min_val=None, max_val=None):
     """
@@ -53,6 +58,7 @@ def round_ste(input, fracwidth=0, min_val=None, max_val=None):
     output = _round_ste_fn.apply(input_float, fracwidth, min_val, max_val)
     return output if input.dtype == torch.float32 else output.to(input.dtype)
 
+
 class round_fxp(napl_base):
     """
     Quantize a tensor to a signed fixed-point format.
@@ -73,6 +79,8 @@ class round_fxp(napl_base):
     """
     #: Marks this quantizer as a single-shot tensor operation.
     streaming = False
+
+
     def __init__(
             self,
             config={
@@ -107,11 +115,13 @@ class round_fxp(napl_base):
         #: Modeled scalar latency of the single-shot quantizer.
         self.delay = 0
 
+
     def _reset(self):
         """
         Reset no local state; this single-shot quantizer is stateless.
         """
         pass
+
 
     def forward(self, input):
         """

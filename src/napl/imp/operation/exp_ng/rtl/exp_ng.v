@@ -4,6 +4,7 @@
 // FSM exp(-2*GAIN*x): bipolar spike input, unipolar spike output.
 // State uses an asynchronous active-low reset to the Python reset value.
 // Verify from src/napl/imp with: make test OP=exp_ng
+
 module exp_ng #(
     parameter integer DEPTH = 5, // inherited from config['depth']; tb overrides via `GEN_DEPTH
     parameter integer GAIN = 1   // inherited from config['gain']; tb overrides via `GEN_GAIN

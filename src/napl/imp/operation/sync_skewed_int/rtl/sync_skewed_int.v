@@ -4,6 +4,7 @@
 // Integral skewed synchronizer with a WIDTH-bit saturating spike counter.
 // State uses an asynchronous active-low reset to the Python reset value.
 // Verify from src/napl/imp with: make test OP=sync_skewed_int
+
 module sync_skewed_int #(
     parameter integer WIDTH = 4  // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

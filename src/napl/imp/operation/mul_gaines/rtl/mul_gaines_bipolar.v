@@ -3,6 +3,7 @@
 
 // Bipolar Gaines multiplier: combinational XNOR of two spike inputs.
 // Verify from src/napl/imp with: make test OP=mul_gaines
+
 module mul_gaines_bipolar (
     input  wire i_input_0,
     input  wire i_input_1,

@@ -35,6 +35,8 @@ class div_cordiv(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
     """
+
+
     def __init__(
         self,
         config={

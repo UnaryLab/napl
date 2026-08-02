@@ -3,6 +3,8 @@
 // Python golden rows are <rst> <in_0> <in_1> <out>. Output is checked before
 // the posedge updates state; rst=1 first clears result and cnt.
 // Co-sim: make test OP=lt_rc
+
+
 module lt_rc_tb;
     reg  i_clk;
     reg  i_rst_n;
@@ -21,6 +23,7 @@ module lt_rc_tb;
     reg rst, a, b, exp_out;
 
     // pulse the active-low reset: bring cnt/dff to the post-reset() state.
+
     task do_reset;
         begin
             i_rst_n = 1'b0;
@@ -30,6 +33,7 @@ module lt_rc_tb;
             #1;
         end
     endtask
+
 
     initial begin
         fd = $fopen("vec/lt_rc.vec", "r");

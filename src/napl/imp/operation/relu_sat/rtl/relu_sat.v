@@ -4,6 +4,8 @@
 // Both accumulators clamp to [-8,6] and use half-unit offsets.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears both accumulators.
+
+
 module relu_sat (
     input  wire i_clk,
     input  wire i_rst_n,

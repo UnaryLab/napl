@@ -39,6 +39,8 @@ class conv_ugemm(napl_base):
     ----------
     *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
+
+
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
                          'scale': None, 'width': 12}):
@@ -138,6 +140,7 @@ class conv_ugemm(napl_base):
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
         self._im2col_key = None
 
+
     def _reset(self):
         """Reset the local conditional-generator indices.
 
@@ -147,6 +150,7 @@ class conv_ugemm(napl_base):
         self.w_idx.resize_(1).zero_()
         if self._is_bipolar:
             self.w_idx_inv.resize_(1).zero_()
+
 
     def forward(self, input_spike):
         """Process one NCHW input-spike timestep.
@@ -203,6 +207,7 @@ class conv_ugemm(napl_base):
         acc = self.acc(psum, entry=self.entry, dim=None)
         return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
                   .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)
+
 
     def _build_im2col(self, input_spike):
         ph, pw = self.padding

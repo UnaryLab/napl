@@ -12,11 +12,14 @@ from napl.sim.module.linear_gaines1 import linear_gaines1
 
 class napl_linear_gaines1(napl_base):
     """Wire encoder -> linear_gaines1 -> decoder (canonical round-trip)."""
+
+
     def __init__(self, codec_config, lin_config, weight, bias):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.linear = linear_gaines1(weight, bias, lin_config)
+
 
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):

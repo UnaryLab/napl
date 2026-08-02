@@ -2,6 +2,8 @@
 `default_nettype none
 // Fixed-width bi2uni helper matching Python: clamp acc+(2*input-1) to [-2,1],
 // emit at one, then subtract the emitted bit. Active-low reset clears acc.
+
+
 module div_iscb_bi2uni (
     input  wire i_clk,
     input  wire i_rst_n,

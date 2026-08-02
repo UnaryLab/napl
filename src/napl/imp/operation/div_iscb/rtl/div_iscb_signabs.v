@@ -3,6 +3,8 @@
 // Fixed-width signabs helper matching Python. The current input updates acc in
 // [0,7] before sign=(acc<4) and abs=sign^input are read.
 // Active-low reset loads acc=4.
+
+
 module div_iscb_signabs (
     input  wire i_clk,
     input  wire i_rst_n,

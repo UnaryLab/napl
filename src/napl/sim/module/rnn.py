@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from napl.utils import *
 from napl.sim.base import napl_base
 from loguru import logger
-
 # Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
@@ -48,6 +47,8 @@ class mgu_hard(napl_base):
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
+
+
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
         """Construct the MGU cell and initialize its trainable parameters.
 
@@ -80,6 +81,7 @@ class mgu_hard(napl_base):
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
+
     def _reset(self):
         """Reset local recurrent state.
 
@@ -87,6 +89,7 @@ class mgu_hard(napl_base):
         ``None`` without changing its trainable parameters.
         """
         pass
+
 
     def forward(self, input, hx=None):
         """Compute one MGU recurrence in the binary domain.
@@ -135,6 +138,8 @@ class mgu_hardfxp(napl_base):
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
+
+
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True, 'intwidth': 3, 'fracwidth': 4}):
         """Construct the fixed-point MGU and initialize trainable parameters.
 
@@ -172,6 +177,7 @@ class mgu_hardfxp(napl_base):
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
+
     def _reset(self):
         """Reset local recurrent state.
 
@@ -179,6 +185,7 @@ class mgu_hardfxp(napl_base):
         ``None`` without changing parameters or quantization settings.
         """
         pass
+
 
     def forward(self, input, hx=None):
         """Compute one quantized MGU recurrence.
@@ -236,6 +243,8 @@ class mgu(napl_base):
                     "generator": "sobol", "width": 12})
         output_spike = cell(torch.ones(1, 2), torch.ones(1, 3))
     """
+
+
     def __init__(self, weight_f, bias_f, weight_n, bias_n, hx_value,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'width': 12}):
         """Construct a streaming MGU from external gate parameters.
@@ -284,6 +293,7 @@ class mgu(napl_base):
         #: Saturating unary adder that forms the next hidden-state stream.
         self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
 
+
     def _reset(self):
         """Reset state owned directly by this cell.
 
@@ -291,6 +301,7 @@ class mgu(napl_base):
         ``reset()`` method resets its registered child modules.
         """
         pass
+
 
     def forward(self, input_spike, hx_spike):
         """Process one input and hidden-state spike timestep.
@@ -342,6 +353,8 @@ class mgu_hub(napl_base):
     """
     #: Whether calls process one stream timestep; this wrapper is single-shot.
     streaming = False
+
+
     def __init__(self, input_size, hidden_size, bias=True,
                  weight_f=None, bias_f=None, weight_n=None, bias_n=None,
                  config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol'}):
@@ -388,6 +401,7 @@ class mgu_hub(napl_base):
         #: Accumulator width used by each internal streaming linear layer.
         self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
 
+
     def _reset(self):
         """Reset state owned directly by the hybrid wrapper.
 
@@ -395,6 +409,7 @@ class mgu_hub(napl_base):
         persistent local run state, so this hook returns ``None``.
         """
         pass
+
 
     def forward(self, input, hx=None):
         """Run a complete ``2 ** width``-cycle unary MGU simulation.

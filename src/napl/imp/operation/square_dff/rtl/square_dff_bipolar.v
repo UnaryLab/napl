@@ -2,6 +2,8 @@
 `default_nettype none
 // Bipolar square_dff equivalent: XNOR the current input with its DEPTH-delayed
 // copy. Output is combinational (pp_delay=0); active-low reset clears the delay.
+
+
 module square_dff_bipolar #(
     parameter integer DEPTH = 1   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

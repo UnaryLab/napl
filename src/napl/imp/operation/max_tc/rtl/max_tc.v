@@ -10,6 +10,8 @@
 //
 //   o_out = i_input_0 | i_input_1        (OR)
 //==============================================================================
+
+
 module max_tc (
     input  wire i_input_0,   // spike stream 0
     input  wire i_input_1,   // spike stream 1

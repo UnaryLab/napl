@@ -34,7 +34,6 @@ Operation API
    relu_shiftreg
    relu_tc
    round_fxp
-   round_ste
    shiftreg
    sigmoid_hard
    sigmoid_hub

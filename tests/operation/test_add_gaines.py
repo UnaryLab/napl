@@ -11,14 +11,18 @@ from napl.sim.operation import add_any
 from napl.sim.operation.add_gaines import add_gaines
 from napl.sim.metric import accuracy
 
+
 class napl_add_gaines_scaled(napl_base):
     """One shared-RNG encoder over the (entry, col) tensor, MUX add over dim 0."""
+
+
     def __init__(self, codec_config, add_config):
         super().__init__()
         self.encoder = encoder(codec_config)
         self.decoder = decoder(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
         self.add_gaines = add_gaines(add_config)
+
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
@@ -30,12 +34,15 @@ class napl_add_gaines_scaled(napl_base):
 
 class napl_add_gaines_or(napl_base):
     """Per-row decorrelated encoders (distinct Sobol dims), OR add over dim 0."""
+
+
     def __init__(self, codec_configs, add_config):
         super().__init__()
         self.encoders = torch.nn.ModuleList([encoder(c) for c in codec_configs])
         self.decoder = decoder(codec_configs[0])
         self.accuracy = accuracy({'polarity': codec_configs[0]['polarity']})
         self.add_gaines = add_gaines(add_config)
+
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):

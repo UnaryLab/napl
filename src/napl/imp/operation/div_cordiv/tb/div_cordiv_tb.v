@@ -5,6 +5,8 @@
 // Python golden output is checked before each posedge advances buffer and index.
 // R requests an active-low reset before replay continues.
 // Co-sim: make test OP=div_cordiv
+
+
 module div_cordiv_tb;
     reg  clk, rst_n;
     reg  dividend, divisor;
@@ -25,6 +27,7 @@ module div_cordiv_tb;
     reg [7:0] tag;
     reg dv, ds, exp_q;
 
+
     task do_reset;
         begin
             rst_n = 1'b0;
@@ -34,6 +37,7 @@ module div_cordiv_tb;
             #1;
         end
     endtask
+
 
     initial begin
         clk = 1'b0;

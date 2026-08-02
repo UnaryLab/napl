@@ -22,6 +22,8 @@ class sigmoid_hub(napl_base):
     """
     #: Marks this activation as a single-shot tensor operation.
     streaming = False
+
+
     def __init__(
         self,
         config={
@@ -46,11 +48,13 @@ class sigmoid_hub(napl_base):
         #: Input multiplier applied before the hard sigmoid.
         self.scale = config.get('scale', 3)
 
+
     def _reset(self):
         """
         Reset no local state; this single-shot kernel is stateless.
         """
         pass
+
 
     def forward(self, input: torch.tensor):
         """

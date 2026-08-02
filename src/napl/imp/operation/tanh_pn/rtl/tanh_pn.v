@@ -4,6 +4,7 @@
 // FSM tanh: bipolar spike input and output from a saturating counter.
 // State uses an asynchronous active-low reset to the Python reset value.
 // Verify from src/napl/imp with: make test OP=tanh_pn
+
 module tanh_pn #(
     parameter integer DEPTH = 3  // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (

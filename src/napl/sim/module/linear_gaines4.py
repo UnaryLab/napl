@@ -43,6 +43,8 @@ class linear_gaines4(napl_base):
         output_spike = layer(torch.ones(1, 2))
 
     """
+
+
     def __init__(
             self,
             weight,
@@ -155,6 +157,7 @@ class linear_gaines4(napl_base):
             self.cnt: torch.Tensor
             self.register_buffer('cnt', torch.full((1,), float(self.cnt_half), dtype=self.ntype))
 
+
     def _reset(self):
         """Reset the local non-scaled counter.
 
@@ -163,6 +166,7 @@ class linear_gaines4(napl_base):
         """
         if not self.scaled:
             self.cnt.resize_(1).fill_(self.cnt_half)
+
 
     def forward(self, input_spike):
         """Process one input-spike timestep.

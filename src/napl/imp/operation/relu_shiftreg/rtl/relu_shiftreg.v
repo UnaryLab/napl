@@ -7,6 +7,8 @@
 // resets count to zero but initializes it from the alternating register during
 // the first forward() call; first_call reproduces that transition exactly.
 //==============================================================================
+
+
 module relu_shiftreg #(
     parameter integer DEPTH = 8   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
@@ -15,6 +17,8 @@ module relu_shiftreg #(
     input  wire i_input,
     output wire o_out
 );
+
+
     function integer clog2;
         input integer value;
         integer v;
@@ -24,6 +28,7 @@ module relu_shiftreg #(
                 v = v >> 1;
         end
     endfunction
+
 
     localparam integer HEAD_WIDTH = (DEPTH <= 1) ? 1 : clog2(DEPTH);
     localparam integer HALF_CEIL = (DEPTH + 1) / 2;

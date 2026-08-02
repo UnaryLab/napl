@@ -7,6 +7,8 @@
 // sum on the first forward() call. first_call keeps that internal reset state
 // exact while count_base exposes the first externally visible state.
 //==============================================================================
+
+
 module signabs_shiftreg #(
     parameter integer DEPTH = 8   // inherited from config['depth']; tb overrides via `GEN_DEPTH
 ) (
@@ -16,6 +18,8 @@ module signabs_shiftreg #(
     output wire o_sign,
     output wire o_magnitude
 );
+
+
     function integer clog2;
         input integer value;
         integer v;
@@ -25,6 +29,7 @@ module signabs_shiftreg #(
                 v = v >> 1;
         end
     endfunction
+
 
     localparam integer HEAD_WIDTH = (DEPTH <= 1) ? 1 : clog2(DEPTH);
     localparam integer HALF_CEIL = (DEPTH + 1) / 2;

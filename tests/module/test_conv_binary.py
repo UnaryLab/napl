@@ -117,6 +117,7 @@ class conv_reference(torch.nn.Module):
         self.register_buffer('bias', bias.detach().clone())
         self.padding = padding
 
+
     def forward(self, input):
         return F.conv2d(
             input, self.weight, self.bias, stride=1, padding=self.padding

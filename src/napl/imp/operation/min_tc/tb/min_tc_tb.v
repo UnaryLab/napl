@@ -3,6 +3,8 @@
 // each (in_0, in_1) combinationally, and compares o_out to the expected column.
 // Prints "PASS" only on a full bit-exact match.
 `timescale 1ns / 1ps
+
+
 module min_tc_tb;
 
     reg  r_in_0;

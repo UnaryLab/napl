@@ -43,6 +43,8 @@ class conv_pc(napl_base):
     ----------
     *uGEMM: Unary Computing Architecture for GEMM Applications*.
     """
+
+
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'dim': 2}):
         """Construct the counter from external numeric weights and bias.
@@ -113,6 +115,7 @@ class conv_pc(napl_base):
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
+
     def _reset(self):
         """Reset state owned directly by the counter.
 
@@ -120,6 +123,7 @@ class conv_pc(napl_base):
         resets its registered encoders.
         """
         pass
+
 
     def forward(self, input_spike):
         """Count convolution spike products for one timestep.

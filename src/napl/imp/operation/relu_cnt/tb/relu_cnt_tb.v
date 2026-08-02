@@ -5,6 +5,8 @@
 // Python golden output is checked before each posedge updates acc. The reset
 // column requests active-low reset to HALF before its row.
 // Co-sim: make test OP=relu_cnt
+
+
 module relu_cnt_tb;
     localparam WIDTH = `GEN_WIDTH;
 

@@ -3,6 +3,8 @@
 // sync_skewed equivalent for stream_1 rate <= stream_2 rate. A WIDTH-bit
 // saturating counter retimes stream_1; stream_2 passes through.
 // Outputs use the pre-update counter (pp_delay=0). Active-low reset clears cnt.
+
+
 module sync_skewed #(
     parameter integer WIDTH = 3   // inherited from config['width']; tb overrides via `GEN_WIDTH
 ) (

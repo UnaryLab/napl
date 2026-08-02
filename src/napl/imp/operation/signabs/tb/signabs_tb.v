@@ -5,6 +5,8 @@
 // Python golden sign/abs use acc_next from the current input. Outputs are
 // checked before the posedge commits acc_next; reset loads ACC_MED.
 // Co-sim: make test OP=signabs
+
+
 module signabs_tb;
     reg  clk;
     reg  rst_n;

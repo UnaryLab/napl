@@ -3,6 +3,8 @@
 // Bipolar sqrt_tracejkff equivalent with JK trace and width-2 bi2uni.
 // Output is combinational (pp_delay=0); trace and acc update each posedge.
 // Active-low reset clears trace and acc.
+
+
 module sqrt_tracejkff_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset() (trace=0, acc=0)

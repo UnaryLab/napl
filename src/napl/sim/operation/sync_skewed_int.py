@@ -28,6 +28,8 @@ class sync_skewed_int(napl_base):
 
         *VLSI Implementation of Deep Neural Network Using Integral Stochastic Computing*.
     """
+
+
     def __init__(
             self,
             config={

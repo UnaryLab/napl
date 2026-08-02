@@ -10,6 +10,8 @@
 //
 // Reference: uGEMM: Unary Computing (Architecture) for GEMM Applications.
 //==============================================================================
+
+
 module mul_and_unipolar (
     input  wire i_input_0,   // spike stream 0
     input  wire i_input_1,   // spike stream 1

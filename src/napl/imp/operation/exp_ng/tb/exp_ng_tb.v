@@ -2,6 +2,7 @@
 `default_nettype none
 `include "exp_ng/vec/exp_ng_params.vh"
 
+
 module exp_ng_tb;
     reg i_clk;
     reg i_rst_n;
@@ -28,6 +29,7 @@ module exp_ng_tb;
     initial i_clk = 1'b0;
     always #5 i_clk = ~i_clk;
 
+
     task reset_dut;
         begin
             i_rst_n = 1'b0;
@@ -36,6 +38,7 @@ module exp_ng_tb;
             i_rst_n = 1'b1;
         end
     endtask
+
 
     initial begin
         i_input = 1'b0;

@@ -69,6 +69,8 @@ class conv_fxp(napl_base):
         output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
+
+
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'widthi': 8, 'quantilei': 1, 'widthw': 8, 'quantilew': 1, 'rounding': 'round'}):
@@ -117,6 +119,7 @@ class conv_fxp(napl_base):
         self.max_abs_w = 2 ** (self.widthw - 1)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -124,6 +127,7 @@ class conv_fxp(napl_base):
         unchanged.
         """
         pass
+
 
     def forward(self, input):
         """Apply fixed-point convolution.
@@ -168,6 +172,8 @@ class conv_hub(napl_base):
         output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
+
+
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'widthi': 8, 'rngi': 'sobol', 'quantilei': 1, 'widthw': 8, 'rngw': 'sobol',
@@ -229,6 +235,7 @@ class conv_hub(napl_base):
         self.register_buffer('mapcbsg', mapcbsg)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -236,6 +243,7 @@ class conv_hub(napl_base):
         trainable parameters are unchanged.
         """
         pass
+
 
     def forward(self, input):
         """Apply HUB convolution.
@@ -283,6 +291,8 @@ class conv_tlut(napl_base):
         output = layer(torch.zeros(1, 1, 4, 4))
     """
     streaming = False
+
+
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
                  config={'temporal': 'i', 'widtht': 4, 'formati': 'fxp', 'widthi': 8, 'quantilei': 1,
@@ -378,6 +388,7 @@ class conv_tlut(napl_base):
         self.delta = int(self.degree * self.widtht - self.width)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
 
+
     def _reset(self):
         """Reset local execution state.
 
@@ -385,6 +396,7 @@ class conv_tlut(napl_base):
         unchanged.
         """
         pass
+
 
     def forward(self, input):
         """Apply temporal-LUT convolution.
@@ -439,6 +451,8 @@ class conv(napl_base):
                              "generator": "sobol"})
         output_spike = layer(torch.ones(1, 1, 4, 4))
     """
+
+
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
                          'dim': 2, 'scale': None, 'width': 12}):
@@ -523,6 +537,7 @@ class conv(napl_base):
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
+
     def _reset(self):
         """Reset state owned directly by the convolution.
 
@@ -530,6 +545,7 @@ class conv(napl_base):
         resets the registered encoders and unary adder.
         """
         pass
+
 
     def forward(self, input_spike):
         """Process one NCHW input-spike timestep.

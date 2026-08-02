@@ -17,9 +17,11 @@ class napl_conv_ugemm(napl_base):
         self.decoder = decoder(codec_config)
         self.conv = conv_ugemm(weight, bias, stride=stride, padding=padding, config=conv_config)
 
+
     @napl_sim_timesteps
     def forward(self, input_x, timesteps=256):
         self.decoder(self.conv(self.encoder(input_x)))
+
 
     def reset(self, verbose=False):
         self.timestep_cur = 0
