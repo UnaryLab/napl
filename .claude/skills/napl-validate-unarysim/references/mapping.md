@@ -35,6 +35,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 **UnarySim classes and modes not ported to napl:**
 
 - `RNGMulti` and `BSGenMulti`
+- `Decorr`, `Desync`, `Sync` (`stream/shuffle.py`) - unimplemented stubs upstream; their constructors `raise ValueError`, so there is nothing to port
 
 ## Metrics (`napl.sim.metric`  ->  UnarySim `metric/metric.py`)
 
@@ -45,6 +46,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `accuracy`    | `ProgError`   | `analyze(reference)` / `forward()` (update via `Monitor()`) |
 | `stability_norm`    | `NormStability` | `analyze()` / `forward()` (update via `Monitor()`) |
 | `stability_builder` | `NSbuilder`     | build-then-emit; see class docs |
+| `stability_flux`    | *(no upstream class)* | `analyze()`; napl-native ratio of two `Stability` monitors; validate against `S1.forward() / S2.forward()` fed identical streams |
 
 ## Operations / gates (`napl.sim.operation`  ->  UnarySim)
 
@@ -73,7 +75,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `shiftreg` | `ShiftReg` | `kernel/shiftreg.py` | |
 | `sync_skewed` | `SkewedSync` | `stream/shuffle.py` | **not** in `kernel/` |
 | `bi2uni` / `uni2bi` | `Bi2Uni` / `Uni2Bi` | `stream/shuffle.py` | **not** in `kernel/` |
-| `round_ste` / `round_fxp` | `RoundingNoGrad` / `Round` | `kernel/utils.py` | `RoundingNoGrad` is the upstream autograd function |
+| `round_fxp` | `Round` | `kernel/utils.py` | the only public napl class; the upstream autograd function `RoundingNoGrad` is ported as the private `_round_ste_fn` inside `round_fxp.py` |
 | `add_gaines` | `GainesAdd` | `kernel/add.py` | |
 | `add_ugemm` | `FSUAdduGEMM` | `kernel/add.py` | |
 | `mul_gaines` | `GainesMul` | `kernel/mul.py` | |

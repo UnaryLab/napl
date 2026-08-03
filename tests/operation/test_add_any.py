@@ -27,7 +27,7 @@ class napl_add_any(napl_base):
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
-    
+
 def _kernel_specific_checks():
     """
     Test add_any with a simple configuration.

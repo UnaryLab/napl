@@ -157,8 +157,8 @@ def test_performance():
     """Verify correlation updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
-    stream_1 = torch.randint(0, 2, (timestep, 1000)).float()
-    stream_2 = torch.randint(0, 2, (timestep, 1000)).float()
+    stream_1 = torch.randint(0, 2, (timestep, 1000000)).float()
+    stream_2 = torch.randint(0, 2, (timestep, 1000000)).float()
 
     cpu_runtime = None
     for device in devices():

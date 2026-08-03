@@ -113,8 +113,8 @@ def test_performance():
     """Verify stability updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
-    stream = torch.randint(0, 2, (timestep, 1000)).float()
-    source = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    stream = torch.randint(0, 2, (timestep, 1000000)).float()
+    source = gen_rand_tensor('bipolar', shape=(1000000,), width=8)
 
     cpu_runtime = None
     for device in devices():

@@ -170,7 +170,7 @@ def test_performance():
     """Verify stability_builder meets the configured runtime bounds across supported devices."""
     timestep = 256
     threshold = 0.05
-    val = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    val = gen_rand_tensor('bipolar', shape=(1000000,), width=8)
 
     cpu_runtime = None
     for device in devices():

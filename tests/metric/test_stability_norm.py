@@ -117,8 +117,8 @@ def test_performance():
     """Verify normalized stability meets the configured runtime bounds across supported devices."""
     timestep = 64
     torch.manual_seed(0)
-    stream = torch.randint(0, 2, (timestep, 256)).float()
-    val = gen_rand_tensor('bipolar', shape=(256,), width=6)
+    stream = torch.randint(0, 2, (timestep, 1000000)).float()
+    val = gen_rand_tensor('bipolar', shape=(1000000,), width=6)
 
     cpu_runtime = None
     for device in devices():

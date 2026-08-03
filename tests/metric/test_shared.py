@@ -136,7 +136,7 @@ def test_metric_analyze_returns_local_results():
                     source,
                     {'polarity': 'bipolar', 'threshold': 0.05},
                 ).to(device),
-                'flux',
+                'stability_flux',
             ),
             (
                 stability_norm(

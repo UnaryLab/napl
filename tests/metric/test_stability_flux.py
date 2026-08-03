@@ -158,10 +158,10 @@ def test_performance():
     """Verify stability flux updates meet the configured runtime bounds across supported devices."""
     timestep = 256
     torch.manual_seed(0)
-    stream_1 = torch.randint(0, 2, (timestep, 1000)).float()
-    stream_2 = torch.randint(0, 2, (timestep, 1000)).float()
-    val_1 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
-    val_2 = gen_rand_tensor('bipolar', shape=(1000,), width=8)
+    stream_1 = torch.randint(0, 2, (timestep, 1000000)).float()
+    stream_2 = torch.randint(0, 2, (timestep, 1000000)).float()
+    val_1 = gen_rand_tensor('bipolar', shape=(1000000,), width=8)
+    val_2 = gen_rand_tensor('bipolar', shape=(1000000,), width=8)
 
     cpu_runtime = None
     for device in devices():
