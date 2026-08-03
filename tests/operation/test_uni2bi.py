@@ -103,6 +103,11 @@ CONFIG = {
 def test_uni2bi():
     """Verify uni2bi against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
+    try:
+        uni2bi({'width': 2})
+    except AssertionError:
+        return
+    raise AssertionError('uni2bi must reject width 2 because threshold 2 is unreachable')
 
 
 if __name__ == '__main__':

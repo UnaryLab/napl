@@ -68,7 +68,7 @@ class linear_ugemm(napl_base):
                 * **scale** - Output divisor. ``None`` uses
                   ``in_features + has_bias``. Defaults to ``None``.
                 * **width** - Signed accumulator width. Defaults to ``12`` and
-                  must satisfy ``2 ** (width - 1) >= in_features + has_bias``.
+                  must satisfy ``2 ** (width - 1) > in_features + has_bias``.
                 * **name** - Optional instance label. Defaults to ``None``.
 
         Weight and bias are trainable parameters. The layer converts their
@@ -104,9 +104,9 @@ class linear_ugemm(napl_base):
 
         # The signed accumulator range must contain every per-step partial sum.
         width = config.get('width', 12)
-        assert 2 ** (width - 1) >= self.entry, logger.error(
+        assert 2 ** (width - 1) > self.entry, logger.error(
             f'linear_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
-            f'2**(width-1) must be >= entry or partial sums saturate. Increase width.')
+            f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
 
         self._is_bipolar = (self.polarity == 'bipolar')
         #: Trainable numeric weight matrix converted to spike probabilities on use.

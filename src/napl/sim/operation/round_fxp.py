@@ -110,8 +110,8 @@ class round_fxp(napl_base):
         #: Largest scaled integer retained before conversion back to a tensor value.
         self.max_val = 2**(self.intwidth + self.fracwidth) - 1
         #: Smallest scaled integer retained before conversion back to a tensor value.
-        self.min_val = 1 - 2**(self.intwidth + self.fracwidth)
-        # The RTL saturating clamp is combinational.
+        self.min_val = -(2**(self.intwidth + self.fracwidth))
+        # The simulator applies the saturating clamp combinationally.
         #: Modeled scalar latency of the single-shot quantizer.
         self.delay = 0
 

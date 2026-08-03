@@ -24,6 +24,8 @@ This project uses the `napl` conda env. Always run Python through it: `conda run
 
 All simulation tests must follow [RULE_SIM.md](RULE_SIM.md), the canonical policy for execution-model checks, device coverage, numerical fidelity, gradients, performance, and verification evidence. RTL-backed changes must also follow [RULE_IMP.md](RULE_IMP.md).
 
+Do not run the full sweep (`tests/sweep_test.py`) without explicit user approval; verify changes with the focused tests for the changed unit.
+
 ## Critical implementation gotchas
 
 - **Never use `>>`/`<<` on float tensors.** UnarySim relied on a monkey-patched float bit-shift; stock PyTorch shifts are integer-only. Use the `pow2_lshift`/`pow2_rshift` shims in `utils/utils.py`.

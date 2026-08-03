@@ -14,6 +14,9 @@ General Verilog style (Verilog-2001, `i_`/`o_` port prefixes, `i_clk`/active-low
 
 Per-corner STA data belongs in `self.hw.timing`, keyed by the MCMM scenario `node/process/voltage/temp/rc/mode`. A combinational operation records its full through-delay in `cp_delay` with zero `ir_delay` and `or_delay`; a registered operation records all three timing components.
 
+6. **RTL coverage.** Every operation with `streaming = True` requires a verified RTL counterpart; operations with `streaming = False` (single-shot binary-domain: `relu_hub`, `sigmoid_hub`, `tanh_hub`, `round_fxp`) have none. Placeholder classes with no implementation (`inhibit`) carry no RTL obligation until implemented.
+7. **Input handling.** Every streaming operation's RTL consumes its `i_*` data inputs combinationally in the arrival cycle: registers hold internal state only and never re-register a raw input before its first use. For delay and storage elements whose defined function is capturing the input (`dff`, `shiftreg`, `jkff`, `square_dff`'s internal delay), that capture is the first use.
+
 ## Per-operation structure
 
 Each concrete operation lives in `operation/<op>/` with `rtl/`, `tb/`, `gen/`, `vec/`, and `build/` subdirectories. The testbench is `<op>_tb.v`; the generator is `gen_<op>.py`.

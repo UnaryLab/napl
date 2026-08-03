@@ -55,7 +55,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `mul_csg` | `FSUMul(static=True)` | `kernel/mul.py` | exact module match; carries an RNG -> SC-bound, see note |
 | `mul_shiftreg` | `FSUMul(static=False)` | `kernel/mul.py` | in-stream shift-register decorrelation; bit-exact on identical input streams |
 | `mul_and` | gate core inside `FSUMul` (no standalone module) | `kernel/mul.py` | bit-exact gate identity, see note |
-| `add_any` | `FSUAdd` | `kernel/add.py` | |
+| `add_any` | `FSUAdd` | `kernel/add.py` | Intentional carry-threshold divergence: NAPL emits when accumulator >= scale; upstream FSUAdd emits only when accumulator > scale. |
 | `div_cordiv` | `CORDIV_kernel` | `kernel/div.py` | correlated division, unipolar; operands pre-synchronized |
 | `div_iscb` | `FSUDiv` | `kernel/div.py` | in-stream correlation-based division (iscbdiv) |
 | `sqrt_tracejkff` | `FSUSqrt(jk_trace=True, emit=False)` | `kernel/sqrt.py` | one UnarySim class, flag-selected; napl split into 3 modules |
@@ -74,7 +74,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `jkff` | `JKFF` | `kernel/jkff.py` | |
 | `shiftreg` | `ShiftReg` | `kernel/shiftreg.py` | |
 | `sync_skewed` | `SkewedSync` | `stream/shuffle.py` | **not** in `kernel/` |
-| `bi2uni` / `uni2bi` | `Bi2Uni` / `Uni2Bi` | `stream/shuffle.py` | **not** in `kernel/` |
+| `bi2uni` / `uni2bi` | `Bi2Uni` / `Uni2Bi` | `stream/shuffle.py` | **not** in `kernel/`; finite-width accumulator divergence: NAPL uses bounded accumulators and requires the emission threshold to be reachable, while the upstream accumulators are unbounded, so sustained stream imbalance can produce different per-timestep emission timing |
 | `round_fxp` | `Round` | `kernel/utils.py` | the only public napl class; the upstream autograd function `RoundingNoGrad` is ported as the private `_round_ste_fn` inside `round_fxp.py` |
 | `add_gaines` | `GainesAdd` | `kernel/add.py` | |
 | `add_ugemm` | `FSUAdduGEMM` | `kernel/add.py` | |
@@ -130,11 +130,13 @@ standalone UnarySim class** to diff against. For these, validate against the *ma
 |------|----------------|------|-------|
 | `linear` | `FSULinear` | `kernel/linear.py` | |
 | `linear_pc` | `FSULinearPC` | `kernel/linear.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated encoders vs FSULinearPC's CSG weight indexing, agrees within SC bound |
-| `linear_hub` / `linear_fxp` | `HUBLinear` / `FxpLinear` | `kernel/linear.py` | |
+| `linear_hub` | `HUBLinear` | `kernel/linear.py` | |
+| `linear_fxp` | `FxpLinear` | `kernel/linear.py` | Intentional multi-call mapping divergence: NAPL recomputes input, weight, and output quantization shifts on every forward call, while UnarySim caches them after the first call; quantized results can differ when input ranges change |
 | `linear_tlut` | *(no upstream counterpart)* | - | UnarySim has no TLUT linear class |
 | `conv` | `FSUConv2d` | `kernel/conv.py` | |
 | `conv_pc` | `FSUConv2dPC` | `kernel/conv.py` | parallel-counter (per-step PC count, no accumulator); independent decorrelated weight/bias encoders, groups=1 zero-padding only, agrees within SC bound |
-| `conv_hub` / `conv_fxp` | `HUBConv2d` / `FxpConv2d` | `kernel/conv.py` | |
+| `conv_hub` | `HUBConv2d` | `kernel/conv.py` | |
+| `conv_fxp` | `FxpConv2d` | `kernel/conv.py` | Intentional multi-call mapping divergence: NAPL recomputes input, weight, and output quantization shifts on every forward call, while UnarySim caches them after the first call; quantized results can differ when input ranges change |
 | `conv_tlut` | *(no upstream counterpart)* | - | UnarySim has no TLUT convolution class |
 | `mgu` | `FSUMGUCell` | `kernel/rnn.py` | |
 | `mgu_hub` / `mgu_hard` / `mgu_hardfxp` | `HUBMGUCell` / `HardMGUCell` / `HardMGUCellFxp` | `kernel/rnn.py` | |
@@ -151,7 +153,7 @@ napl's `module/wta.py` is a placeholder (no class yet); UnarySim has no WTA modu
 
 | napl | UnarySim |
 |------|----------|
-| `rshift_offset` | `rshift_offset` |
+| `rshift_offset` | *(no standalone function)* - the logic is inlined in `HUBLinear.forward` / `FxpLinear.forward`; validate against that inlined computation |
 | `conv2d_output_shape`, `conv2d_get_padding` | same names |
 | `truncated_normal` | `truncated_normal` |
 | `NN_SC_Weight_Clipper` | `NN_SC_Weight_Clipper` |

@@ -120,7 +120,7 @@ def test_scaled_reference():
         unscaled = unscaled.detach().clone()
         scaled, result = metric.analyze(
             device_reference,
-            scale_ref=2,
+            scale_ref=0.5,
         )
 
         assert torch.equal(unscaled, torch.tensor([-1.0, 0.0], device=device))

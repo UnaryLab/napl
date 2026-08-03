@@ -65,7 +65,7 @@ class linear_gaines2(napl_base):
                 optional instance label and defaults to ``None``.
 
         In scaled mode, **width** must satisfy
-        ``2 ** (width - 1) >= in_features + has_bias``.
+        ``2 ** (width - 1) > in_features + has_bias``.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # This import stays local to avoid the module-operation import cycle.
@@ -123,9 +123,9 @@ class linear_gaines2(napl_base):
         if self.scaled:
             # The signed accumulator range must contain every per-step partial sum.
             width = config.get('width', 12)
-            assert 2 ** (width - 1) >= self.entry, logger.error(
+            assert 2 ** (width - 1) > self.entry, logger.error(
                 f'linear_gaines2 accumulator width <{width}> too small for fan-in <{self.entry}>: '
-                f'2**(width-1) must be >= entry or partial sums saturate. Increase width.')
+                f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
             # scale=entry gives zero bipolar offset.
             #: Streaming unary adder used by scaled mode.
             self.acc = add_any({'polarity': self.polarity, 'scale': self.entry, 'width': width})

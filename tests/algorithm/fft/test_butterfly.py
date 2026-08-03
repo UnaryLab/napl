@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from napl.sim.algorithm.fft.butterfly import (
+from napl.sim.algorithm.fft import (
     butterfly_binary,
     butterfly_spike,
 )

@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
-// Fixed-width bi2uni helper matching Python: clamp acc+(2*input-1) to [-2,1],
+// Fixed-width bi2uni helper matching Python width=3: clamp acc+(2*input-1)
+// to [-4,3],
 // emit at one, then subtract the emitted bit. Active-low reset clears acc.
 
 
@@ -10,9 +11,9 @@ module div_iscb_bi2uni (
     input  wire i_input,
     output wire o_out
 );
-    // 3-bit signed accumulator holds [-2, 1] with slack for the +/-1 step.
-    localparam signed [3:0] ACC_MAX = 4'sd1;
-    localparam signed [3:0] ACC_MIN = -4'sd2;
+    // 4-bit signed accumulator holds [-4, 3] with slack for the +/-1 step.
+    localparam signed [3:0] ACC_MAX = 4'sd3;
+    localparam signed [3:0] ACC_MIN = -4'sd4;
 
     reg signed [3:0] acc_q;
 
@@ -23,10 +24,10 @@ module div_iscb_bi2uni (
         (acc_sum > ACC_MAX) ? ACC_MAX :
         (acc_sum < ACC_MIN) ? ACC_MIN : acc_sum;
 
-    wire out = (acc_clmp >= ACC_MAX);   // acc >= 1
+    wire out = (acc_clmp >= 4'sd1);    // acc >= 1
     assign o_out = out;
 
-    // acc -= out (carry-out removed); stays within [-2, 1].
+    // acc -= out (carry-out removed); stays within [-4, 3].
     wire signed [3:0] acc_next = out ? (acc_clmp - 4'sd1) : acc_clmp;
 
     always @(posedge i_clk or negedge i_rst_n) begin

@@ -99,10 +99,10 @@ def test_sigmoid_hard():
     streaming_suite(CONFIG)
 
 
-def test_sigmoid_hard_matches_unarysim_carry_sequence():
-    """Verify sigmoid_hard reproduces UnarySim's carry sequence for both polarities."""
+def test_sigmoid_hard_uses_inclusive_carry_sequence():
+    """Verify sigmoid_hard uses add_any's inclusive carry sequence for both polarities."""
     input_values = [1, 1, 0]
-    expected = torch.tensor([0, 1, 1], dtype=global_config.stype)
+    expected = torch.tensor([1, 1, 0], dtype=global_config.stype)
 
     for polarity in ('unipolar', 'bipolar'):
         operation = sigmoid_hard({'polarity': polarity})
@@ -115,4 +115,4 @@ def test_sigmoid_hard_matches_unarysim_carry_sequence():
 
 if __name__ == '__main__':
     test_sigmoid_hard()
-    test_sigmoid_hard_matches_unarysim_carry_sequence()
+    test_sigmoid_hard_uses_inclusive_carry_sequence()

@@ -53,9 +53,9 @@ Inventory of every class in `src/napl/{operation,module,metric,structure,algorit
 | Class | File (repo-relative) | Description | Placeholder? | Autograd helper? | UnarySim counterpart | Validated? | RTL? |
 |---|---|---|---|---|---|---|---|
 | avgpool2d | src/napl/sim/module/avgpool2d.py | Streaming unary 2d average pooling via scaled addition | no | no | FSUAvgPool2d | no | n/a (operation-only) |
-| conv_fxp | src/napl/sim/module/conv.py | Binary-domain fixed-point conv2d (im2col + linear_fxp + fold), STE-trainable | no | no | FxpConv2d | yes | n/a (operation-only) |
-| conv_hub | src/napl/sim/module/conv.py | Binary-domain HUB conv2d with unary value-map multiplication, STE-trainable | no | no | HUBConv2d | yes | n/a (operation-only) |
-| conv_tlut | src/napl/sim/module/conv.py | Binary-domain temporal-LUT conv2d (fxpfxp/fxpfp/fpfp), STE-trainable | no | no |  | yes | n/a (operation-only) |
+| conv_fxp | src/napl/sim/module/conv_fxp.py | Binary-domain fixed-point conv2d (im2col + linear_fxp + fold), STE-trainable | no | no | FxpConv2d | yes | n/a (operation-only) |
+| conv_hub | src/napl/sim/module/conv_hub.py | Binary-domain HUB conv2d with unary value-map multiplication, STE-trainable | no | no | HUBConv2d | yes | n/a (operation-only) |
+| conv_tlut | src/napl/sim/module/conv_tlut.py | Binary-domain temporal-LUT conv2d (fxpfxp/fxpfp/fpfp), STE-trainable | no | no |  | yes | n/a (operation-only) |
 | conv | src/napl/sim/module/conv.py | Streaming unary conv2d, weights encoded on a distinct RNG dim | no | no | FSUConv2d | yes | n/a (operation-only) |
 | conv_pc | src/napl/sim/module/conv_pc.py | Streaming conv2d parallel counter: per-timestep binary inner-product counts | no | no | FSUConv2dPC | yes | n/a (operation-only) |
 | conv_ugemm | src/napl/sim/module/conv_ugemm.py | Streaming conv2d with uGEMM-style conditional spike generation | no | no | FSUConv2duGEMM | no | n/a (operation-only) |
@@ -63,15 +63,15 @@ Inventory of every class in `src/napl/{operation,module,metric,structure,algorit
 | encoder | src/napl/sim/module/encoder.py | Number-to-spike-stream encoder via comparison against an RNG num_seq | no | no | BSGen | yes | n/a (operation-only) |
 | gru_hardnuapt | src/napl/sim/module/gru_hardnuapt.py | Binary-domain GRU cell with hard activations, non-unary-aware, PyTorch layout | no | no | HardGRUCellNUAPT | no | n/a (operation-only) |
 | linear | src/napl/sim/module/linear.py | Streaming unary fully-connected layer, bit-by-bit W x (+ b) | no | no | FSULinear | yes | n/a (operation-only) |
-| linear_pc | src/napl/sim/module/linear.py | Streaming linear parallel counter: per-timestep binary inner-product counts | no | no | FSULinearPC | yes | n/a (operation-only) |
-| _linear_fxp_fn | src/napl/sim/module/linear.py | STE autograd helper for linear_fxp | no | yes | FxpLinearFunction | no | n/a (operation-only) |
-| linear_fxp | src/napl/sim/module/linear.py | Binary-domain fixed-point fully-connected layer, STE-trainable | no | no | FxpLinear | yes | n/a (operation-only) |
-| _linear_hub_fn | src/napl/sim/module/linear.py | STE autograd helper for linear_hub | no | yes | HUBLinearFunction | no | n/a (operation-only) |
-| linear_hub | src/napl/sim/module/linear.py | Binary-domain HUB linear via precomputed unary-product value map, STE-trainable | no | no | HUBLinear | yes | n/a (operation-only) |
-| _linear_tlut_fxpfxp_fn | src/napl/sim/module/linear.py | STE autograd helper for linear_tlut fxpfxp mode | no | yes |  | no | n/a (operation-only) |
-| _linear_tlut_fxpfp_fn | src/napl/sim/module/linear.py | STE autograd helper for linear_tlut fxpfp mode | no | yes |  | no | n/a (operation-only) |
-| _linear_tlut_fpfp_fn | src/napl/sim/module/linear.py | STE autograd helper for linear_tlut fpfp mode | no | yes |  | no | n/a (operation-only) |
-| linear_tlut | src/napl/sim/module/linear.py | Binary-domain temporal-LUT linear (fxpfxp/fxpfp/fpfp), STE-trainable | no | no |  | yes | n/a (operation-only) |
+| linear_pc | src/napl/sim/module/linear_pc.py | Streaming linear parallel counter: per-timestep binary inner-product counts | no | no | FSULinearPC | yes | n/a (operation-only) |
+| _linear_fxp_fn | src/napl/sim/module/_shared.py | STE autograd helper for linear_fxp | no | yes | FxpLinearFunction | no | n/a (operation-only) |
+| linear_fxp | src/napl/sim/module/linear_fxp.py | Binary-domain fixed-point fully-connected layer, STE-trainable | no | no | FxpLinear | yes | n/a (operation-only) |
+| _linear_hub_fn | src/napl/sim/module/_shared.py | STE autograd helper for linear_hub | no | yes | HUBLinearFunction | no | n/a (operation-only) |
+| linear_hub | src/napl/sim/module/linear_hub.py | Binary-domain HUB linear via precomputed unary-product value map, STE-trainable | no | no | HUBLinear | yes | n/a (operation-only) |
+| _linear_tlut_fxpfxp_fn | src/napl/sim/module/_shared.py | STE autograd helper for linear_tlut fxpfxp mode | no | yes |  | no | n/a (operation-only) |
+| _linear_tlut_fxpfp_fn | src/napl/sim/module/_shared.py | STE autograd helper for linear_tlut fxpfp mode | no | yes |  | no | n/a (operation-only) |
+| _linear_tlut_fpfp_fn | src/napl/sim/module/_shared.py | STE autograd helper for linear_tlut fpfp mode | no | yes |  | no | n/a (operation-only) |
+| linear_tlut | src/napl/sim/module/linear_tlut.py | Binary-domain temporal-LUT linear (fxpfxp/fxpfp/fpfp), STE-trainable | no | no |  | yes | n/a (operation-only) |
 | linear_ugemm | src/napl/sim/module/linear_ugemm.py | Streaming linear with uGEMM-style conditional spike generation from binary weights | no | no | FSULinearuGEMM | no | n/a (operation-only) |
 | linear_gaines1 | src/napl/sim/module/linear_gaines1.py | Streaming Gaines linear, gMUL + gADD | no | no | GainesLinear1 | no | n/a (operation-only) |
 | linear_gaines2 | src/napl/sim/module/linear_gaines2.py | Streaming Gaines linear, gMUL + uADD (per-column Sobol dims) | no | no | GainesLinear2 | no | n/a (operation-only) |
@@ -79,10 +79,10 @@ Inventory of every class in `src/napl/{operation,module,metric,structure,algorit
 | linear_gaines4 | src/napl/sim/module/linear_gaines4.py | Streaming Gaines linear, gMUL + gADD, LFSR-flavored decorrelation | no | no | GainesLinear4 | no | n/a (operation-only) |
 | mgu_hardnua | src/napl/sim/module/mgu_hardnua.py | Non-unary-aware hard MGU cell (no hard-tanh range clamps), single-shot | no | no | HardMGUCellNUA | no | n/a (operation-only) |
 | mgu_hardpt | src/napl/sim/module/mgu_hardpt.py | Hard MGU cell in PyTorch RNNCell style with unary-range clamps, single-shot | no | no | HardMGUCellPT | no | n/a (operation-only) |
-| mgu_hard | src/napl/sim/module/rnn.py | Binary-domain MGU cell with hard activations, single-shot, trainable | no | no | HardMGUCell | yes | n/a (operation-only) |
-| mgu_hardfxp | src/napl/sim/module/rnn.py | mgu_hard with fixed-point rounding on every operand (quant-aware STE) | no | no | HardMGUCellFxp | yes | n/a (operation-only) |
-| mgu | src/napl/sim/module/rnn.py | Streaming MGU cell composed of streaming primitives, one timestep at a time | no | no | FSUMGUCell | yes | n/a (operation-only) |
-| mgu_hub | src/napl/sim/module/rnn.py | Hybrid MGU: encodes operands, runs mgu over 2**width cycles, decodes | no | no | HUBMGUCell | yes | n/a (operation-only) |
+| mgu_hard | src/napl/sim/module/mgu_hard.py | Binary-domain MGU cell with hard activations, single-shot, trainable | no | no | HardMGUCell | yes | n/a (operation-only) |
+| mgu_hardfxp | src/napl/sim/module/mgu_hardfxp.py | mgu_hard with fixed-point rounding on every operand (quant-aware STE) | no | no | HardMGUCellFxp | yes | n/a (operation-only) |
+| mgu | src/napl/sim/module/mgu.py | Streaming MGU cell composed of streaming primitives, one timestep at a time | no | no | FSUMGUCell | yes | n/a (operation-only) |
+| mgu_hub | src/napl/sim/module/mgu_hub.py | Hybrid MGU: encodes operands, runs mgu over 2**width cycles, decodes | no | no | HUBMGUCell | yes | n/a (operation-only) |
 
 ## metric
 
@@ -102,8 +102,8 @@ No classes. All files (`axon.py`, `column.py`, `dendrite.py`, `receptor.py`, `so
 
 | Class | File (repo-relative) | Description | Placeholder? | Autograd helper? | UnarySim counterpart | Validated? | RTL? |
 |---|---|---|---|---|---|---|---|
-| butterfly_spike | src/napl/sim/algorithm/fft/butterfly.py | FFT butterfly in the spike domain (mul_csg + add_any over encoder/decoder) | no | no |  | no | n/a (operation-only) |
-| butterfly_binary | src/napl/sim/algorithm/fft/butterfly.py | Binary-domain reference FFT butterfly (plain torch.nn.Module) | no | no |  | no | n/a (operation-only) |
+| butterfly_spike | src/napl/sim/algorithm/fft/butterfly_spike.py | FFT butterfly in the spike domain (mul_csg + add_any over encoder/decoder) | no | no |  | no | n/a (operation-only) |
+| butterfly_binary | src/napl/sim/algorithm/fft/butterfly_binary.py | Binary-domain reference FFT butterfly (plain torch.nn.Module) | no | no |  | no | n/a (operation-only) |
 
 `algorithm/fft/fft.py` and `module/wta.py` are empty placeholders (no classes).
 

@@ -160,7 +160,7 @@ Higher-level linear, convolution, recurrent, metric, and algorithm classes do no
 | --- | --- |
 | Python/PyTorch transpilation | No transpiler package is present in `src/napl/`. |
 | CLI | `napl` is a banner-only placeholder. |
-| FFT | `butterfly` is implemented; `fft` is a placeholder. |
+| FFT | `butterfly_spike` and `butterfly_binary` are implemented; `fft` is a placeholder. |
 | Spike components | `wta` and `inhibit` are placeholders. |
 | Biological structure | `napl.sim.structure` files are empty placeholders. |
 | RTL coverage | Only the concrete operation folders under `src/napl/imp/operation/` have hardware counterparts. |

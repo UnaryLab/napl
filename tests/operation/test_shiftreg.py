@@ -47,6 +47,31 @@ CONFIG = {
 def test_shiftreg():
     """Verify shiftreg against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
+    test_state_roundtrip()
+
+
+def test_state_roundtrip():
+    """Verify register state survives serialization and device migration."""
+    values = [0, 1, 1, 0, 1, 0, 0]
+    for device in devices():
+        operation = shiftreg({'depth': 4}).to(device)
+        for value in values:
+            operation(torch.full((2,), value, dtype=global_config.stype, device=device))
+
+        state = {key: value.detach().clone() for key, value in operation.state_dict().items()}
+        restored = shiftreg({'depth': 4}).to(device)
+        restored.load_state_dict(state)
+        next_input = torch.tensor([1, 0], dtype=global_config.stype, device=device)
+        expected = operation(next_input)
+        actual = restored(next_input)
+        assert torch.equal(actual, expected), f'[{device}] state_dict round-trip changed output'
+
+    if len(devices()) > 1:
+        operation = shiftreg({'depth': 4})
+        operation(torch.ones(2, dtype=global_config.stype))
+        operation = operation.to('mps')
+        output = operation(torch.ones(2, dtype=global_config.stype, device='mps'))
+        assert output.device.type == 'mps', 'shiftreg register state did not migrate to MPS'
 
 
 @pytest.mark.parametrize(

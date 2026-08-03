@@ -113,6 +113,11 @@ CONFIG = {
 def test_bi2uni():
     """Verify bi2uni against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
+    try:
+        bi2uni({'width': 1})
+    except AssertionError:
+        return
+    raise AssertionError('bi2uni must reject width 1 because threshold 1 is unreachable')
 
 
 if __name__ == '__main__':

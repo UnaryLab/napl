@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.module import linear_fxp
-from napl.utils._shared_test import single_shot_suite
+from napl.utils._shared_test import devices, single_shot_suite
 
 
 _IN_FEATURES = 16
@@ -89,5 +89,33 @@ def test_linear_fxp():
     single_shot_suite(CONFIG)
 
 
+def test_fxp_signed_saturation():
+    """Verify signed int8 saturation against the FxpLinear code-point contract."""
+    weights = torch.tensor([[1.0] * 8, [-1.0] * 8])
+    bias = torch.zeros(2)
+    inputs = torch.tensor([[2.0] * 8, [-2.0] * 8])
+    input_codes = torch.tensor([[127.0] * 8, [-128.0] * 8])
+    weight_codes = torch.tensor([[127.0] * 8, [-128.0] * 8])
+    expected = input_codes.matmul(weight_codes.t()) / (2 ** 13)
+
+    for device in devices():
+        candidate = linear_fxp(
+            8,
+            2,
+            weight_ext=weights,
+            bias_ext=bias,
+            config={
+                'widthi': 8,
+                'widthw': 8,
+                'quantilei': 1,
+                'quantilew': 1,
+                'rounding': 'round',
+            },
+        ).to(device)
+        result = candidate(inputs.to(device))
+        torch.testing.assert_close(result, expected.to(device), atol=0.0, rtol=0.0)
+
+
 if __name__ == '__main__':
     test_linear_fxp()
+    test_fxp_signed_saturation()

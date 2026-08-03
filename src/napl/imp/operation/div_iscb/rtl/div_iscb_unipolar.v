@@ -47,16 +47,16 @@ module div_iscb_unipolar (
 
     assign o_quotient = quotient;
 
-    // buffer update (top-down): buf[1] <= deq ? buf[0] : buf[1];
-    //                           buf[0] <= deq ? quotient : buf[0];
-    wire buf1_next = divisor_eq_1 ? buf0_q   : buf1_q;
-    wire buf0_next = divisor_eq_1 ? quotient : buf0_q;
+    // buffer update (low-to-high): buf[0] <= deq ? buf[1] : buf[0];
+    //                              buf[1] <= deq ? quotient : buf[1];
+    wire buf0_next = divisor_eq_1 ? buf1_q   : buf0_q;
+    wire buf1_next = divisor_eq_1 ? quotient : buf1_q;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
             cnt_q  <= 3'd0;
             buf0_q <= 1'b0;
-            buf1_q <= 1'b0;
+            buf1_q <= 1'b1;
             idx_q  <= 1'b0;
         end else begin
             // saturating counter

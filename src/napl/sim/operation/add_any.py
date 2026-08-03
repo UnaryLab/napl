@@ -56,6 +56,10 @@ class add_any(napl_base):
         self.acc_max = 2**(self.width-1) - 1
         #: Smallest value retained by the signed accumulator.
         self.acc_min = -2**(self.width-1)
+        assert config['scale'] <= self.acc_max, logger.error(
+            f'add_any scale <{config["scale"]}> exceeds accumulator maximum '
+            f'<{self.acc_max}> for width <{self.width}>.'
+        )
 
         #: Accumulated amount consumed when an output spike is emitted.
         self.scale: torch.Tensor
@@ -120,7 +124,7 @@ class add_any(napl_base):
         else:
             updated = self.accumulator.add(acc_delta).clamp(self.acc_min, self.acc_max)
             self.accumulator.resize_as_(updated).copy_(updated.detach())
-        output = torch.gt(self.accumulator, self.scale).type(self.ntype)
+        output = torch.ge(self.accumulator, self.scale).type(self.ntype)
         # With scale > 0, emitting a carry preserves the accumulator bounds.
         self.accumulator.addcmul_(output, self.scale, value=-1)
         return output.type(self.stype)

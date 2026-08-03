@@ -1,43 +1,50 @@
 import torch
+import math
 import torch.nn.functional as F
 
+from napl.utils import *
 from napl.sim.base import napl_base
-from napl.sim.module._shared import _init_mgu_params
+from loguru import logger
 # Operation imports stay inside __init__ to avoid the module-operation import cycle.
+from napl.sim.module._shared import _init_mgu_params
 
 
-class mgu_hardnua(napl_base):
-    """Apply a trainable MGU without unary-range clamps around linear stages.
+class mgu_hard(napl_base):
+    """Apply a trainable single-shot MGU cell with bounded hard activations.
 
-    Use this single-shot cell to match the non-unary-aware UnarySim variant or to
-    study the effect of removing the range clamps from :class:`mgu_hard`. The
-    forget-gate linear input and output omit the hard-tanh clamps, so
-    intermediate values and ``hy`` may leave the legal unary range. The cell is
-    single-shot and trainable.
+    Use this binary-domain cell when intermediate and output values must remain in
+    the legal unary range. It uses hard sigmoid and hard tanh by default and does
+    not advance the streaming timestep.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import mgu_hardnua
+        from napl import mgu_hard
 
-        cell = mgu_hardnua(2, 3)
+        cell = mgu_hard(2, 3)
         hidden = cell(torch.zeros(1, 2))
+
+    References
+    ----------
+    *Simplified Minimal Gated Unit Variations for RNNs*.
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
 
 
     def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
-        """Construct the non-unary-aware cell and initialize its parameters.
+        """Construct the MGU cell and initialize its trainable parameters.
 
         Args:
             input_size: Number of input features.
             hidden_size: Number of hidden features.
-            bias: Create trainable gate biases when ``True``. Defaults to ``True``.
-            config: Configuration mapping with **hard**. ``True`` uses hard
-                sigmoid and hard tanh; ``False`` uses ``Sigmoid`` and ``Tanh``.
+            bias: Create trainable forget- and new-gate biases when ``True``.
+                Defaults to ``True``.
+            config: Configuration mapping with **hard**. ``True`` selects hard
+                sigmoid and hard tanh; ``False`` selects ``Sigmoid`` and ``Tanh``
+                for the gates while retaining the explicit bounding clamps.
                 Defaults to ``True``. **name** is an optional instance label and
                 defaults to ``None``.
         """
@@ -51,6 +58,8 @@ class mgu_hardnua(napl_base):
         #: Whether the forget and new gates use hard activations.
         self.hard = config.get('hard', True)
         from napl.sim.operation import sigmoid_hub, tanh_hub
+        #: Hard-tanh operator that bounds intermediate and output values.
+        self.htanh = tanh_hub()
         #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the candidate hidden state.
@@ -62,28 +71,33 @@ class mgu_hardnua(napl_base):
         """Reset local recurrent state.
 
         The cell stores no hidden state between calls, so this hook returns
-        ``None`` without changing trainable parameters.
+        ``None`` without changing its trainable parameters.
         """
         pass
 
 
     def forward(self, input, hx=None):
-        """Compute one unclamped MGU recurrence.
+        """Compute one MGU recurrence in the binary domain.
 
         Args:
-            input: Tensor shaped ``(batch, input_size)``.
-            hx: Optional previous hidden tensor shaped
+            input: Tensor of shape ``(batch, input_size)``.
+            hx: Optional previous hidden tensor of shape
                 ``(batch, hidden_size)``. Defaults to zeros.
 
         Returns:
-            Next hidden tensor shaped ``(batch, hidden_size)``. Values may leave
+            The next hidden tensor of shape ``(batch, hidden_size)``, bounded to
             ``[-1, 1]``.
 
-        The call does not store ``hx`` or advance ``timestep_cur``.
+        The call does not store ``hx`` or change ``timestep_cur``. Gradients flow
+        to the input and trainable parameters.
         """
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
-        fg = self.fg_sigmoid(F.linear(torch.cat((hx, input), 1), self.weight_f, self.bias_f))
+        fg_ug_in = torch.cat((hx, input), 1)
+        fg_in = self.htanh(F.linear(fg_ug_in, self.weight_f, self.bias_f))
+        fg = self.fg_sigmoid(fg_in)
         fg_hx = fg * hx
-        ng = self.ng_tanh(F.linear(torch.cat((fg_hx, input), 1), self.weight_n, self.bias_n))
-        return ng - fg * ng + fg_hx
+        ng_ug_in = torch.cat((fg_hx, input), 1)
+        ng = self.ng_tanh(F.linear(ng_ug_in, self.weight_n, self.bias_n))
+        fg_ng = fg * ng
+        return self.htanh(ng - fg_ng + fg_hx)

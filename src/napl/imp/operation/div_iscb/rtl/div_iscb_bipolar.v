@@ -1,9 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
-// Bipolar div_iscb equivalent: signabs(3), bi2uni(2), the unipolar magnitude
+// Bipolar div_iscb equivalent: signabs(3), bi2uni(3), the unipolar magnitude
 // core, then uni2bi(3), with quotient sign applied by XOR.
 // Output is combinational (pp_delay=0); state advances each posedge.
-// Active-low reset loads signabs acc=4 and clears all other state.
+// Active-low reset loads signabs acc=4, converter accumulators=0, and core
+// history buf0=0, buf1=1.
 
 
 module div_iscb_bipolar (

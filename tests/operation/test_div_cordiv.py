@@ -142,6 +142,20 @@ def test_div_cordiv_matches_unarysim_history_order():
     assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
 
 
+def test_div_cordiv_rejects_mismatched_shapes():
+    """Reject shape pairs that the operation cannot broadcast safely."""
+    operation = div_cordiv({'depth': 2, 'generator': 'Sobol'})
+    try:
+        operation(
+            torch.ones((2, 1), dtype=global_config.stype),
+            torch.ones((1, 3), dtype=global_config.stype),
+        )
+    except AssertionError:
+        return
+    raise AssertionError('div_cordiv must reject mismatched input shapes')
+
+
 if __name__ == '__main__':
     test_div_cordiv()
     test_div_cordiv_matches_unarysim_history_order()
+    test_div_cordiv_rejects_mismatched_shapes()

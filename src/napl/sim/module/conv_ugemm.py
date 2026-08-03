@@ -61,7 +61,7 @@ class conv_ugemm(napl_base):
                 (accumulator width, default ``12``). **name** is an optional
                 instance label and defaults to ``None``.
 
-        **width** must satisfy ``2 ** (width - 1) >= fan_in + has_bias``.
+        **width** must satisfy ``2 ** (width - 1) > fan_in + has_bias``.
         Numeric weights and bias are converted to persistent spike probabilities.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
@@ -95,9 +95,9 @@ class conv_ugemm(napl_base):
         self._is_bipolar = (self.polarity == 'bipolar')
 
         width = config.get('width', 12)
-        assert 2 ** (width - 1) >= self.entry, logger.error(
+        assert 2 ** (width - 1) > self.entry, logger.error(
             f'conv_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
-            f'2**(width-1) must be >= entry or partial sums saturate. Increase width.')
+            f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']

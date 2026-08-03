@@ -18,7 +18,7 @@ module div_cordiv #(
     input  wire i_divisor,   // divisor spike stream (the correlation/select line)
     output wire o_quotient   // quotient spike stream
 );
-    reg [DEPTH-1:0] buffer_q;   // buffer_q[0] newest, buffer_q[DEPTH-1] oldest
+    reg [DEPTH-1:0] buffer_q;   // buffer_q[0] oldest, buffer_q[DEPTH-1] newest
     reg [WIDTH-1:0] idx;        // cyclic buffer-row index, advances each cycle
 
     // Combinational quotient: select the dividend where the divisor spikes,
@@ -36,24 +36,44 @@ module div_cordiv #(
     assign o_quotient = i_divisor ? i_dividend : rand_q;
 
     always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            buffer_q[0] <= 1'b0;
-            idx      <= {WIDTH{1'b0}};
-        end else begin
-            if (i_divisor)
-                buffer_q[0] <= o_quotient;
+        if (!i_rst_n)
+            idx <= {WIDTH{1'b0}};
+        else
             idx <= idx + 1'b1;
-        end
     end
 
     genvar row;
     generate
-        for (row = 1; row < DEPTH; row = row + 1) begin: g_buffer
+        for (row = 0; row < DEPTH - 1; row = row + 1) begin: g_shift
+            if ((row % 2) == 0) begin: g_even
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        buffer_q[row] <= 1'b0;
+                    else if (i_divisor)
+                        buffer_q[row] <= buffer_q[row + 1];
+                end
+            end else begin: g_odd
+                always @(posedge i_clk or negedge i_rst_n) begin
+                    if (!i_rst_n)
+                        buffer_q[row] <= 1'b1;
+                    else if (i_divisor)
+                        buffer_q[row] <= buffer_q[row + 1];
+                end
+            end
+        end
+        if (((DEPTH - 1) % 2) == 0) begin: g_last_even
             always @(posedge i_clk or negedge i_rst_n) begin
                 if (!i_rst_n)
-                    buffer_q[row] <= 1'b0;
+                    buffer_q[DEPTH - 1] <= 1'b0;
                 else if (i_divisor)
-                    buffer_q[row] <= buffer_q[row-1];
+                    buffer_q[DEPTH - 1] <= o_quotient;
+            end
+        end else begin: g_last_odd
+            always @(posedge i_clk or negedge i_rst_n) begin
+                if (!i_rst_n)
+                    buffer_q[DEPTH - 1] <= 1'b1;
+                else if (i_divisor)
+                    buffer_q[DEPTH - 1] <= o_quotient;
             end
         end
     endgenerate

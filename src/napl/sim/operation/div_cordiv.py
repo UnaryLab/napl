@@ -105,12 +105,12 @@ class div_cordiv(napl_base):
 
         Args:
             dividend: Current 0/1 dividend spike tensor.
-            divisor: Current 0/1 divisor spike tensor, broadcast-compatible with
+            divisor: Current 0/1 divisor spike tensor with the same shape as
                 ``dividend``.
 
         Returns:
-            A quotient spike tensor with the dividend shape. The call updates
-            the sampled quotient history and advances its sequence index.
+            A quotient spike tensor with the input shape. The call updates the
+            sampled quotient history and advances its sequence index.
 
         **Example:**
 
@@ -119,6 +119,10 @@ class div_cordiv(napl_base):
             quotient = divider(torch.tensor([1], dtype=torch.int8),
                                torch.tensor([1], dtype=torch.int8))
         """
+        assert dividend.shape == divisor.shape, logger.error(
+            f'Input shapes must match: dividend <{tuple(dividend.shape)}>, '
+            f'divisor <{tuple(divisor.shape)}>.'
+        )
         if self.is_first_call:
             dividend_shape = list(dividend.shape)
             divisor_shape = list(divisor.shape)

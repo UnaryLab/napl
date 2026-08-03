@@ -109,16 +109,26 @@ def test_add_any():
     streaming_suite(CONFIG)
 
 
-def test_add_any_uses_unarysim_strict_carry_threshold():
-    """Verify add_any uses UnarySim's strict carry threshold for exact-boundary sums."""
+def test_add_any_emits_carry_on_inclusive_threshold():
+    """Verify add_any emits a carry when the accumulator reaches the scale."""
     input = torch.ones((2, 2), dtype=global_config.stype)
 
     for polarity in ('unipolar', 'bipolar'):
         operation = add_any({'polarity': polarity, 'scale': 2, 'width': 8})
         output = operation(input, dim=-1)
-        assert torch.equal(output, torch.zeros(2, dtype=global_config.stype))
+        assert torch.equal(output, torch.ones(2, dtype=global_config.stype))
+
+
+def test_add_any_rejects_unreachable_scale():
+    """Reject a carry threshold above the signed accumulator rail."""
+    try:
+        add_any({'polarity': 'unipolar', 'scale': 128, 'width': 8})
+    except AssertionError:
+        return
+    raise AssertionError('add_any must reject a scale above acc_max')
 
 
 if __name__ == '__main__':
     test_add_any()
-    test_add_any_uses_unarysim_strict_carry_threshold()
+    test_add_any_emits_carry_on_inclusive_threshold()
+    test_add_any_rejects_unreachable_scale()

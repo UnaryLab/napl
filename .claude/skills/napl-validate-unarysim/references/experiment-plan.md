@@ -88,11 +88,11 @@ Out of scope: `structure/` (biological layer), `algorithm/fft/fft.py`.
    proven load-bearing (encodes value 0 not -1), convergence ~1/sqrt(N), stride/dilation/rect
    correct, batch independence exact, binary STE grad == nn.Conv2d exactly, width guard fires,
    all-zero input finite (shares M2 rshift NaN guard).
-4. **[DONE]** module/rnn.py MGU cells: mgu_hard (binary float, == manual hard-MGU exactly),
+4. **[DONE]** module/mgu.py, module/mgu_hard.py, module/mgu_hardfxp.py, and module/mgu_hub.py MGU cells: mgu_hard (binary float, == manual hard-MGU exactly),
    mgu_hardfxp (round_fxp everywhere, rmse 0.010 vs mgu_hard), mgu (streaming inner cell:
    linear scale=1 = linear+hardtanh, sigmoid_hard, mul_csg for fg*hx, mul_and for fg*ng,
    add_any scale=1 output), mgu_hub (hybrid: runs mgu over 2**width cycles, decodes with
-   accuracy metric; rmse 0.032 vs mgu_hard). Caught & fixed a circular import (rnn.py must
+   accuracy metric; rmse 0.032 vs mgu_hard). Caught & fixed a circular import (mgu.py must
    lazy-import napl.sim.operation inside __init__, like linear) that pytest masked but the
    script sweep exposed. 46/46 green, 0 sweep failures.
 5. **[DONE]** Full integration sweep + final B4 review. 46/46 pytest, 0 script-sweep failures,

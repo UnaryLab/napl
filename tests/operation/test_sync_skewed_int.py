@@ -142,6 +142,11 @@ CONFIG = {
 def test_sync_skewed_int():
     """Verify sync_skewed_int against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
+    try:
+        sync_skewed_int({'width': 8})
+    except AssertionError:
+        return
+    raise AssertionError('sync_skewed_int must reject width 8 for int8 spike digits')
 
 
 if __name__ == '__main__':

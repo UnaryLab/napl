@@ -6,7 +6,7 @@ from napl.utils._shared_test import single_shot_suite
 
 INTWIDTH = 3
 FRACWIDTH = 4
-MIN_CODE = 1 - 2 ** (INTWIDTH + FRACWIDTH)
+MIN_CODE = -(2 ** (INTWIDTH + FRACWIDTH))
 MAX_CODE = 2 ** (INTWIDTH + FRACWIDTH) - 1
 
 

@@ -1,4 +1,5 @@
 import torch
+from loguru import logger
 
 from napl.sim.base import napl_base, hw_params
 
@@ -45,7 +46,7 @@ class sync_skewed_int(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Counter width in bits, giving a maximum output digit of ``2**width - 1``; the default is ``4``.
+              - **width**: Counter width in bits, giving a maximum output digit of ``2**width - 1`` that must fit the configured integer spike dtype; the default is ``4``.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
@@ -56,6 +57,12 @@ class sync_skewed_int(napl_base):
         self.width = config['width']
         #: Largest accumulated first-stream count retained by the synchronizer.
         self.cnt_max = 2**self.width - 1
+        if not self.stype.is_floating_point and not self.stype.is_complex and self.stype != torch.bool:
+            assert self.cnt_max <= torch.iinfo(self.stype).max, logger.error(
+                f'sync_skewed_int width <{self.width}> requires digit maximum '
+                f'<{self.cnt_max}>, which exceeds spike dtype <{self.stype}> '
+                f'maximum <{torch.iinfo(self.stype).max}>.'
+            )
         #: Per-element first-stream count awaiting release by the second stream.
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))

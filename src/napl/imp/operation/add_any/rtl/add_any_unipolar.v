@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 // Unipolar napl.sim.operation.add_any with an ENTRY-lane spike input.
-// A adds 2*partial, clamps to [-2^WIDTH, 2^WIDTH-2], fires above 2*SCALE, and
+// A adds 2*partial, clamps to [-2^WIDTH, 2^WIDTH-2], fires at or above 2*SCALE, and
 // subtracts 2*SCALE on a fire. Generated parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears the accumulator to match reset().
@@ -72,7 +72,7 @@ module add_any_unipolar #(
     wire signed [SUM_W-1:0] sum   = $signed(acc) + two_p - s_ofs;   // + 2*partial - 2*offset
     wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi :
                                     (sum < s_lo) ? s_lo : sum;
-    wire                    fire  = (clmp > s_scl);
+    wire                    fire  = (clmp >= s_scl);
     // clmp is in [ACC_LO,ACC_HI] so it fits ACC_W signed; nxt = fired? clmp-TWO_SCL : clmp
     // stays within [ACC_LO, ACC_HI], also ACC_W signed.
     wire signed [ACC_W-1:0] nxt   = fire ? (clmp[ACC_W-1:0] - s_scl[ACC_W-1:0])

@@ -1,4 +1,5 @@
 import torch
+from loguru import logger
 
 from napl.utils import *
 from napl.sim.base import napl_base, hw_params
@@ -45,7 +46,7 @@ class uni2bi(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Signed accumulator width in bits; the default is ``3``.
+              - **width**: Signed accumulator width in bits; it must make the emission threshold ``2`` reachable, and the default is ``3``.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
@@ -58,6 +59,10 @@ class uni2bi(napl_base):
         self.acc_max = 2**(self.width-1) - 1
         #: Smallest value retained by the conversion accumulator.
         self.acc_min = -2**(self.width-1)
+        assert self.acc_max >= 2, logger.error(
+            f'uni2bi width <{self.width}> has accumulator maximum <{self.acc_max}>, '
+            'but the emission threshold <2> is unreachable.'
+        )
         #: Running unipolar-to-bipolar conversion error.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))

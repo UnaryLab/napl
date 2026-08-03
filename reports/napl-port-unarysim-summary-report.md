@@ -25,16 +25,16 @@ This run covered all phases, all subpackages, and all classes. **GenSim** newly 
 | operation/bi2uni.py | yes | yes | Removed per-timestep cast; shape-guarded in-place `add_`. MPS ~1.25x, CPU flat. |
 | operation/tanh_hard.py | no | yes | No change; `tanh_hard` is passthrough, `tanh_hub` single fused hardtanh. |
 | operation/sync_skewed.py | no | yes | No new edits; pre-existing behavior-preserving opts to `sync_skewed` verified (CPU 1.17x, MPS 1.30x vs HEAD). |
-| module/rnn.py | yes | yes | `mgu_hardfxp`: deduped redundant `round_fxp` quantizations. CPU ~1.30x, MPS ~1.20x. Other 3 classes unchanged. |
+| module/{mgu,mgu_hard,mgu_hardfxp,mgu_hub}.py | yes | yes | `mgu_hardfxp`: deduped redundant `round_fxp` quantizations. CPU ~1.30x, MPS ~1.20x. Other 3 classes unchanged. |
 | module/conv.py | no | yes | No change; hot path dominated by im2col/col2im, casts non-redundant. 1.0x. |
 | module/conv_pc.py | no | yes | No change; hot path already vectorized, shape-cache prototype gave no speedup and was reverted. |
 | module/encoder.py | yes | yes | Resolved polarity branch once in `__init__`; removed 2 string compares/timestep. CPU ~1.10x, MPS ~1.12x. |
-| module/linear.py | yes | yes | `linear_pc` bipolar: replaced second matmul with integer identity reusing AND-count. CPU ~1.17x, MPS ~1.07x. |
+| module/linear_pc.py | yes | yes | `linear_pc` bipolar: replaced second matmul with integer identity reusing AND-count. CPU ~1.17x, MPS ~1.07x. |
 | module/decoder.py | yes | yes | Dropped per-timestep cast (add promotes int8 into float32 acc). MPS ~1.9x, CPU flat. |
 | metric/correlation.py | yes | yes | Dropped 2 redundant casts (bool auto-promotes). CPU ~1.10x, MPS ~2.01x. |
 | metric/accuracy.py | yes | yes | Shape-guarded in-place `add_` accumulation; removes alloc for 255/256 timesteps. CPU/MPS ~1.16x. |
 | metric/stability.py | yes | yes | In-place `sub_().abs_()` error computation; removes one alloc/timestep. CPU ~1.17x, MPS ~1.21x. |
-| algorithm/fft/butterfly.py | no | yes | No change; thin orchestration over already-optimized primitives. CPU/MPS ~1.00x. |
+| algorithm/fft/{butterfly_spike.py,butterfly_binary.py} | no | yes | No change; thin orchestration over already-optimized primitives. CPU/MPS ~1.00x. |
 
 Unchanged files skipped via the improve ledger: **0**.
 

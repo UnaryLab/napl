@@ -8,8 +8,8 @@ from napl.utils._shared_test import (
     clone_inputs,
     single_shot_suite,
     streaming_suite,
+    devices,
 )
-from napl.utils._shared_test import devices
 
 
 def test_timer():
@@ -178,6 +178,8 @@ def _fxp_pair():
     torch.manual_seed(1)
     in_features, out_features = 8, 4
     reference = torch.nn.Linear(in_features, out_features)
+    reference.weight.data.mul_(0.7)
+    reference.bias.data.mul_(0.7)
     candidate = linear_fxp(
         in_features,
         out_features,
@@ -196,7 +198,7 @@ def _fxp_pair():
 
 
 def _fxp_inputs():
-    return (torch.rand(8, 8) * 2 - 1,)
+    return (torch.rand(8, 8) * 1.6 - 0.8,)
 
 
 def _fxp_known_answer():

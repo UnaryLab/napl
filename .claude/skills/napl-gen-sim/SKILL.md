@@ -114,7 +114,7 @@ FIRST invoke the **`coding-discipline`** skill and follow it (think before codin
 surgical changes, verifiable criterion). Then write the napl class in the correct subpackage
 (`operation/` for gate-level primitives, `module/` for neural layers, `metric/` for metrics),
 following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling, e.g. port
-`FSULinearPC` next to `linear` in `module/linear.py`):
+`FSULinearPC` in `module/linear_pc.py`):
 
 - **`napl_base` subclass** taking a single `config` dict; call
   `super().__init__(config, key_list, polarity_required)` to validate required keys. Use napl naming
