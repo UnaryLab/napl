@@ -11,23 +11,25 @@ Operation API
    add_gaines
    add_ugemm
    bi2uni
+   decode
    dff
    div_cordiv
    div_gaines
    div_iscb
+   encode
    exp_n1
-   exp_ng
+   exp_n2g
    gt_rc
+   inhibit
    jkff
    lt_rc
    max_rc
    max_tc
    min_rc
    min_tc
-   mul_and
-   mul_csg
    mul_gaines
-   mul_shiftreg
+   mul_ugemm
+   mul_ugemm_sr
    relu_cnt
    relu_hub
    relu_sat

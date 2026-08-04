@@ -8,7 +8,7 @@ from loguru import logger
 
 
 class mgu(napl_base):
-    """Evaluate a bipolar rate-coded MGU cell one timestep at a time.
+    r"""Evaluate a bipolar rate-coded MGU cell one timestep at a time.
 
     Use this class as the streaming inner cell for :class:`mgu_hub`, or directly
     when input and hidden spike streams are already available. The two gate linears
@@ -17,6 +17,33 @@ class mgu(napl_base):
     ``fg * hx`` uses conditional-spike generation with fixed ``hx``; ``fg * ng``
     uses XNOR multiplication; and the output applies the same adder to
     ``[ng, 1 - fg * ng, fg * hx]``. The ``hx`` value remains fixed for the run.
+
+    The precise target is the Minimal Gated Unit recurrence
+
+    .. math::
+
+       f = \sigma\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = (1 - f) \odot n + f \odot h.
+
+    Each timestep the cell evaluates the same recurrence on spike streams. The
+    gate linears use a saturating ``scale=1`` unary adder, so each realizes
+    :math:`\mathrm{clamp}(W\cdot + b, -1, 1)` rather than an unbounded linear;
+    the forget gate uses the hard sigmoid :math:`(v+1)/2`; and the output stage
+    is the same saturating adder over three streams,
+
+    .. math::
+
+       h'_t = \mathrm{add\_any}\!\left(
+       n_t + \overline{(f \odot n)_t} + (f \odot h)_t;\; e = 3,\; s = 1\right),
+
+    where :math:`\overline{\,\cdot\,}` is the complemented stream, which in the
+    bipolar domain decodes to the negation. The result therefore tracks
+    :math:`\mathrm{clamp}(n - f \odot n + f \odot h, -1, 1)` within the
+    stochastic-computing error of the streams.
 
     .. rubric:: Example
 
@@ -58,7 +85,7 @@ class mgu(napl_base):
                 * **name** - Optional instance label. Defaults to ``None``.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        from napl.sim.operation import sigmoid_hard, mul_csg, mul_shiftreg, add_any
+        from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_sr, add_any
         from napl.sim.module.linear import linear
         assert self.polarity == 'bipolar', logger.error('mgu requires bipolar.')
 
@@ -78,15 +105,20 @@ class mgu(napl_base):
         #: Hard-sigmoid block applied to the forget-gate stream.
         self.fg_sigmoid = sigmoid_hard({'polarity': 'bipolar'})
         #: Conditional-spike multiplier for the forget gate and fixed hidden value.
-        self.fg_hx_mul = mul_csg({'polarity': 'bipolar', 'timestep': ts, 'generator': gen})
+        self.fg_hx_mul = mul_ugemm({'polarity': 'bipolar', 'timestep': ts, 'generator': gen})
         #: Shift-register multiplier for the forget-gate and candidate streams.
-        self.fg_ng_mul = mul_shiftreg({
+        self.fg_ng_mul = mul_ugemm_sr({
             'polarity': 'bipolar',
             'width': self.depth_ismul,
             'generator': gen,
         })
         #: Saturating unary adder that forms the next hidden-state stream.
         self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
+
+        self.encoding_io = {'input_spike': 'rc', 'hx_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'hx_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

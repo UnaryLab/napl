@@ -4,14 +4,15 @@ import torch.nn.functional as F
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder, conv
+from napl.sim.module import conv
+from napl.sim.operation import encode, decode
 
 
 class napl_conv(napl_base):
     def __init__(self, codec_config, weight, bias, stride, padding, conv_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.conv = conv(weight, bias, stride=stride, padding=padding, config=conv_config)
 
 

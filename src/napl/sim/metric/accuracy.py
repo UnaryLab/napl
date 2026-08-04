@@ -6,11 +6,31 @@ from loguru import logger
 
 
 class accuracy(napl_base):
-    """
+    r"""
     Track how closely a spike stream's running decoded value matches a reference.
 
     Use this metric to inspect progressive error as more timesteps arrive or to
     decide whether a stream has reached sufficient precision.
+
+    The precise target is the progressive error between the decoded stream value
+    and a reference :math:`r` scaled by :math:`\sigma`,
+
+    .. math::
+
+       e_T = \hat x_T - r/\sigma.
+
+    Let :math:`s_t` be the spike at timestep :math:`t` and
+    :math:`c_T = \sum_{t=1}^{T} s_t`. The metric evaluates the target exactly as
+
+    .. math::
+
+       \hat x_T = \begin{cases}
+       c_T / T, & \text{unipolar},\\
+       2 c_T / T - 1, & \text{bipolar},
+       \end{cases}
+       \qquad e_T = \hat x_T - r/\sigma,
+
+    with :math:`\hat x_T = 0` before the first timestep.
 
     .. rubric:: Example
 
@@ -29,7 +49,7 @@ class accuracy(napl_base):
 
         .. rubric:: References
 
-        *Fast and accurate computation using stochastic circuits*.
+        *Fast and accurate computation using stochastic circuits*, DATE, 2014.
     """
 
 

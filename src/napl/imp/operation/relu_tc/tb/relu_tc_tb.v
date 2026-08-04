@@ -2,8 +2,9 @@
 `default_nettype none
 `include "relu_tc/vec/relu_tc_params.vh"
 
-// Self-checking co-simulation testbench for relu_tc. The output is checked from
-// the next accumulator/cycle state before the clock edge commits that state.
+// Self-checking co-simulation testbench for relu_tc. The output is combinational
+// in the arrival cycle, so it is checked before the clock edge advances the
+// internal reference counter.
 
 module relu_tc_tb;
     reg i_clk, i_rst_n, i_input;

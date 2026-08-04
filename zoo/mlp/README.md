@@ -44,7 +44,7 @@ conda run -n napl python zoo/mlp/eval_unary.py --sanity      # tiny both-device 
 
 ## What it reuses from napl
 
-- `napl.encoder` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
+- `napl.encode` - number-to-spike encoding (bipolar, Sobol RNG), one spike per cycle.
 - `napl.linear_pc` (the parallel-counter streaming linear, UnarySim's `FSULinearPC`) - the
   per-cycle binary inner-product count of input spikes against freshly Sobol-encoded weight
   spikes on a decorrelated RNG dimension. Accumulating the count over k cycles and forming

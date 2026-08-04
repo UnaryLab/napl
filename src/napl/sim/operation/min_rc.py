@@ -5,12 +5,31 @@ from napl.sim.operation import sync_skewed
 
 
 class min_rc(napl_base):
-    """
+    r"""
     Select the minimum of two rate-coded streams and track its source.
 
-    Use this streaming minimum when input rates, rather than isolated spikes,
-    determine the smaller operand. A skewed synchronizer maintains the selection
-    state across timesteps.
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \min(p_0,p_1).
+
+    Let (u_t,v_t) = sync_skewed(input_0,input_1), q_{-1}=0, and q be the
+    internal selection state. The output uses the previous state and the
+    returned index is 1-q_t:
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= x_{1,t}+q_{t-1}(x_{0,t}-x_{1,t}),\\
+       q_t &=
+       \begin{cases}
+       v_t, & u_t\ne v_t,\\
+       q_{t-1}, & u_t=v_t.
+       \end{cases}
+       \end{aligned}
+
+    The returned index is one for input_0 and zero for input_1.
 
     .. rubric:: Example
 
@@ -40,21 +59,26 @@ class min_rc(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
+
+        #: Previous selection decision used to route the synchronized minimum stream.
+        self.index: torch.Tensor
+        self.register_buffer('index', torch.zeros(1, dtype=torch.int8))
+        #: Skew synchronizer that correlates the two input streams before selection.
+        self.sync = sync_skewed({'width': 2})
         #: Hardware latency and timing metadata for the combinational minimum output.
         self.hw = hw_params(pp_delay=0)
 
-        #: Previous selection decision used to route the synchronized minimum stream.
-        self.dff: torch.Tensor
-        self.register_buffer('dff', torch.zeros(1, dtype=torch.int8))
-        #: Skew synchronizer that correlates the two input streams before selection.
-        self.sync = sync_skewed({'width': 2})
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
         """
         Restore the local comparison state to its initial value.
         """
-        self.dff.resize_(1).zero_()
+        self.index.resize_(1).zero_()
 
 
     def forward(self, input_0, input_1):
@@ -83,12 +107,12 @@ class min_rc(napl_base):
         d_enable = sync_0_i8 ^ sync_1_i8
 
         # Output uses the prior selection state; the returned index uses the updated state.
-        output = input_1 + self.dff * (input_0 - input_1)
+        output = input_1 + self.index * (input_0 - input_1)
 
-        if self.dff.shape == d_enable.shape:
-            self.dff.add_(d_enable * (sync_1_i8 - self.dff))
+        if self.index.shape == d_enable.shape:
+            self.index.add_(d_enable * (sync_1_i8 - self.index))
         else:
-            updated = self.dff + d_enable * (sync_1_i8 - self.dff)
-            self.dff.resize_as_(updated).copy_(updated.detach())
+            updated = self.index + d_enable * (sync_1_i8 - self.index)
+            self.index.resize_as_(updated).copy_(updated.detach())
 
-        return output.type(self.stype), 1 - self.dff.type(self.stype)
+        return output.type(self.stype), 1 - self.index.type(self.stype)

@@ -7,7 +7,7 @@ from napl.sim.operation import sqrt_gaines
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _gen_common import encode_value, rep_values
+from _gen_common import require_seeded_sys, encode_value, rep_values
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,6 +27,9 @@ CODEC_UNI = {
     "dim": 1,
 }
 CODEC_BI = {**CODEC_UNI, "polarity": "bipolar"}
+
+
+require_seeded_sys(BASE_CONFIG, CODEC_UNI, CODEC_BI)
 
 
 def build_stream(codec):

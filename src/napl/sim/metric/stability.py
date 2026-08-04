@@ -7,13 +7,31 @@ from loguru import logger
 
 
 class stability(napl_base):
-    """
+    r"""
     Measure when each element of a spike stream settles near its source value.
 
     Stability is the fraction of the run remaining after progressive error last
     exceeded the configured threshold. Use it to compare early convergence: a
     stream that settles early approaches ``1``, while one that remains unstable
     approaches ``0``.
+
+    Let :math:`\hat x_t` be the progressive decoded value, :math:`x` the source,
+    and :math:`\theta` the threshold. The precise target is
+
+    .. math::
+
+       S_T = 1 - \frac{k_T}{T},\qquad
+       k_T = \max\left(\{0\}\cup\{t \leq T : |\hat x_t - x| > \theta\}\right).
+
+    The metric records :math:`k_T` as the last timestep whose absolute
+    progressive error exceeds :math:`\theta` and evaluates
+
+    .. math::
+
+       S_T = 1 - \frac{\mathrm{clamp}(k_T,\,1,\,T)}{T},
+
+    so a stream that is stable from the first timestep reports
+    :math:`1 - 1/T` rather than ``1``.
 
     .. rubric:: Example
 
@@ -31,9 +49,9 @@ class stability(napl_base):
 
         .. rubric:: References
 
-        *uGEMM*.
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
 
-        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*.
+        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*, ASP-DAC, 2021.
     """
 
 

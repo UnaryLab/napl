@@ -1,10 +1,15 @@
 import math
+import sys
 from pathlib import Path
 
 import torch
 
 from napl.sim.operation import add_gaines
-from napl.sim.module import encoder
+from napl.sim.operation import encode
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _gen_common import require_seeded_sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,11 +34,13 @@ UNSCALED_CODECS = [
     for dim in range(1, UNSCALED_ENTRY + 1)
 ]
 
+require_seeded_sys(SCALED, SCALED_CODEC, *UNSCALED_CODECS)
+
 
 def scaled_streams(polarity):
     lo = -0.75 if polarity == "bipolar" else 0.0
     values = torch.linspace(lo, 0.75, 64).repeat(SCALED_ENTRY, 1)
-    enc = encoder({"polarity": polarity, **SCALED_CODEC})
+    enc = encode({"polarity": polarity, **SCALED_CODEC})
     enc.reset()
     spikes = torch.stack([enc(values) for _ in range(TIMESTEP)])
     return spikes.permute(2, 0, 1)
@@ -42,7 +49,7 @@ def scaled_streams(polarity):
 def unscaled_streams():
     base = torch.linspace(0.0, 0.15, 64)
     values = torch.stack([base.roll(index * 7) for index in range(UNSCALED_ENTRY)])
-    encoders = [encoder(config) for config in UNSCALED_CODECS]
+    encoders = [encode(config) for config in UNSCALED_CODECS]
     for enc in encoders:
         enc.reset()
     spikes = torch.stack([

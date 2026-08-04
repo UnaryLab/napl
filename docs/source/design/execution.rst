@@ -19,7 +19,7 @@ A typical streaming loop is::
    spike_a = encoder_a(value_a)
    spike_b = encoder_b(value_b)
    spike_y = operation(spike_a, spike_b)
-   value_y = decoder(spike_y)
+   value_y = decode(spike_y)
 
 The complete path runs once per timestep.
 

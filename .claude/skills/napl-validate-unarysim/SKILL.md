@@ -7,7 +7,7 @@ description: >-
   UnarySim, confirm a port is faithful, verify fidelity against the upstream / "the
   original" / "the reference", reproduce UnarySim numbers in napl, or mentions UnarySim
   as the source of truth, even if they don't say "validate" outright (e.g. "does our
-  mul_and match theirs?", "is correlation a faithful port?", "check linear against
+  mul_gaines match theirs?", "is correlation a faithful port?", "check linear against
   UnarySim"). It reads the UnarySim source (the local clone, GitHub as fallback), runs both
   implementations on identical inputs, and reports whether the numerical results agree. Sibling
   to napl-opt-sim (speed), napl-gen-rtl (RTL generation), and napl-validate-sim-rtl (sim vs RTL);
@@ -42,7 +42,7 @@ reading the code alone: run both, compare the numbers, explain any difference.
 
 ## Inputs
 
-- The napl target to validate (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_and`,
+- The napl target to validate (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_gaines`,
   `napl.sim.module.linear`).
 - Run everything through the project env: `conda run -n napl python ...` (a bare `python` is the
   wrong interpreter). Per this repo's testing rules, validate on **both CPU and GPU** (the GPU on
@@ -101,7 +101,7 @@ subagent. Run validations sequentially, one subagent each, so each log row is wr
 
 ### Step 1 - Identify the target and map it to a UnarySim class
 
-Pin down the exact napl object (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_and`,
+Pin down the exact napl object (e.g. `napl.sim.metric.correlation`, `napl.sim.operation.mul_gaines`,
 `napl.sim.module.linear`). Then find its UnarySim counterpart:
 
 1. Check `references/mapping.md` (bundled) for the napl → UnarySim name + file mapping.
@@ -143,7 +143,7 @@ the most common way to get a bogus "they don't match" (or a bogus match). This b
 against it.
 
 **Reuse the committed test wiring for the napl side - do not re-write it.** Most ops/kernels have a
-`tests/.../test_<op>.py` that defines a `napl_<op>` module class (encoder(s) -> op -> decoder, run by
+`tests/.../test_<op>.py` that defines a `napl_<op>` module class (encode(s) -> op -> decoder, run by
 `@napl_sim_timesteps`). Import that class and use it as the napl half of the harness, so the
 validation exercises napl through *exactly* the code the test suite runs - it can't drift from how the
 op is actually wired, which is what makes the validation trackable. A re-implemented harness can pass
@@ -151,9 +151,9 @@ while the real wiring is broken (or vice versa); reusing the test class closes t
 
 ```python
 import importlib.util
-spec = importlib.util.spec_from_file_location('t', 'tests/operation/test_mul_and.py')
+spec = importlib.util.spec_from_file_location('t', 'tests/module/test_linear.py')
 t = importlib.util.module_from_spec(spec); spec.loader.exec_module(t)   # __main__ block does NOT run
-NaplWiring = t.napl_mul_and        # the committed wiring class
+NaplWiring = t.napl_linear         # the committed wiring class
 ```
 
 The test wiring encodes its spikes internally, so to feed UnarySim *the same* stream you don't extract
@@ -180,14 +180,14 @@ of constructing the op inline, and mirror its encoder configs for the UnarySim s
 import sys, torch
 sys.path.insert(0, '/Users/diwu/Projects')          # local UnarySim clone's parent
 from UnarySim.metric.metric import Correlation
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.sim.metric import correlation
 from napl.utils import gen_rand_tensor
 
 T = 256
 torch.manual_seed(0)
 val = gen_rand_tensor('bipolar', shape=(1000,), width=8)          # generated ONCE
-enc = encoder({'polarity': 'bipolar', 'timestep': T, 'generator': 'sobol', 'dim': 1})
+enc = encode({'polarity': 'bipolar', 'timestep': T, 'generator': 'sobol', 'dim': 1})
 
 nap = correlation()
 ref = Correlation()

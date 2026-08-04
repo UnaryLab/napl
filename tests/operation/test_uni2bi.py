@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import uni2bi
 from napl.sim.metric import accuracy
 
@@ -13,8 +13,8 @@ from napl.sim.metric import accuracy
 class napl_uni2bi(napl_base):
     def __init__(self, codec_config1, codec_config2, uni2bi_config):
         super().__init__()
-        self.encoder = encoder(codec_config1)
-        self.decoder = decoder(codec_config2)
+        self.encoder = encode(codec_config1)
+        self.decoder = decode(codec_config2)
         self.uni2bi = uni2bi(uni2bi_config)
         self.accuracy = accuracy(codec_config2)
 
@@ -56,7 +56,9 @@ def _kernel_specific_checks():
         with timer(device) as elapsed:
             uni2bi_inst(input, timesteps=codec_config1['timestep'])
 
-        uni2bi_inst.accuracy.analyze(input, verbose=True)
+        error, _ = uni2bi_inst.accuracy.analyze(input, verbose=True)
+        rmse = error.pow(2).mean().sqrt()
+        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), rmse
         assert uni2bi_inst.uni2bi.timestep_cur == codec_config1['timestep']
         uni2bi_inst.reset()
         assert uni2bi_inst.uni2bi.timestep_cur == 0

@@ -12,6 +12,29 @@ class add_any(napl_base):
     spike per ``scale`` accumulated units. It supports unipolar and bipolar
     rate-coded inputs.
 
+    The precise target reductions are
+
+    .. math::
+
+       p_y = \\frac{1}{\\mathit{scale}}\\sum_i p_i
+       \\quad (\\text{unipolar}),\\qquad
+       v_y = \\frac{1}{\\mathit{scale}}\\sum_i v_i
+       \\quad (\\text{bipolar}).
+
+    Let ``r_t`` be ``input`` when ``dim=None`` and otherwise the sum of
+    ``input`` along ``dim``. With ``o = 0`` for unipolar input and
+    ``o = (entry - scale) / 2`` for bipolar input, the exact carry recurrence is
+
+    .. math::
+
+       \\tilde a_t = \\operatorname{clip}(a_{t-1} + r_t - o,
+       -2^{w-1}, 2^{w-1}-1),\\qquad
+       y_t = \\mathbf{1}\\{\\tilde a_t \\geq \\mathit{scale}\\},\\qquad
+       a_t = \\tilde a_t - \\mathit{scale} y_t.
+
+    The output removes the reduced dimension and emits one spike for each
+    inclusive ``scale`` threshold crossing.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -47,8 +70,6 @@ class add_any(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'scale', 'width'], polarity_required=True)
-        #: Hardware latency and timing metadata for the combinational adder.
-        self.hw = hw_params(pp_delay=0)
 
         #: Signed accumulator width in bits.
         self.width = config['width']
@@ -70,6 +91,13 @@ class add_any(napl_base):
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
         #: Whether the next call must infer input-dependent state.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the combinational adder.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -5,11 +5,34 @@ from napl.sim.base import hw_params, napl_base
 
 
 class signabs_shiftreg(napl_base):
-    """
+    r"""
     Split bipolar rate-coded spikes using a shift-register sign estimate.
 
     Use this streaming kernel when recent input history should estimate the sign
     without a multi-bit saturating counter.
+
+    The precise target splits a bipolar value :math:`v` into its sign and
+    magnitude, so that the returned streams decode to
+
+    .. math::
+
+       \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
+       \mathrm{magnitude} = |v|.
+
+    The kernel estimates the sign from the ones in a depth-:math:`d` shift
+    register holding the most recent inputs, seeded with alternating bits so its
+    initial count is balanced,
+
+    .. math::
+
+       n_t = \sum_{k=1}^{d} s_{t-k},\qquad
+       \mathrm{sign}_t = \mathbf{1}\{n_t < d/2\},\qquad
+       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus s_t,
+
+    where the register is updated after the outputs are formed, so
+    :math:`n_t` covers the previous :math:`d` timesteps and not the current one.
+    A fixed window tracks a changing input faster than a saturating counter but
+    gives a noisier estimate near :math:`v = 0`.
 
     .. rubric:: Example
 
@@ -47,8 +70,6 @@ class signabs_shiftreg(napl_base):
         )
         #: Half-depth count threshold that represents bipolar zero.
         self.depth_half = self.depth / 2
-        #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
 
         #: Circular register of recent bipolar input spikes.
         self.reg: torch.Tensor
@@ -64,6 +85,13 @@ class signabs_shiftreg(napl_base):
         self.head = 0
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the combinational outputs.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

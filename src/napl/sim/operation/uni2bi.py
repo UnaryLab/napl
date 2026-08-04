@@ -5,12 +5,28 @@ from napl.sim.base import napl_base, hw_params
 
 
 class uni2bi(napl_base):
-    """
+    r"""
     Convert a unipolar rate-coded spike stream to bipolar form.
 
-    Use this stateful converter when a unipolar stream must feed a bipolar
-    operation. It preserves the represented value by producing a bipolar stream
-    whose one-density is the unipolar input value mapped by ``(x + 1) / 2``.
+    The precise target mapping is
+
+    .. math::
+
+       v_y = 2p_x-1.
+
+    The accumulator starts at ``a_0=0`` with rails ``M_-`` and ``M_+``.
+    The exact conversion recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       \tilde a_t &= \operatorname{clip}(a_{t-1}+x_t+1,M_-,M_+),\\
+       y_t &= \mathbf{1}\{\tilde a_t\geq 2\},\qquad
+       a_t=\tilde a_t-2y_t.
+       \end{aligned}
+
+    The output y_t is bipolar and preserves the represented value through
+    its one-density mapping.
 
     .. rubric:: Example
 
@@ -26,7 +42,7 @@ class uni2bi(napl_base):
 
         .. rubric:: References
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
     """
 
 
@@ -49,8 +65,6 @@ class uni2bi(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
-        #: Hardware latency and timing metadata for the combinational converter.
-        self.hw = hw_params(pp_delay=0)
 
         #: Signed conversion-accumulator width in bits.
         self.width = config['width']
@@ -65,6 +79,13 @@ class uni2bi(napl_base):
         #: Running unipolar-to-bipolar conversion error.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
+        #: Hardware latency and timing metadata for the combinational converter.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'unipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

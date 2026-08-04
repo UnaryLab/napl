@@ -47,7 +47,7 @@ Single-shot trainable kernels start from
 
 Run a focused pytest target through the project environment::
 
-   conda run -n napl pytest tests/operation/test_mul_and.py
+   conda run -n napl pytest tests/operation/test_mul_gaines.py
 
 The default check is the focused test for the changed unit. The full standalone
 test sweep is::

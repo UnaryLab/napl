@@ -4,12 +4,17 @@ from napl.sim.base import napl_base, hw_params
 
 
 class tanh_hard(napl_base):
-    """
+    r"""
     Apply hard tanh to an already bounded spike stream.
 
-    This streaming kernel is the identity because valid unipolar and bipolar
-    spike-stream values already lie within the hard-tanh bounds. Use it as the
-    streaming counterpart of a hard-tanh activation without changing spike bits.
+    The exact streaming operation is the identity
+
+    .. math::
+
+       y_t = x_t.
+
+    Valid unipolar and bipolar spike-stream values already lie within the
+    hard-tanh bounds.
 
     .. rubric:: Example
 
@@ -39,6 +44,11 @@ class tanh_hard(napl_base):
         super().__init__(config, [], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational hard tanh.
         self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

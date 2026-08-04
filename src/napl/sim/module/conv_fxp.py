@@ -8,11 +8,37 @@ from napl.sim.module._shared import _init_conv_params, _conv2d_binary, _linear_f
 
 
 class conv_fxp(napl_base):
-    """Apply a trainable fixed-point approximation of ``torch.nn.Conv2d``.
+    r"""Apply a trainable fixed-point approximation of ``torch.nn.Conv2d``.
 
     Use this single-shot layer for quantization-aware convolution with
     ``groups=1`` and zero padding. It lowers convolution to image columns, applies
     the fixed-point linear kernel, and folds the result back to NCHW.
+
+    The precise target is
+
+    .. math::
+
+       y = \mathrm{conv2d}(x, W) + b.
+
+    Lowering to image columns makes the convolution a matrix product, so the
+    layer evaluates the :class:`linear_fxp` kernel on the patches and adds the
+    bias after folding,
+
+    .. math::
+
+       \hat u = \mathrm{clamp}\left(\left[u\,2^{-r_i}\right],\,
+       -A_i,\, A_i - 1\right),\qquad
+       \hat W = \mathrm{clamp}\left(\left[W\,2^{-r_w}\right],\,
+       -A_w,\, A_w - 1\right),
+
+    .. math::
+
+       y = \mathrm{fold}\!\left(\left(\hat u \hat W^{\top}\right)
+       2^{-r_o}\right) + b,\qquad r_o = -r_i - r_w,
+
+    with :math:`u` the im2col patches, :math:`[\cdot]` rounding to the nearest
+    integer, and :math:`A_i`, :math:`A_w` the sign-magnitude ranges. The rounding
+    and clamp are the only departures from the target.
 
     .. rubric:: Example
 
@@ -74,6 +100,11 @@ class conv_fxp(napl_base):
         #: Largest positive weight magnitude represented by the quantized kernel.
         self.max_abs_w = 2 ** (self.widthw - 1)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

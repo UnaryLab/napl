@@ -8,7 +8,7 @@ TIMESTEPS = 256
 
 
 def make_operation(_polarity, _timestep, _device):
-    return relu_shiftreg({'depth': 8})
+    return relu_shiftreg({'depth': 4})
 
 
 def make_values(_polarity):

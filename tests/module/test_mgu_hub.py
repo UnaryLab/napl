@@ -7,8 +7,9 @@ sys.path.insert(0, '/Users/diwu/Projects')
 from napl.sim.base import global_config
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, timer
-from napl.sim.module import encoder, mgu, mgu_hard, mgu_hub
-from napl.sim.operation import mul_shiftreg
+from napl.sim.module import mgu, mgu_hard, mgu_hub
+from napl.sim.operation import encode
+from napl.sim.operation import mul_ugemm_sr
 from UnarySim.kernel.rnn import FSUMGUCell
 
 
@@ -81,7 +82,7 @@ def test_mgu_unarysim_recurrent_path():
                 'depth_ismul': 6,
             },
         ).to(device)
-        assert isinstance(nap.fg_ng_mul, mul_shiftreg)
+        assert isinstance(nap.fg_ng_mul, mul_ugemm_sr)
         assert nap.fg_ng_mul.width == 6
         ref = FSUMGUCell(
             input_size,
@@ -97,11 +98,11 @@ def test_mgu_unarysim_recurrent_path():
             depth=timesteps,
             depth_ismul=6,
         ).to(device)
-        i_enc = encoder({
+        i_enc = encode({
             'polarity': 'bipolar', 'timestep': timesteps,
             'generator': 'sobol', 'dim': 1,
         }).to(device)
-        h_enc = encoder({
+        h_enc = encode({
             'polarity': 'bipolar', 'timestep': timesteps,
             'generator': 'sobol', 'dim': 2,
         }).to(device)

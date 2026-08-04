@@ -7,7 +7,7 @@ with the same metric on CPU.
 import torch
 
 from napl.sim.metric import correlation
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 
@@ -43,9 +43,9 @@ def make_modules(device, timestep):
     }
     cfg_indep = dict(cfg, dim=2)
     return (
-        encoder(cfg).to(device),
-        encoder(cfg).to(device),
-        encoder(cfg_indep).to(device),
+        encode(cfg).to(device),
+        encode(cfg).to(device),
+        encode(cfg_indep).to(device),
         correlation().to(device),
         correlation().to(device),
         correlation().to(device),

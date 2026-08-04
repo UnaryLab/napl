@@ -52,9 +52,8 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 
 | napl class | UnarySim class | file | notes |
 |------------|----------------|------|-------|
-| `mul_csg` | `FSUMul(static=True)` | `kernel/mul.py` | exact module match; carries an RNG -> SC-bound, see note |
-| `mul_shiftreg` | `FSUMul(static=False)` | `kernel/mul.py` | in-stream shift-register decorrelation; bit-exact on identical input streams |
-| `mul_and` | gate core inside `FSUMul` (no standalone module) | `kernel/mul.py` | bit-exact gate identity, see note |
+| `mul_ugemm` | `FSUMul(static=True)` | `kernel/mul.py` | exact module match; carries an RNG -> SC-bound, see note |
+| `mul_ugemm_sr` | `FSUMul(static=False)` | `kernel/mul.py` | in-stream shift-register decorrelation; bit-exact on identical input streams |
 | `add_any` | `FSUAdd` | `kernel/add.py` | Intentional carry-threshold divergence: NAPL emits when accumulator >= scale; upstream FSUAdd emits only when accumulator > scale. |
 | `div_cordiv` | `CORDIV_kernel` | `kernel/div.py` | correlated division, unipolar; operands pre-synchronized |
 | `div_iscb` | `FSUDiv` | `kernel/div.py` | in-stream correlation-based division (iscbdiv) |
@@ -66,7 +65,7 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `signabs_shiftreg` | `FSUAbs(shiftreg=True)` + `FSUSign(shiftreg=True)` | `kernel/abs.py`, `kernel/sign.py` | shift-register sign and magnitude path |
 | `relu_cnt` | `FSUReLU(encode="RC", shiftreg=False)` | `kernel/relu.py` | counter path |
 | `relu_shiftreg` | `FSUReLU(encode="RC", shiftreg=True)` | `kernel/relu.py` | shift-register path |
-| `relu_tc` | `FSUReLU(encode="TC")` | `kernel/relu.py` | temporal-coded path |
+| `relu_tc` | `FSUReLU(encode="TC")` | `kernel/relu.py` | temporal-coded path; same decoded value and one-count, not bit-exact: napl emits a monotone temporal codeword, UnarySim emits an unconditional all-ones first half |
 | `relu_sat` | `FSUReLU(encode="RC", shiftreg=False)` | `kernel/relu.py` | napl saturating-adder alternative; within SC bound, not bit-exact |
 | `relu_hub` | `ScaleReLU` | `kernel/relu.py` | binary-domain |
 | `sigmoid_hard` / `sigmoid_hub` | `FSUHardsigmoid` / `ScaleHardsigmoid` | `kernel/sigmoid.py` | |
@@ -78,36 +77,36 @@ A napl idea (encode -> op -> accuracy observer over timesteps, then `analyze(ref
 | `round_fxp` | `Round` | `kernel/utils.py` | the only public napl class; the upstream autograd function `RoundingNoGrad` is ported as the private `_round_ste_fn` inside `round_fxp.py` |
 | `add_gaines` | `GainesAdd` | `kernel/add.py` | |
 | `add_ugemm` | `FSUAdduGEMM` | `kernel/add.py` | |
-| `mul_gaines` | `GainesMul` | `kernel/mul.py` | |
+| `mul_gaines` | `GainesMul` | `kernel/mul.py` | bit-exact gate identity, see note |
 | `div_gaines` | `GainesDiv` | `kernel/div.py` | |
 | `sqrt_gaines` | `GainesSqrt` | `kernel/sqrt.py` | |
 | `tanh_p1` / `tanh_pn` | `tanhP1` / `tanhPN` | `kernel/tanh.py` | |
-| `exp_n1` / `exp_ng` | `expN1` / `expNG` | `kernel/exp.py` | |
+| `exp_n1` / `exp_n2g` | `expN1` / `expNG` | `kernel/exp.py` | |
 | `sync_skewed_int` | `SkewedSyncInt` | `stream/shuffle_int.py` | **not** in `kernel/` |
 | `dff` | *(no standalone module)* | - | UnarySim has no DFF kernel; closest is a depth-1 `ShiftReg` delay. Validate as the delay identity |
 | `square_dff` | *(no standalone module)* | - | UnarySim has **no** `FSUSquare`; napl builds square from AND + `dff` (uGEMM). Validate against AND-of-decorrelated-stream math, not an UnarySim class |
 | `min_rc`, `max_rc`, `lt_rc`, `gt_rc` | *(no usable upstream counterpart)* | - | `FSUCompare` is dead code: its forward path ignores `in_1` and `in_2` and references the builtin `input` |
 | `min_tc`, `max_tc` | *(no standalone module)* | - | temporal-coded min/max (elementwise on temporal streams); no UnarySim class |
-| *(napl `inhibit`)* | *(placeholder)* | - | `operation/inhibit.py` is empty; nothing to map yet |
+| `inhibit` | *(no standalone module)* | - | race-logic INHIBIT gate (Boosted Race Trees, ASPLOS'19 Fig 3); no UnarySim class |
 
-### Note: `mul_and` vs `mul_csg` vs `FSUMul` (verified 2026-06-13)
+### Note: `mul_gaines` vs `mul_ugemm` vs `FSUMul` (verified 2026-06-13)
 
 `FSUMul` is not a bare gate. Its `forward` always combines the streamed operand `in_0` with a
 **second operand it generates internally**, in one of two modes (`hwcfg["static"]`):
 
 - `static=True`: `in_1` is a fixed value `in_1_prob`; FSUMul makes its spike with `BSGen`+`RNG` and a
   conditional `rng_idx` enable update, then `in_0 & bsg(...)` (bipolar adds the inverse path). This is
-  **exactly napl `mul_csg`** (streamed operand x value operand, conditional spike generation). It
+  **exactly napl `mul_ugemm`** (streamed operand x value operand, conditional spike generation). It
   carries an RNG, so napl-vs-UnarySim is SC-bound, not bit-exact, unless the two RNGs coincide.
 - `static=False` (in-stream): `in_1` is streamed but decorrelated through a `ShiftReg`, then
-  `in_0 & gt(source, rng[idx])`. This is napl `mul_shiftreg`.
+  `in_0 & gt(source, rng[idx])`. This is napl `mul_ugemm_sr`.
 
-napl `mul_and` is the **pure AND (unipolar) / XNOR (bipolar) gate of two already-decorrelated spike
-streams** - no RNG. That gate is the `&`/`xnor` core *inside* `FSUMul_forward`, but UnarySim does not
-expose it as a standalone module (FSUMul always wraps it with internal spike generation). So validate
-`mul_and` as the gate identity (`in_0 & in_1`; bipolar `1 - (in_0 ^ in_1)` == napl's
+napl `mul_gaines` is the **pure AND (unipolar) / XNOR (bipolar) gate of two already-decorrelated
+spike streams** - no RNG. UnarySim exposes that gate as the standalone `GainesMul`, and it is also the
+`&`/`xnor` core *inside* `FSUMul_forward`, which FSUMul always wraps with internal spike generation.
+So validate `mul_gaines` as the gate identity (`in_0 & in_1`; bipolar `1 - (in_0 ^ in_1)` == napl's
 `xor(a,b).xor_(1)`) on two externally encoded, distinct-Sobol-dim streams - it is bit-exact by
-construction. Validate `mul_csg` against `FSUMul(static=True)`.
+construction. Validate `mul_ugemm` against `FSUMul(static=True)`.
 
 ### Note: napl ops with no UnarySim counterpart
 
@@ -122,7 +121,11 @@ standalone UnarySim class** to diff against. For these, validate against the *ma
 - `compare` family (`min_rc`/`max_rc`/`lt_rc`/`gt_rc`/`min_tc`/`max_tc`) - rate-coded versions use
   `sync_skewed` (= `SkewedSync`) then a gate; temporal versions are elementwise. UnarySim's
   `FSUCompare` is unusable dead code because it ignores both forward inputs and references the builtin `input`.
-- `inhibit` - placeholder (empty file).
+- `inhibit` - race-logic INHIBIT gate from *Boosted Race Trees for Low Energy Classification*
+  (ASPLOS 2019, Fig 3): the data stream passes when its rising edge arrives no later than the
+  inhibiting stream's; a strictly earlier inhibitor latches the output to never fire (all zeros,
+  the minimum value under napl's larger-value-fires-earlier temporal code). Validate against
+  `where(x0 >= x1, x0, min)` on temporal streams, not an UnarySim class.
 
 ## Neural layers (`napl.sim.module`  ->  UnarySim `kernel/{linear,conv,rnn}.py`)
 
@@ -141,7 +144,7 @@ standalone UnarySim class** to diff against. For these, validate against the *ma
 | `mgu` | `FSUMGUCell` | `kernel/rnn.py` | |
 | `mgu_hub` / `mgu_hard` / `mgu_hardfxp` | `HUBMGUCell` / `HardMGUCell` / `HardMGUCellFxp` | `kernel/rnn.py` | |
 | `linear_ugemm` | `FSULinearuGEMM` | `kernel/linear.py` | |
-| `linear_gaines1` / `linear_gaines2` / `linear_gaines3` / `linear_gaines4` | `GainesLinear1` / `GainesLinear2` / `GainesLinear3` / `GainesLinear4` | `kernel/linear.py` | |
+| `linear_gaines1` / `linear_gaines2` | `GainesLinear1` / `GainesLinear4` | `kernel/linear.py` | `linear_gaines2` ports `GainesLinear4`; `GainesLinear2` and `GainesLinear3` have no napl counterpart |
 | `conv_ugemm` | `FSUConv2duGEMM` | `kernel/conv.py` | |
 | `avgpool2d` | `FSUAvgPool2d` | `kernel/pool.py` | |
 | `mgu_hardnua` / `mgu_hardpt` | `HardMGUCellNUA` / `HardMGUCellPT` | `kernel/rnn.py` | |
@@ -159,8 +162,8 @@ napl's `module/wta.py` is a placeholder (no class yet); UnarySim has no WTA modu
 | `NN_SC_Weight_Clipper` | `NN_SC_Weight_Clipper` |
 | `pow2_lshift` / `pow2_rshift` | the RAVEN float-shift behavior these shims replace |
 
-## codec (`napl.sim.module`  ->  UnarySim `stream/gen.py`)
+## codec (`napl.sim.operation`  ->  UnarySim `stream/gen.py`)
 
-`encoder` / `decoder` / `gen_num_seq` correspond to UnarySim's `RNG` + `RawScale` + `SourceGen` +
+`encode` / `decode` / `gen_num_seq` correspond to UnarySim's `RNG` + `RawScale` + `SourceGen` +
 `BSGen` bitstream pipeline. There is no single 1:1 class; validate the round-trip
 (encode -> decode of a known value) rather than a single call.

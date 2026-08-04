@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import relu_sat
 from napl.sim.metric import accuracy
 
@@ -13,8 +13,8 @@ from napl.sim.metric import accuracy
 class napl_relu_sat(napl_base):
     def __init__(self, codec_config, relu_sat_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.relu_sat = relu_sat(relu_sat_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
 
@@ -49,7 +49,9 @@ def _kernel_specific_checks():
             relu_sat_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.nn.ReLU()(input)
-        relu_sat_inst.accuracy.analyze(r_value, verbose=True)
+        error, _ = relu_sat_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt()
+        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), rmse
         assert relu_sat_inst.relu_sat.timestep_cur == codec_config['timestep']
         relu_sat_inst.reset()
         assert relu_sat_inst.relu_sat.timestep_cur == 0

@@ -13,7 +13,7 @@ module sqrt_traceiscb_unipolar (
 );
     // Registered state (post-reset() values are all zero).
     reg trace_q;   // self.trace
-    reg dff_q;     // unipolar_trace dff
+    reg dff_q;     // _unipolar_trace dff
     reg buf0_q;    // cordiv buffer_q[0]
     reg buf1_q;    // cordiv buffer_q[1]
     reg idx_q;     // cordiv idx (selects rand_seq entry: [0,1] -> buf0/buf1)

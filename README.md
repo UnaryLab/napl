@@ -30,12 +30,12 @@ The `napl` command line entry point currently prints a banner; it is a placehold
 
 ## Quick start
 
-Every public class is importable at the top level, e.g. `from napl import linear, mul_and, accuracy`.
+Every public class is importable at the top level, e.g. `from napl import linear, mul_gaines, accuracy`.
 
 Run a single kernel test:
 
 ```sh
-conda run -n napl python tests/operation/test_mul_and.py
+conda run -n napl python tests/operation/test_mul_gaines.py
 ```
 
 Run the full suite, which walks `tests/` and runs every `test_*.py` as a standalone script:

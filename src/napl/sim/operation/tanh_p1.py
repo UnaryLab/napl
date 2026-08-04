@@ -2,18 +2,30 @@ import torch
 import math
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module.encoder import gen_num_seq
+from napl.sim.operation import encode
 from napl.sim.operation.dff import dff
 from loguru import logger
 
 
 class tanh_p1(napl_base):
-    """
-    Approximate ``tanh(x)`` from a unipolar spike stream by series expansion.
+    r"""
+    Compute the code-quantized odd series from a unipolar spike stream.
 
-    Use this streaming kernel when the input represents values in ``[0, 1]``
-    and a stochastic NAND/AND-cascade implementation of hyperbolic tangent is
-    required.
+    The precise target operation is
+
+    .. math::
+
+       f(x) = \tanh(x).
+
+    Let x be the input rate, L = 2**ceil(log2(timestep)), and
+    Q_L(v) = round(v L)/L. The four coefficient streams use
+    c_2 = Q_L(62/153), c_3 = Q_L(17/42), c_4 = Q_L(2/5), and
+    c_5 = Q_L(1/3). The exact rate-domain operation of the NAND/AND cascade is
+
+    .. math::
+
+       \mathbb{E}[y] =
+       x-c_5x^3+c_5c_4x^5-c_5c_4c_3x^7+c_5c_4c_3c_2x^9.
 
     .. rubric:: Example
 
@@ -52,7 +64,7 @@ class tanh_p1(napl_base):
 
               - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
               - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.module.encoder.gen_num_seq`; the default is ``"sobol"``.
+              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"sobol"``.
               - **dim**: First Sobol dimension used for the four coefficient streams; the default is ``1``.
               - **name**: Optional module name.
         """
@@ -70,19 +82,21 @@ class tanh_p1(napl_base):
         #: Period of each coefficient spike sequence.
         self.len = 2**self.width
 
-        # DFF delay lines decorrelate the combinational path without adding output latency.
-        #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
 
         # Width-bit quantization on consecutive dimensions matches the hardware generator.
         dim = config.get('dim', 1)
+        # Quantizing to width bits turns the integer threshold comparison into the
+        # encoder's own probability comparison, since self.len is a power of two.
+        # Each encoder generates its full period once, here, so the hot path keeps
+        # reading Python ints.
+        coef_q = torch.tensor([62/153, 17/42, 2/5, 1/3],
+                              dtype=self.ntype).mul(self.len).round().div(self.len)
         coef_seq = []
-        for i, coef in enumerate([62/153, 17/42, 2/5, 1/3]):
-            num_seq = gen_num_seq(config={'width': self.width,
-                                          'generator': self.generator,
-                                          'dim': dim + i})
-            coef_bin = torch.tensor(coef, dtype=self.ntype).mul(self.len).round()
-            coef_seq.append(torch.gt(coef_bin, num_seq.mul(self.len).floor()).type(torch.int8))
+        for i in range(4):
+            reference_encode = encode({'polarity': 'unipolar', 'timestep': self.len,
+                                       'generator': self.generator, 'dim': dim + i})
+            coef_seq.append(torch.cat([reference_encode(coef_q[i:i + 1])
+                                       for _ in range(self.len)]).type(torch.int8))
         #: Four periodic coefficient spike streams used by the polynomial stages.
         self.coef_seq: torch.Tensor
         self.register_buffer('coef_seq', torch.stack(coef_seq))
@@ -100,6 +114,14 @@ class tanh_p1(napl_base):
         self.n_1_dff_2 = dff({'depth': 1})
         #: Third one-timestep delay segment for the first polynomial intermediate.
         self.n_1_dff_3 = dff({'depth': 1})
+        # DFF delay lines decorrelate the combinational path without adding output latency.
+        #: Hardware latency and timing metadata for the combinational output path.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'out': 'rc'}
+        self.polarity_io = {'input': 'unipolar', 'out': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

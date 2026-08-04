@@ -20,13 +20,13 @@ result over time::
 
    number or tensor
           |
-       encoder
+       encode
           |
    one-bit spike stream
           |
    operations or streaming layers
           |
-   decoder or metric
+   decode or metric
 
 Rate and temporal encodings differ in spike order. Longer streams generally
 improve numerical fidelity at the cost of latency.
@@ -70,9 +70,9 @@ Public API
 ``napl/__init__.py`` re-exports the public classes from the simulation
 subpackages. Applications can use top-level imports such as::
 
-   from napl import accuracy, encoder, linear, mul_and
+   from napl import accuracy, encode, linear, mul_gaines
 
-Deep imports such as ``from napl.sim.operation import mul_and`` are also
+Deep imports such as ``from napl.sim.operation import mul_gaines`` are also
 supported.
 
 Current boundaries

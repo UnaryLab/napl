@@ -4,11 +4,28 @@ from napl.sim.base import napl_base, hw_params
 
 
 class relu_cnt(napl_base):
-    """
+    r"""
     Apply ReLU to a bipolar rate-coded stream with a saturating counter.
 
-    Use this streaming kernel when a bounded counter estimate of the decoded
-    input sign is suitable. The output remains a bipolar 0/1 spike stream.
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \max(x,0).
+
+    Let x_t be the current input spike, a_t the counter state, and
+    H = 2**(width-1). The output is generated before the counter update:
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= x_t \mathbin{\lor} \mathbf{1}\{a_{t-1}<H\},\\
+       a_t &= \operatorname{clip}(a_{t-1}+2y_t-1,\,
+       0,\,2^{width}-1).
+       \end{aligned}
+
+    The initial counter is a_0 = H and the output remains a bipolar 0/1
+    spike stream.
 
     .. rubric:: Example
 
@@ -41,8 +58,6 @@ class relu_cnt(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], polarity_required=False)
-        #: Hardware latency and timing metadata for the combinational ReLU output.
-        self.hw = hw_params(pp_delay=0)
 
         #: Saturating accumulator width in bits.
         self.width = config['width']
@@ -54,6 +69,13 @@ class relu_cnt(napl_base):
         #: Saturating bipolar accumulator that controls the emitted ReLU spike.
         self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(2**(self.width - 1)))
+        #: Hardware latency and timing metadata for the combinational ReLU output.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

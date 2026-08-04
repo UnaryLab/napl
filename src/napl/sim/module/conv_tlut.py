@@ -14,13 +14,42 @@ from napl.sim.module._shared import (
 
 
 class conv_tlut(napl_base):
-    """Apply a temporal-LUT approximation of ``torch.nn.Conv2d``.
+    r"""Apply a temporal-LUT approximation of ``torch.nn.Conv2d``.
 
     Use this single-shot trainable layer to decompose either convolution inputs or
     weights into temporal digits. It supports modes
     fxpfxp/fxpfp/fpfp via the (formati, formatw) pair. Single-shot; trains via STE.
     Approximates nn.Conv2d within the temporal-decomposition bound.
     ``fxpfxp``, ``fxpfp``, and ``fpfp`` with ``groups=1`` and zero padding.
+
+    The precise target is
+
+    .. math::
+
+       y = \mathrm{conv2d}(x, W) + b.
+
+    Lowering to image columns makes the convolution a matrix product, so the
+    layer evaluates the :class:`linear_tlut` kernel on the patches and adds the
+    bias after folding. The selected operand is replaced by its temporal
+    decomposition, which peels ``degree`` digits of ``widtht`` bits and clamps
+    each to the run cycle range :math:`[-c+1,\, c-1]`,
+
+    .. math::
+
+       m_k = \mathrm{trunc}\!\left(m_{k-1} 2^{-w_t}\right),\qquad
+       f_k = \mathrm{clamp}\!\left(
+       2^{w_t}\,\mathrm{frac}\!\left(m_{k-1} 2^{-w_t}\right),\,
+       -c+1,\; c-1\right),
+
+    .. math::
+
+       D(m) = \sum_{k=1}^{\text{degree}} f_k\, 2^{-(\text{degree}-k+1) w_t},
+       \qquad
+       y = \mathrm{fold}\!\left(\tilde u \tilde W^{\top}\right) + b,
+
+    with :math:`m_0 = m` and :math:`\tilde u`, :math:`\tilde W` the patch and
+    weight matrices after substituting the decomposed operand. The error is the
+    discarded low-order digits plus the per-digit clamp.
 
     .. rubric:: Example
 
@@ -132,6 +161,11 @@ class conv_tlut(napl_base):
         #: Leading padding bits in the temporal decomposition.
         self.delta = int(self.degree * self.widtht - self.width)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

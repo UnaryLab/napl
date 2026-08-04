@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.sim.operation import add_ugemm
 
 
@@ -43,7 +43,7 @@ def encode_segments(config):
     }
     segments = []
     for values_row in test_values(config):
-        enc = encoder(dict(codec))
+        enc = encode(dict(codec))
         enc.reset()
         segments.append([enc(values_row).clone() for _ in range(TIMESTEP)])
     return segments

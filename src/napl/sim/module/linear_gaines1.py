@@ -6,7 +6,7 @@ from loguru import logger
 
 
 class linear_gaines1(napl_base):
-    """Apply a streaming Gaines ``gMUL + gADD`` fully connected layer.
+    r"""Apply a streaming Gaines ``gMUL + gADD`` fully connected layer.
 
     Use this variant to reproduce the first UnarySim Gaines linear design or to
     compare random-threshold and counter-based addition. Each timestep the weights (and
@@ -15,17 +15,57 @@ class linear_gaines1(napl_base):
     unipolar, XNOR for bipolar), and the per-timestep parallel count is reduced to one
     output spike by a Gaines adder instead of :class:`linear`'s scaled accumulator:
 
-    - ``scaled=True``: the count is compared with a random level in
-      ``[0, 2 ** w)``, where ``w = round(log2(entry))`` and
-      ``entry = in_features + has_bias``. The decoded output represents
+    - ``scaled=True``: the count is compared with the encoder number sequence
+      as ``count / L > q[t]``, where ``L = 2 ** w``, ``w = round(log2(entry))``
+      and ``entry = in_features + has_bias``. The decoded output represents
       ``(W x + b) / 2 ** w`` for unipolar streams and
       ``(entry + W x + b) / 2 ** w - 1`` for bipolar streams.
+
+      This strict comparison replaces a former ``count >= scale_seq[t]``
+      against ``scale_seq = round(q L)``. The two agree except where
+      ``count == scale_seq[t]``. Because ``scale_seq`` is a permutation of
+      ``0 .. L-1``, each count value ties at exactly one position per period,
+      the index ``t`` where ``scale_seq[t] == count``; the former form emitted
+      a spike there and this one does not, so a constant count yields exactly
+      one fewer output spike per period of ``L`` timesteps.
 
     - ``scaled=False``: unipolar mode emits ``count > 0``; bipolar mode drives a
       ``depth``-bit saturating counter by ``2 * count - entry``, so the decoded
       output tracks ``clamp(W x + b, -1, 1)``.
 
     It uses rate-coded weights and matches UnarySim ``GainesLinear1``.
+
+    The precise target is the affine map :math:`y = Wx + b`, reachable only up to
+    the mode-specific scaling above. With :math:`x_t` the input spikes,
+    :math:`w_t` the encoded weight spikes, :math:`b_t` the bias spike, :math:`n`
+    the fan-in, :math:`e = n + [\,\text{bias}\,]`, and
+    :math:`w = \mathrm{round}(\log_2 e)`, the layer forms
+
+    .. math::
+
+       c_t = \begin{cases}
+       x_t w_t^{\top} + b_t, & \text{unipolar},\\
+       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
+       & \text{bipolar},
+       \end{cases}
+
+    and emits exactly
+
+    .. math::
+
+       y_t = \begin{cases}
+       \mathbf{1}\{c_t / 2^{w} > q_{t \bmod 2^{w}}\}, & \text{scaled},\\
+       \mathbf{1}\{c_t > 0\}, & \text{non-scaled unipolar},\\
+       \mathbf{1}\{a_t > 2^{d-1}\}, & \text{non-scaled bipolar},
+       \end{cases}
+
+    where :math:`q` is the encoder number sequence and the
+    ``depth``-:math:`d` saturating counter runs as
+
+    .. math::
+
+       a_t = \mathrm{clamp}\left(a_{t-1} + 2c_t - e,\; 0,\; 2^{d}-1\right),
+       \qquad a_0 = 2^{d-1}.
 
     .. rubric:: Example
 
@@ -77,7 +117,7 @@ class linear_gaines1(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.module.encoder import encoder, gen_num_seq
+        from napl.sim.operation import encode
 
         assert weight.dim() == 2, logger.error(f'linear_gaines1 weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
         #: Trainable numeric weight matrix encoded into a spike stream.
@@ -104,11 +144,11 @@ class linear_gaines1(napl_base):
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
         #: Encoder that converts the numeric weight matrix to spikes each timestep.
-        self.w_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+        self.w_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
-            self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+            self.b_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
 
         if self.scaled:
@@ -117,11 +157,16 @@ class linear_gaines1(napl_base):
             self.scale_width = round(math.log2(self.entry))
             #: Number of entries in the scaled-adder threshold sequence.
             self.scale_len = 2 ** self.scale_width
-            # Python float thresholds avoid cross-device scalar broadcasts.
-            #: Precomputed random comparison levels for scaled addition.
-            self.scale_seq = torch.floor(gen_num_seq({
-                'width': self.scale_width, 'generator': config['generator'],
-                'dim': dim + 2}) * self.scale_len).tolist()
+            #: Encoder supplying the scaled-adder threshold comparison.
+            self.reference_encode = encode({'polarity': 'unipolar',
+                                            'timestep': self.scale_len,
+                                            'generator': config['generator'],
+                                            'dim': dim + 2})
+            scaled_levels = self.reference_encode.num_seq.mul(self.scale_len)
+            assert torch.allclose(scaled_levels, scaled_levels.round(), atol=1e-9), \
+                f'Sequence value off the 1/{self.scale_len} grid; the count-scale view would not be exact.'
+            #: Count-scale view of the encoder sequence, kept for inspection.
+            self.scale_seq = scaled_levels.round().tolist()
         else:
             depth = config.get('depth', 8)
             #: Maximum value of the non-scaled bipolar saturating counter.
@@ -133,6 +178,11 @@ class linear_gaines1(napl_base):
                 self.cnt: torch.Tensor
                 self.register_buffer(
                     'cnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
@@ -170,8 +220,10 @@ class linear_gaines1(napl_base):
             pc.add_(self.b_encoder(self.bias).type(self.ntype))
 
         if self.scaled:
-            level = self.scale_seq[(self.timestep_cur - 1) % self.scale_len]
-            output = torch.ge(pc, level)
+            # Strict comparison through the encoder; see the class docstring for
+            # the one-tying-position-per-period difference from the former ge form.
+            reference_encode_bit = self.reference_encode(pc.div(self.scale_len))
+            output = reference_encode_bit
         elif self.polarity == 'unipolar':
             output = torch.gt(pc, 0)
         else:

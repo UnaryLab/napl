@@ -5,11 +5,36 @@ from napl.sim.operation import bi2uni, add_any, shiftreg
 
 
 class sqrt_emit(napl_base):
-    """
+    r"""
     Approximate square root by opportunistic bit insertion.
 
     Use this streaming kernel for unipolar or bipolar rate-coded square root
     when an emission-feedback implementation is desired.
+
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \sqrt{x}.
+
+    Let a_t be the nsadd accumulator and e_t the saved emission bit. With
+    S_2 denoting the depth-two shift-register output, the exact update is
+
+    .. math::
+
+       \begin{aligned}
+       \tilde a_t &= a_{t-1} + x_t + e_t, &
+       y_t &= \mathbf{1}\{\tilde a_t \geq 1\}, &
+       a_t &= \tilde a_t-y_t,\\
+       e_{t+1} &= S_2(1-y_t)\mathbin{\land}y_t
+       &&(\text{unipolar}),\\
+       e_{t+1} &= S_2(1-y_t)\mathbin{\land}B(y_t)
+       &&(\text{bipolar}).
+       \end{aligned}
+
+    Here B is bi2uni applied only in the bipolar emission path.
+    The width-three nsadd clamp to ``[-4, 3]`` never binds on this reachable
+    state because the partial sum stays within that range.
 
     .. rubric:: Example
 
@@ -25,9 +50,9 @@ class sqrt_emit(napl_base):
 
         .. rubric:: References
 
-        *In-Stream Stochastic Division and Square Root via Correlation*.
+        *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
     """
 
 
@@ -50,8 +75,6 @@ class sqrt_emit(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
-        #: Hardware latency and timing metadata for the composed square-root path.
-        self.hw = hw_params(pp_delay=0)
 
         #: Previous emission bit fed back into the next square-root step.
         self.emit_out: torch.Tensor
@@ -70,6 +93,13 @@ class sqrt_emit(napl_base):
 
         #: Whether the next call must expand :attr:`emit_out` to the input shape.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the composed square-root path.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
@@ -110,9 +140,9 @@ class sqrt_emit(napl_base):
         in_sum = input.type(torch.int8) + self.emit_out
         output = self.nsadd(in_sum, dim=None)
         if self.polarity == 'bipolar':
-            emit_out = self.bipolar_emit(output)
+            emit_out = self._bipolar_emit(output)
         else:
-            emit_out = self.unipolar_emit(output)
+            emit_out = self._unipolar_emit(output)
         if self.emit_out.shape == emit_out.shape:
             self.emit_out.copy_(emit_out.detach())
         else:
@@ -121,51 +151,16 @@ class sqrt_emit(napl_base):
         return output
 
 
-    def unipolar_emit(self, output):
-        """
-        Generate the next emission bit for a unipolar output spike.
-
-        This method advances the internal shift register but does not write the
-        class-owned saved emission buffer.
-
-        Args:
-            output: Tensor of current 0/1 unipolar output spikes.
-
-        Returns:
-            Tensor of 0/1 emission bits with the same shape as ``output``.
-
-        **Example:**
-
-        .. code-block:: python
-
-            emit = operation.unipolar_emit(torch.tensor([0.0, 1.0]))
-        """
+    def _unipolar_emit(self, output):
+        """Generate the next emission bit for a unipolar output spike."""
         output_inv = 1 - output
         output_inv_scrambled = self.shiftreg(output_inv)
         emit_out = output_inv_scrambled.type(torch.int8) & output.type(torch.int8)
         return emit_out
 
 
-    def bipolar_emit(self, output):
-        """
-        Generate the next emission bit for a bipolar output spike.
-
-        This method advances the shift register and bipolar-to-unipolar child
-        kernel but does not write the class-owned saved emission buffer.
-
-        Args:
-            output: Tensor of current 0/1 bipolar output spikes.
-
-        Returns:
-            Tensor of 0/1 emission bits with the same shape as ``output``.
-
-        **Example:**
-
-        .. code-block:: python
-
-            operation = sqrt_emit({'polarity': 'bipolar'})
-            emit = operation.bipolar_emit(torch.tensor([0.0, 1.0]))
-        """
+    def _bipolar_emit(self, output):
+        """Generate the next emission bit for a bipolar output spike."""
         output_inv = 1 - output
         output_inv_scrambled = self.shiftreg(output_inv)
         output_uni = self.bi2uni(output)

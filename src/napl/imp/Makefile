@@ -1,7 +1,7 @@
 # Run `conda run -n napl make test OP=<op>` with iverilog and vvp on PATH.
 # Each operation supplies RTL, a self-checking testbench, and Python golden vectors.
 
-OP       ?= mul_and
+OP       ?= mul_gaines
 PYTHON   ?= python
 IVERILOG ?= iverilog
 VVP      ?= vvp

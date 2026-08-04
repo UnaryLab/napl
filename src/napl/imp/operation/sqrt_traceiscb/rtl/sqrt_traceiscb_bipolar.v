@@ -14,7 +14,7 @@ module sqrt_traceiscb_bipolar (
     // Registered state (post-reset() values are all zero). acc is signed,
     // range [-2, 1]; 3 signed bits hold the pre-clamp value [-3, 2].
     reg trace_q;          // self.trace
-    reg dff_q;            // unipolar_trace dff
+    reg dff_q;            // _unipolar_trace dff
     reg signed [2:0] acc_q;  // bi2uni accumulator
     reg buf0_q;           // cordiv buffer_q[0]
     reg buf1_q;           // cordiv buffer_q[1]

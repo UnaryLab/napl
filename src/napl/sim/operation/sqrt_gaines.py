@@ -1,15 +1,41 @@
 import torch
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module import gen_num_seq
+from napl.sim.operation import encode
 
 
 class sqrt_gaines(napl_base):
-    """
+    r"""
     Approximate square root with the Gaines saturating-counter circuit.
 
     Use this streaming kernel for unipolar or bipolar rate-coded square root
     when counter state should be sampled by a configurable number sequence.
+
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \sqrt{x}.
+
+    Let R_t = round(2**width G_t), where G_t is the configured number
+    sequence, and let y_t be sampled before the counter update. With d_{t-1}
+    the previous output spike, the exact recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= \mathbf{1}\{scnt_t > R_t\},\\
+       \delta_t &= y_t \mathbin{\land} d_{t-1}
+       &&(\text{unipolar}),\\
+       \delta_t &= 1-(y_t \oplus d_{t-1})
+       &&(\text{bipolar}),\\
+       scnt_{t+1} &= \operatorname{clip}(scnt_t+x_t-\delta_t,
+       0,2^{width}-1), &
+       d_t &= y_t.
+       \end{aligned}
+
+    The threshold output uses the pre-update counter and d_t stores that
+    output for the next squared-output feedback term.
 
     .. rubric:: Example
 
@@ -25,7 +51,7 @@ class sqrt_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*.
+        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
     """
 
 
@@ -48,15 +74,13 @@ class sqrt_gaines(napl_base):
 
               - **polarity**: Stream encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **width**: Counter and number-sequence bit width; the default is ``5``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.module.encoder.gen_num_seq`; the default is ``"Sobol"``.
+              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"Sobol"``.
               - **dim**: Optional Sobol dimension; the sequence generator defaults to ``1``.
               - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
               - **taps**: Optional LFSR tap list used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
-        #: Hardware latency and timing metadata for the registered square-root output.
-        self.hw = hw_params(pp_delay=1)
 
         #: Counter and threshold-sequence width in bits.
         self.width = config['width']
@@ -67,12 +91,17 @@ class sqrt_gaines(napl_base):
 
         # Python scalar thresholds span the counter range without device synchronization.
         #: Periodic tensor of stochastic counter thresholds.
+        #: Encoder supplying the periodic counter-threshold comparison.
+        self.reference_encode = encode({'polarity': 'unipolar',
+                                   'timestep': 2**self.width,
+                                   'generator': config['generator'],
+                                   'dim': config.get('dim', 1)})
+        scaled = self.reference_encode.num_seq.mul(2**self.width)
+        assert torch.allclose(scaled, scaled.round(), atol=1e-9), \
+            f'Sequence value off the 1/{2**self.width} grid; the counter-scale view would not be exact.'
+        #: Counter-scale view of the encoder sequence, read by the RTL generator.
         self.rand_seq: torch.Tensor
-        self.register_buffer('rand_seq', torch.floor(gen_num_seq(config).mul(2**self.width)))
-        #: Python-list view of :attr:`rand_seq` used for per-timestep comparison.
-        self.rand_seq_vals = self.rand_seq.tolist()
-        #: Current position in :attr:`rand_seq_vals`.
-        self.idx = 0
+        self.register_buffer('rand_seq', scaled.round())
 
         # The half-scale scalar counter broadcasts to the input shape on first use.
         #: Saturating error counter that controls square-root spike generation.
@@ -82,13 +111,19 @@ class sqrt_gaines(napl_base):
         #: Previous output spike tensor used by the squared-output feedback term.
         self.out_d: torch.Tensor
         self.register_buffer('out_d', torch.zeros(1, dtype=torch.int8))
+        #: Hardware latency and timing metadata for the registered square-root output.
+        self.hw = hw_params(pp_delay=1)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
         """
         Restart the sequence index, counter, and delayed-output feedback state.
         """
-        self.idx = 0
         self.scnt.resize_(1).fill_(self.cnt_half)
         self.out_d.resize_(1).zero_()
 
@@ -113,8 +148,10 @@ class sqrt_gaines(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        output = torch.gt(self.scnt, self.rand_seq_vals[self.idx]).type(torch.int8)
-        self.idx = (self.idx + 1) % len(self.rand_seq_vals)
+        # Dividing by the power-of-two counter scale is exact, so comparing the
+        # scaled counter through the encoder reproduces the integer comparison.
+        reference_encode_bit = self.reference_encode(self.scnt.div(2**self.width))
+        output = reference_encode_bit.type(torch.int8)
         if output.shape != input.shape:
             output = output.expand(input.size()).contiguous()
 

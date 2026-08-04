@@ -77,6 +77,16 @@
   parameters:
     WIDTH: "config['width']"
 
+- rtl_module: decode
+  layer: operation
+  sim_module: sim/operation/decode.py
+  inputs:
+    spike: i_spike
+  outputs:
+    self.spike_count: o_spike_count
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
 - rtl_module: dff
   layer: operation
   sim_module: sim/operation/dff.py
@@ -108,7 +118,7 @@
   outputs:
     output: o_out
   parameters:
-    DEPTH: "config['depth']"
+    WIDTH: "config['width']"
 
 - rtl_module: div_gaines_unipolar
   layer: operation
@@ -119,7 +129,7 @@
   outputs:
     output: o_out
   parameters:
-    DEPTH: "config['depth']"
+    WIDTH: "config['width']"
 
 - rtl_module: div_iscb_bi2uni
   layer: operation
@@ -169,6 +179,17 @@
     output: o_quotient
   parameters: {}
 
+- rtl_module: encode
+  layer: operation
+  sim_module: sim/operation/encode.py
+  inputs:
+    input: i_input
+  outputs:
+    spike: o_spike
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+    FRAC: "ceil(log2(config['timestep'])) + 1"
+
 - rtl_module: exp_n1
   layer: operation
   sim_module: sim/operation/exp_n1.py
@@ -179,9 +200,9 @@
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
 
-- rtl_module: exp_ng
+- rtl_module: exp_n2g
   layer: operation
-  sim_module: sim/operation/exp_ng.py
+  sim_module: sim/operation/exp_n2g.py
   inputs:
     input: i_input
   outputs:
@@ -193,6 +214,16 @@
 - rtl_module: gt_rc
   layer: operation
   sim_module: sim/operation/gt_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters: {}
+
+- rtl_module: inhibit
+  layer: operation
+  sim_module: sim/operation/inhibit.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -262,48 +293,6 @@
     output: o_out
   parameters: {}
 
-- rtl_module: mul_and_bipolar
-  layer: operation
-  sim_module: sim/operation/mul_and.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    output: o_out
-  parameters: {}
-
-- rtl_module: mul_and_unipolar
-  layer: operation
-  sim_module: sim/operation/mul_and.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    output: o_out
-  parameters: {}
-
-- rtl_module: mul_csg_bipolar
-  layer: operation
-  sim_module: sim/operation/mul_csg.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    path | path_inv: o_out
-  parameters:
-    WIDTH: "ceil(log2(config['timestep']))"
-
-- rtl_module: mul_csg_unipolar
-  layer: operation
-  sim_module: sim/operation/mul_csg.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    path: o_out
-  parameters:
-    WIDTH: "ceil(log2(config['timestep']))"
-
 - rtl_module: mul_gaines_bipolar
   layer: operation
   sim_module: sim/operation/mul_gaines.py
@@ -324,6 +313,50 @@
     output: o_out
   parameters: {}
 
+- rtl_module: mul_ugemm_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_ugemm.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    path | path_inv: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: mul_ugemm_sr_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_ugemm_sr.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: mul_ugemm_sr_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_ugemm_sr.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: mul_ugemm_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_ugemm.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    path: o_out
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+
 - rtl_module: relu_cnt
   layer: operation
   sim_module: sim/operation/relu_cnt.py
@@ -342,6 +375,26 @@
   outputs:
     output: o_out
   parameters: {}
+
+- rtl_module: relu_shiftreg
+  layer: operation
+  sim_module: sim/operation/relu_shiftreg.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: relu_tc
+  layer: operation
+  sim_module: sim/operation/relu_tc.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_out
+  parameters:
+    WIDTH: "config['width']"
 
 - rtl_module: shiftreg
   layer: operation
@@ -372,6 +425,28 @@
     abs: o_abs
   parameters:
     WIDTH: "config['width']"
+
+- rtl_module: signabs_interleave
+  layer: operation
+  sim_module: sim/operation/signabs_interleave.py
+  inputs:
+    input: i_input
+  outputs:
+    sign: o_sign
+    magnitude: o_magnitude
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: signabs_shiftreg
+  layer: operation
+  sim_module: sim/operation/signabs_shiftreg.py
+  inputs:
+    input: i_input
+  outputs:
+    sign: o_sign
+    magnitude: o_magnitude
+  parameters:
+    DEPTH: "config['depth']"
 
 - rtl_module: sqrt_emit_bipolar
   layer: operation

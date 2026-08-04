@@ -9,11 +9,43 @@ from napl.sim.module._shared import _init_mgu_params
 
 
 class mgu_hardfxp(napl_base):
-    """Apply a quantization-aware MGU cell with hard range bounds.
+    r"""Apply a quantization-aware MGU cell with hard range bounds.
 
     Use this single-shot cell to train or evaluate an MGU while rounding operands
     to the configured fixed-point format. ``round_fxp`` supplies the
     straight-through gradient.
+
+    The precise target is the Minimal Gated Unit recurrence
+
+    .. math::
+
+       f = \sigma\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = (1 - f) \odot n + f \odot h.
+
+    Let :math:`Q(\cdot)` be the ``round_fxp`` quantizer for the configured
+    **intwidth** and **fracwidth**. The cell evaluates the same recurrence with
+    hard activations and applies :math:`Q` to every operand and intermediate
+    result,
+
+    .. math::
+
+       f = \sigma_h\!\left(Q\!\left(\mathrm{clamp}\left(
+       W'_f\,[Q(h), Q(x)]' + b'_f,\, -1,\, 1\right)\right)\right),\qquad
+       n = \tanh_h\!\left(Q\!\left(W'_n\,[Q(f \odot h), Q(x)]' + b'_n\right)\right),
+
+    .. math::
+
+       h' = \mathrm{clamp}\!\left(
+       Q(n) - Q\!\left(Q(f) \odot Q(n)\right) + Q(f \odot h),\, -1,\, 1\right),
+
+    where a primed symbol denotes its quantized form,
+    :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)`, and
+    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)`. The quantization step, the
+    hard activations, and the output clamp are the departures from the target.
 
     .. rubric:: Example
 
@@ -66,6 +98,11 @@ class mgu_hardfxp(napl_base):
         #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

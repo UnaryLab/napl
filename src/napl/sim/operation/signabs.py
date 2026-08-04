@@ -4,12 +4,37 @@ from napl.sim.base import napl_base, hw_params
 
 
 class signabs(napl_base):
-    """
+    r"""
     Split a bipolar rate-coded stream into sign and magnitude streams.
 
     Use this streaming counter-based kernel when downstream unsigned operations
     need a magnitude stream plus a sign stream. A sign bit of ``0`` denotes
     non-negative and ``1`` denotes negative.
+
+    The precise target splits a bipolar value :math:`v` into its sign and
+    magnitude, so that the returned streams decode to
+
+    .. math::
+
+       \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
+       \mathrm{magnitude} = |v|.
+
+    The sign is not known in advance, so the kernel estimates it from a running
+    saturating counter of width :math:`w`. With :math:`s_t` the input spike,
+
+    .. math::
+
+       a_t = \mathrm{clamp}\!\left(a_{t-1} + 2 s_t - 1,\; 0,\; 2^{w}-1\right),
+       \qquad a_0 = 2^{w-1},
+
+    .. math::
+
+       \mathrm{sign}_t = \mathbf{1}\{a_t < 2^{w-1}\},\qquad
+       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus s_t.
+
+    The counter integrates :math:`\pm 1` per timestep, so its position relative
+    to mid-range tracks the sign of the input rate; the estimate is wrong while
+    the counter is still settling and near :math:`v = 0`.
 
     .. rubric:: Example
 
@@ -42,8 +67,6 @@ class signabs(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], polarity_required=False)
-        #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
 
         #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']
@@ -55,6 +78,13 @@ class signabs(napl_base):
         #: Running bipolar input count used to derive sign and magnitude spikes.
         self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(self.acc_med))
+        #: Hardware latency and timing metadata for the combinational outputs.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -4,11 +4,16 @@ from napl.sim.base import napl_base
 
 
 class sigmoid_hub(napl_base):
-    """
+    r"""
     Apply a scaled hard sigmoid in the binary domain.
 
-    This single-shot kernel computes ``hardsigmoid(input * scale)``. Use it as
-    a piecewise-linear sigmoid approximation for binary-domain training or inference.
+    The single-shot forward operation is
+
+    .. math::
+
+       y = \operatorname{clip}\left(\frac{scale\,x}{6}+\frac{1}{2},0,1\right).
+
+    This is the piecewise-linear binary-domain sigmoid.
 
     .. rubric:: Example
 
@@ -47,6 +52,11 @@ class sigmoid_hub(napl_base):
         self.delay = 0
         #: Input multiplier applied before the hard sigmoid.
         self.scale = config.get('scale', 3)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

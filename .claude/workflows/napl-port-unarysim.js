@@ -170,7 +170,7 @@ const VALIDATE_FILE_SCHEMA = {
         type: 'object',
         required: ['module', 'ref', 'bitexact', 'agreement', 'cpu', 'gpu', 'regimes', 'agree'],
         properties: {
-          module: { type: 'string', description: 'napl module id, exactly <subpackage>.<name>, e.g. operation.mul_and' },
+          module: { type: 'string', description: 'napl module id, exactly <subpackage>.<name>, e.g. operation.mul_gaines' },
           ref: { type: 'string', description: 'UnarySim class, e.g. FSUMul' },
           bitexact: { type: 'string', description: 'e.g. "yes (diff 0)" or "no (weight RNG)"' },
           agreement: { type: 'string', description: 'tolerance/RMSE vs bound when not bit-exact' },
@@ -190,7 +190,7 @@ const DISAGREE_VERIFY_SCHEMA = {
   type: 'object',
   required: ['module', 'agree', 'bitexact', 'agreement', 'notes'],
   properties: {
-    module: { type: 'string', description: 'napl module id being re-checked, e.g. operation.mul_and' },
+    module: { type: 'string', description: 'napl module id being re-checked, e.g. operation.mul_gaines' },
     agree: { type: ['boolean', 'null'], description: 'Re-checked verdict: whether napl and UnarySim agree within bound' },
     bitexact: { type: 'string', description: 're-checked bit-exactness, same wording as the validation row' },
     agreement: { type: 'string', description: 're-checked tolerance/RMSE vs bound' },
@@ -203,7 +203,7 @@ const RTL_SCHEMA = {
   required: ['class', 'op', 'status', 'rtl_path', 'make_test', 'pipeline_delay', 'notes'],
   properties: {
     class: { type: 'string' },
-    op: { type: 'string', description: 'The OP= name used for make test, e.g. mul_and' },
+    op: { type: 'string', description: 'The OP= name used for make test, e.g. mul_gaines' },
     status: { type: 'string', enum: ['generated', 'verified', 'skipped', 'failed'] },
     rtl_path: { type: 'string', description: 'Path to the generated op dir/file, or empty if skipped' },
     make_test: { type: 'string', description: 'Result of `make test OP=<op>` (PASS/FAIL/n-a)' },
@@ -320,7 +320,7 @@ if (wantPhase('gensim')) {
       `dispatch a further subagent): read ${REPO}/.claude/skills/napl-validate-unarysim/references/experiment-plan.md ` +
       `(the port gap analysis) and references/mapping.md (the napl<->UnarySim name correspondence), list ` +
       `UnarySim's kernel/metric/stream classes, and cross-reference napl (${SRC}/) to find which have NO napl ` +
-      `counterpart. Names differ (UnarySim FSUMul == napl mul_csg), so a class is a gap only if mapping.md, the ` +
+      `counterpart. Names differ (UnarySim FSUMul == napl mul_ugemm), so a class is a gap only if mapping.md, the ` +
       `experiment-plan, AND a search of src/napl all show no equivalent. For each gap class return ` +
       `{unarysim_class, file, proposed_napl_name (napl naming), subpackage, paradigm, skip_reason (empty for a ` +
       `real port; else why it is not a standalone napl class)}. Do NOT port anything yet; only scan.`,
@@ -421,7 +421,7 @@ const discovery = await agent(
     `   ${STATUS_CMD}\n` +
     `2. For the set of DISTINCT source files defining the classes you found, compute each file's git blob hash with ` +
     `\`git hash-object <file1> <file2> ...\` (run from ${REPO}; it prints one hash per file in argument order). Return ` +
-    `\`file_hashes\` as a map of REPO-RELATIVE path (e.g. "src/napl/sim/operation/mul_and.py") -> hash.\n\n` +
+    `\`file_hashes\` as a map of REPO-RELATIVE path (e.g. "src/napl/sim/operation/mul_gaines.py") -> hash.\n\n` +
     `Then WRITE ${COMPONENTS} (overwrite any existing file): a markdown document titled "# NAPL Components", one ` +
     `\`##\` section per subpackage, each a table with columns: Class | File (repo-relative) | Description | ` +
     `Placeholder? | Autograd helper? | UnarySim counterpart | Validated? | RTL?. Fill Validated? = "yes" iff ` +
@@ -814,7 +814,7 @@ if (wantPhase('validate') || wantPhase('rtl')) {
         `source file in the map below, open it, and in that class's \`__init__\` - after the napl_base ` +
         `\`super().__init__(...)\` call - set the class's hardware contract so its pp_delay equals <delay>:\n` +
         `  - The hardware contract is \`self.hw = hw_params(pp_delay=<delay>)\` (hw_params is defined in napl.sim.base; ` +
-        `see operation/mul_and.py and operation/shiftreg.py for the exact idiom).\n` +
+        `see operation/mul_gaines.py and operation/shiftreg.py for the exact idiom).\n` +
         `  - If the class already has a \`self.hw = hw_params(...)\` line, update only its \`pp_delay=\` argument to ` +
         `<delay>, preserving any other arguments (e.g. \`timing=\`).\n` +
         `  - If the class still uses the LEGACY scalar \`self.delay = <n>\`, REPLACE that line with ` +

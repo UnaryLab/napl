@@ -5,12 +5,26 @@ from napl.sim.operation import dff
 
 
 class square_dff(napl_base):
-    """
+    r"""
     Square a unary stream by multiplying it with a delayed copy.
 
-    Use this stateful square operation when delay-based decorrelation is desired.
-    It applies AND to unipolar spikes and XNOR to bipolar spikes after delaying
-    one operand by the configured depth.
+    The precise target rate-domain operation is
+
+    .. math::
+
+       p_y = p_x^2 \quad (\text{unipolar}),\qquad
+       v_y = v_x^2 \quad (\text{bipolar}).
+
+    Let z_t be the input delayed by depth timesteps, with z_t=0 while the
+    internal D flip-flop is filling. The exact polarity-dependent operation is
+
+    .. math::
+
+       y_t =
+       \begin{cases}
+       x_t\mathbin{\land}z_t, & \text{unipolar},\\
+       1-(x_t\mathbin{\oplus}z_t), & \text{bipolar}.
+       \end{cases}
 
     .. rubric:: Example
 
@@ -26,9 +40,9 @@ class square_dff(napl_base):
 
         .. rubric:: References
 
-        *uGEMM: Unary Computing Architecture for GEMM Applications*.
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
 
-        *uGEMM: Unary Computing for GEMM Applications*.
+        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro Top Picks, 2021.
     """
 
 
@@ -53,14 +67,19 @@ class square_dff(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
-        #: Hardware latency and timing metadata for the combinational square output.
-        self.hw = hw_params(pp_delay=0)
 
         #: Delay line that supplies the earlier spike multiplied with the current input.
         self.dff = dff(config={'depth': config['depth']})
 
         # Bitwise operands remain int8; floating spike types are cast to int8.
         self._spike_is_int8 = (self.stype == torch.int8)
+        #: Hardware latency and timing metadata for the combinational square output.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'out': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'out': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -1,17 +1,47 @@
 import torch
 
 from napl.sim.base import napl_base, napl_sim_timesteps
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.metric import accuracy
-from napl.sim.operation import mul_csg, add_any
+from napl.sim.operation import mul_ugemm, add_any
 
 
 class butterfly_spike(napl_base):
-    """
+    r"""
     Evaluate a radix-2 complex butterfly through streaming spike operations.
 
     Use this class for a progressively decoded unary FFT stage. Use
     :class:`butterfly_binary` when an exact binary-domain reference is needed.
+
+    The precise target is the radix-2 decimation-in-time butterfly on complex
+    inputs :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
+
+    .. math::
+
+       y_0 = x_0 + w x_1,\qquad y_1 = x_0 - w x_1.
+
+    Every operand is encoded into a bipolar spike stream and the four real
+    products of the twiddle multiply are formed by ``mul_ugemm`` on stacked lanes,
+
+    .. math::
+
+       t_{r,t} = (w_r x_{1r})_t - (w_i x_{1i})_t,\qquad
+       t_{i,t} = (w_r x_{1i})_t + (w_i x_{1r})_t,
+
+    where a subtraction is the complemented spike stream and the constant it
+    introduces is absorbed by the per-lane bias term. Each output lane is then
+    the scaled unary sum of three streams,
+
+    .. math::
+
+       y_{0,t} = \mathrm{add\_any}\!\left(x_{0,t} + t_t + \beta_0;\;
+       e = 3\right),\qquad
+       y_{1,t} = \mathrm{add\_any}\!\left(x_{0,t} - t_t + \beta_1;\;
+       e = 3\right),
+
+    and the result is read from the progressive decoder. The output therefore
+    represents the target divided by the adder scale, within the
+    stochastic-computing error of the encoded streams.
 
     .. rubric:: Example
 
@@ -85,18 +115,24 @@ class butterfly_spike(napl_base):
 
         # Four batched lanes share a per-step threshold and keep elementwise child state.
         #: Encoder that converts the four stacked complex-input components into spikes.
-        self.encoder_x = encoder(codec_config)
+        self.encoder_x = encode(codec_config)
         #: Decoder that tracks the four progressively decoded butterfly outputs.
-        self.decoder_y = decoder(codec_config)
+        self.decoder_y = decode(codec_config)
         #: Accuracy monitor that accumulates the four output spike streams.
         self.accuracy_y = accuracy(acc_config)
         #: Conditional-spike multiplier for the four stacked twiddle products.
-        self.mul_wx = mul_csg(mul_config)
+        self.mul_wx = mul_ugemm(mul_config)
         #: Scaled unary adder that combines each input with its twiddle term.
         self.add_y = add_any(add_config)
 
         # Cached stacks are valid only for the same tensor identity, version, and shape.
         self._stack_cache = None
+
+        self.encoding_io = {}
+        self.polarity_io = {port: self.encoder_x.polarity for port in
+                            ('x0r', 'x0i', 'x1r', 'x1i', 'wr', 'wi', 'y0r', 'y0i', 'y1r', 'y1i')}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
@@ -138,6 +174,7 @@ class butterfly_spike(napl_base):
 
         .. code-block:: python
 
+            operation.reset()
             outputs = operation(*inputs, timesteps=4)
         """
         x_stack, w_stack, sign, bias0, bias1, b = self._stacks(x0r, x0i, x1r, x1i, wr, wi)

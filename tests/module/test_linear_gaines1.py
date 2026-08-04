@@ -3,20 +3,18 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-from napl.sim.module.linear import linear
-# This class is not exported from module/__init__.
-from napl.sim.module.linear_gaines1 import linear_gaines1
+from napl.sim.module import linear, linear_gaines1
+from napl.sim.operation import encode, decode
 
 
 class napl_linear_gaines1(napl_base):
-    """Wire encoder -> linear_gaines1 -> decoder (canonical round-trip)."""
+    """Wire encoder -> linear_gaines1 -> decode (canonical round-trip)."""
 
 
     def __init__(self, codec_config, lin_config, weight, bias):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.linear = linear_gaines1(weight, bias, lin_config)
 
 
@@ -111,7 +109,7 @@ def _kernel_specific_checks():
         input_x = input_x_cpu.to(device)
         weight = weight_cpu.to(device)
         bias = bias_cpu.to(device)
-        enc = encoder({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}).to(device)
+        enc = encode({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}).to(device)
         gl = linear_gaines1(weight, bias, {**cfg, 'scaled': True}).to(device)
         lin = linear(weight, bias, {**cfg, 'scale': None, 'width': 12}).to(device)
 

@@ -4,16 +4,16 @@ import math
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-from napl.sim.operation.add_ugemm import add_ugemm
+from napl.sim.operation import encode, decode
+from napl.sim.operation import add_ugemm
 from napl.sim.metric import accuracy
 
 
 class napl_add_ugemm(napl_base):
     def __init__(self, codec_config, add_ugemm_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
         self.add_ugemm = add_ugemm(add_ugemm_config)
 

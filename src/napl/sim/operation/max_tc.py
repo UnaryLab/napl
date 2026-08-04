@@ -4,11 +4,16 @@ from napl.sim.base import napl_base, hw_params
 
 
 class max_tc(napl_base):
-    """
+    r"""
     Select the maximum of two temporal-coded streams with an OR gate.
 
-    Use this stateless operation for temporal codes consisting of leading ones
-    followed by zeros. The OR of two such streams represents their maximum.
+    The exact stateless temporal operation is
+
+    .. math::
+
+       y_t = x_{0,t}\mathbin{\lor}x_{1,t}.
+
+    For leading-one temporal codes, this OR is the maximum.
 
     .. rubric:: Example
 
@@ -40,6 +45,11 @@ class max_tc(napl_base):
         super().__init__(config, [], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational temporal maximum.
         self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input_0': 'tc', 'input_1': 'tc', 'output': 'tc'}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

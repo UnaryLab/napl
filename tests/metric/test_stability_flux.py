@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.metric import stability, stability_flux
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 
@@ -13,7 +13,7 @@ def run_flux(val_1, val_2, device, timestep, modules=None):
     val_1 = source_1.to(device)
     val_2 = source_2.to(device)
     if modules is None:
-        enc_1 = encoder(
+        enc_1 = encode(
             {
                 'polarity': 'bipolar',
                 'timestep': timestep,
@@ -21,7 +21,7 @@ def run_flux(val_1, val_2, device, timestep, modules=None):
                 'dim': 1,
             }
         ).to(device)
-        enc_2 = encoder(
+        enc_2 = encode(
             {
                 'polarity': 'bipolar',
                 'timestep': timestep,
@@ -90,7 +90,7 @@ def test_known_answer():
         assert analysis_result.max_absolute_index.item() == 0
 
         device_val = val.to(device)
-        enc = encoder(
+        enc = encode(
             {
                 'polarity': 'bipolar',
                 'timestep': timestep,

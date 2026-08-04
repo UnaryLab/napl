@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import square_dff
 from napl.sim.metric import accuracy
 
@@ -13,8 +13,8 @@ from napl.sim.metric import accuracy
 class napl_square_dff(napl_base):
     def __init__(self, codec_config, square_dff_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.square_dff = square_dff(square_dff_config)
         self.accuracy = accuracy(codec_config)
 
@@ -52,7 +52,9 @@ def _kernel_specific_checks():
             square_dff_inst(input, timesteps=codec_config['timestep'])
 
         r_value = input * input
-        square_dff_inst.accuracy.analyze(r_value, verbose=True)
+        error, _ = square_dff_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt()
+        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), rmse
         assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
         square_dff_inst.reset()
         assert square_dff_inst.square_dff.timestep_cur == 0

@@ -4,7 +4,7 @@ sys.path.insert(0, '/Users/diwu/Projects')
 
 from UnarySim.kernel.add import FSUAdd
 from napl.sim.base import global_config
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import add_any
 from napl.utils import gen_rand_tensor
 
@@ -26,8 +26,8 @@ def run(device, polarity, scale, width, entry, T, n=2000, seed=0):
     nap_out = nap.decoder.spike_value
 
     # UnarySim consumes the exact spike stream produced by the NAPL encoder.
-    enc = encoder(codec_config).to(device)
-    dec = decoder(codec_config).to(device)
+    enc = encode(codec_config).to(device)
+    dec = decode(codec_config).to(device)
     hwcfg = {'mode': polarity, 'scale': scale, 'dima': -1, 'depth': width, 'entry': entry}
     swcfg = {'btype': torch.float, 'stype': torch.float}
     uadd = FSUAdd(hwcfg, swcfg).to(device)

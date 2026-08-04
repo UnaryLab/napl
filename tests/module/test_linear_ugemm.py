@@ -3,19 +3,18 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-from napl.sim.module.linear import linear
-from napl.sim.module.linear_ugemm import linear_ugemm
+from napl.sim.module import linear, linear_ugemm
+from napl.sim.operation import encode, decode
 
 
 class napl_linear_ugemm(napl_base):
-    """Wire encoder -> linear_ugemm -> decoder (canonical streaming round-trip)."""
+    """Wire encoder -> linear_ugemm -> decode (canonical streaming round-trip)."""
 
 
     def __init__(self, codec_config, lin_config, weight, bias):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.linear = linear_ugemm(weight, bias, lin_config)
 
 
@@ -90,7 +89,7 @@ def _kernel_specific_checks():
         input_x = input_x_cpu.to(device)
         weight = weight_cpu.to(device)
         bias = bias_cpu.to(device)
-        enc = encoder({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2}).to(device)
+        enc = encode({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2}).to(device)
         ug = linear_ugemm(weight, bias, lin_cfg).to(device)
         lin = linear(weight, bias, {**lin_cfg, 'dim': 3}).to(device)
 

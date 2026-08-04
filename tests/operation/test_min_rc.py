@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import min_rc
 from napl.sim.metric import accuracy
 
@@ -13,10 +13,10 @@ from napl.sim.metric import accuracy
 class napl_min_rc(napl_base):
     def __init__(self, codec_config1, codec_config2, codec_config3, min_rc_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder0 = decoder(codec_config1)
-        self.decoder1 = decoder(codec_config3)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder0 = decode(codec_config1)
+        self.decoder1 = decode(codec_config3)
         self.min_rc = min_rc(min_rc_config)
         self.accuracy0 = accuracy({'polarity': codec_config1['polarity']})
         self.accuracy1 = accuracy({'polarity': codec_config3['polarity']})
@@ -70,8 +70,12 @@ def _kernel_specific_checks():
 
         r_value = torch.min(input_0, input_1)
         r_value_arg = torch.argmin(torch.stack([input_0, input_1], dim=0), dim=0)
-        _, value_result = min_rc_inst.accuracy0.analyze(r_value, verbose=True)
-        _, arg_result = min_rc_inst.accuracy1.analyze(r_value_arg, verbose=True)
+        value_error, value_result = min_rc_inst.accuracy0.analyze(r_value, verbose=True)
+        value_rmse = value_error.pow(2).mean().sqrt()
+        assert value_rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), value_rmse
+        arg_error, arg_result = min_rc_inst.accuracy1.analyze(r_value_arg, verbose=True)
+        arg_rmse = arg_error.pow(2).mean().sqrt()
+        assert arg_rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), arg_rmse
 
         print(f'[{device}] value max error index: {value_result.max_absolute_index.item():7d}; arg max error index: {arg_result.max_absolute_index.item():7d}; time: {elapsed.seconds * 1000:.1f} ms')
         assert min_rc_inst.min_rc.timestep_cur == codec_config1['timestep']

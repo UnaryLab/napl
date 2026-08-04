@@ -13,14 +13,14 @@ module div_gaines_tb;
     wire o_out_uni;
     wire o_out_bi;
 
-    div_gaines_unipolar #(.DEPTH(`GEN_DEPTH)) dut_uni (
+    div_gaines_unipolar #(.WIDTH(`GEN_WIDTH)) dut_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_dividend(i_dividend_uni),
         .i_divisor(i_divisor_uni),
         .o_out(o_out_uni)
     );
-    div_gaines_bipolar #(.DEPTH(`GEN_DEPTH)) dut_bi (
+    div_gaines_bipolar #(.WIDTH(`GEN_WIDTH)) dut_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_dividend(i_dividend_bi),

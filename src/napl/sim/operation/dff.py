@@ -4,11 +4,22 @@ from napl.sim.base import napl_base, hw_params
 
 
 class dff(napl_base):
-    """
+    r"""
     Delay a spike tensor by a fixed number of timesteps.
 
-    Use this streaming D flip-flop as a tensor-shaped delay line. The first
-    ``depth`` outputs are zeros, followed by the corresponding earlier inputs.
+    Let R_t be the depth-row FIFO and h_t its circular head. With
+    R_0[j] = 0 and h_0 = 0, the exact delay recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= R_t[h_t],\\
+       R_{t+1}[h_t] &= x_t,\qquad
+       h_{t+1}=(h_t+1)\bmod depth.
+       \end{aligned}
+
+    Thus the first depth outputs are zero and later outputs are the
+    corresponding earlier inputs.
 
     .. rubric:: Example
 
@@ -42,8 +53,6 @@ class dff(napl_base):
         super().__init__(config, ['depth'], polarity_required=False)
         #: Number of timesteps between an input and its delayed output.
         self.depth = config['depth']
-        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
-        self.hw = hw_params(pp_delay=self.depth)
         # This buffer anchors lazy state to the module device.
         #: Device and spike-dtype anchor used when the delay queue is initialized.
         self.reg: torch.Tensor
@@ -55,6 +64,13 @@ class dff(napl_base):
         self.is_first_call = True
         #: Circular index of the oldest delayed tensor to emit and replace.
         self.head = 0
+        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
+        self.hw = hw_params(pp_delay=self.depth)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

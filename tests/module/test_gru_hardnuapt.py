@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from napl.utils._shared_test import devices, single_shot_suite, timer
-from napl.sim.module.gru_hardnuapt import gru_hardnuapt
+from napl.sim.module import gru_hardnuapt
 
 
 def _ref_gru_hard(x, hx, w_ih, w_hh, b_ih, b_hh):

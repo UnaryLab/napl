@@ -6,7 +6,7 @@ from loguru import logger
 
 
 class linear_pc(napl_base):
-    """Return the per-timestep parallel count of a unary linear product.
+    r"""Return the per-timestep parallel count of a unary linear product.
 
     Use this streaming layer when downstream logic needs the raw product count
     rather than a scaled output bitstream. It returns the per-timestep binary inner-product
@@ -24,6 +24,28 @@ class linear_pc(napl_base):
     or the bipolar inner product as ``2 * mean - entry``. This class matches
     UnarySim ``FSULinearPC``.
 
+    The precise target is the product count whose time average recovers the
+    inner product,
+
+    .. math::
+
+       \frac{1}{T}\sum_{t=1}^{T} c_t = Wx + b \ \ (\text{unipolar}),\qquad
+       \frac{2}{T}\sum_{t=1}^{T} c_t - e = Wx + b \ \ (\text{bipolar}),
+
+    with :math:`e = n + [\,\text{bias}\,]`. Each timestep the layer returns that
+    count exactly, with :math:`w_t` the freshly encoded weight spikes and
+    :math:`b_t` the bias spike,
+
+    .. math::
+
+       c_t = \begin{cases}
+       x_t w_t^{\top} + b_t, & \text{unipolar},\\
+       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
+       & \text{bipolar},
+       \end{cases}
+
+    so :math:`c_t \in [0, e]` and no accumulation is applied.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -38,7 +60,7 @@ class linear_pc(napl_base):
 
     References
     ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*.
+    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -67,7 +89,7 @@ class linear_pc(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.module.encoder import encoder
+        from napl.sim.operation.encode import encode
 
         assert weight.dim() == 2, logger.error(f'linear_pc weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
         #: Trainable numeric weight encoded into a spike stream.
@@ -91,12 +113,17 @@ class linear_pc(napl_base):
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
         #: Encoder that converts the numeric weight to spikes.
-        self.w_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+        self.w_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
-            self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+            self.b_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
+
+        self.encoding_io = {'input_spike': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

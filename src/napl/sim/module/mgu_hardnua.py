@@ -7,13 +7,38 @@ from napl.sim.module._shared import _init_mgu_params
 
 
 class mgu_hardnua(napl_base):
-    """Apply a trainable MGU without unary-range clamps around linear stages.
+    r"""Apply a trainable MGU without unary-range clamps around linear stages.
 
     Use this single-shot cell to match the non-unary-aware UnarySim variant or to
     study the effect of removing the range clamps from :class:`mgu_hard`. The
     forget-gate linear input and output omit the hard-tanh clamps, so
     intermediate values and ``hy`` may leave the legal unary range. The cell is
     single-shot and trainable.
+
+    The precise target is the Minimal Gated Unit recurrence
+
+    .. math::
+
+       f = \sigma\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = (1 - f) \odot n + f \odot h.
+
+    The cell evaluates that recurrence with hard activations and no clamps,
+
+    .. math::
+
+       f = \sigma_h\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh_h\!\left(W_n [f \odot h, x] + b_n\right),\qquad
+       h' = n - f \odot n + f \odot h,
+
+    where :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)` and
+    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)` when **hard** is ``True``, and
+    the exact ``Sigmoid`` and ``Tanh`` otherwise. Compared with
+    :class:`mgu_hard`, the forget-gate linear and the output carry no clamp, so
+    :math:`h'` may leave ``[-1, 1]``.
 
     .. rubric:: Example
 
@@ -56,6 +81,11 @@ class mgu_hardnua(napl_base):
         #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

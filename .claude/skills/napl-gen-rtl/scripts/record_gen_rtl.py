@@ -42,7 +42,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", default="reports/napl-gen-rtl-report.md")
     ap.add_argument("--class", dest="cls", required=True, help="napl operation class, e.g. shiftreg")
-    ap.add_argument("--rtl", default="", help="RTL module name(s) emitted, e.g. 'mul_and_unipolar, mul_and_bipolar'")
+    ap.add_argument("--rtl", default="", help="RTL module name(s) emitted, e.g. 'mul_gaines_unipolar, mul_gaines_bipolar'")
     ap.add_argument("--status", required=True, help="verified | skipped | failed")
     ap.add_argument("--make-test", dest="make_test", default="", help="PASS / FAIL / n/a")
     ap.add_argument("--pp-delay", dest="pp_delay", default="", help="pp_delay in cycles, or blank if skipped")

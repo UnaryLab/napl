@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import div_cordiv
 from napl.sim.metric import accuracy
 
@@ -13,9 +13,9 @@ from napl.sim.metric import accuracy
 class napl_div_cordiv(napl_base):
     def __init__(self, codec_config1, codec_config2, div_cordiv_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder = decoder(codec_config1)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder = decode(codec_config1)
         self.accuracy = accuracy({'polarity': codec_config1['polarity']})
         self.div_cordiv = div_cordiv(div_cordiv_config)
 
@@ -79,7 +79,31 @@ def _kernel_specific_checks():
         div_cordiv_inst.reset()
         assert div_cordiv_inst.div_cordiv.timestep_cur == 0
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed.seconds:.3f}s')
-    
+
+        # A broadcast divisor must match the explicitly expanded same-shape run.
+        broadcast_dividends = (
+            torch.tensor([[0, 1, 0], [1, 1, 0]], dtype=global_config.stype),
+            torch.tensor([[1, 0, 1], [0, 1, 1]], dtype=global_config.stype),
+            torch.tensor([[1, 0, 0], [0, 0, 1]], dtype=global_config.stype),
+        )
+        broadcast_divisors = (
+            torch.tensor([[1, 0, 1]], dtype=global_config.stype),
+            torch.tensor([[0, 1, 0]], dtype=global_config.stype),
+            torch.tensor([[1, 1, 0]], dtype=global_config.stype),
+        )
+        broadcast_inst = div_cordiv(dict(div_cordiv_config)).to(device)
+        expanded_inst = div_cordiv(dict(div_cordiv_config)).to(device)
+        for dividend_cpu, divisor_cpu in zip(broadcast_dividends, broadcast_divisors):
+            broadcast_output = broadcast_inst(
+                dividend_cpu.to(device), divisor_cpu.to(device)
+            )
+            expanded_output = expanded_inst(
+                dividend_cpu.to(device), divisor_cpu.expand_as(dividend_cpu).to(device)
+            )
+            assert torch.equal(broadcast_output, expanded_output), (
+                f'[{device}] broadcast and expanded div_cordiv outputs differ'
+            )
+
     print('Test passed.')
 
 
@@ -145,20 +169,20 @@ def test_div_cordiv_matches_unarysim_history_order():
     assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
 
 
-def test_div_cordiv_rejects_mismatched_shapes():
-    """Reject shape pairs that the operation cannot broadcast safely."""
+def test_div_cordiv_rejects_non_broadcastable_shapes():
+    """Reject shape pairs that cannot broadcast safely."""
     operation = div_cordiv({'depth': 2, 'generator': 'Sobol'})
     try:
         operation(
             torch.ones((2, 1), dtype=global_config.stype),
-            torch.ones((1, 3), dtype=global_config.stype),
+            torch.ones((3, 1), dtype=global_config.stype),
         )
-    except AssertionError:
+    except RuntimeError:
         return
-    raise AssertionError('div_cordiv must reject mismatched input shapes')
+    raise AssertionError('div_cordiv must reject non-broadcastable input shapes')
 
 
 if __name__ == '__main__':
     test_div_cordiv()
     test_div_cordiv_matches_unarysim_history_order()
-    test_div_cordiv_rejects_mismatched_shapes()
+    test_div_cordiv_rejects_non_broadcastable_shapes()

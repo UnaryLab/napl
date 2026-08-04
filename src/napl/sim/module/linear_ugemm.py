@@ -6,7 +6,7 @@ from loguru import logger
 
 
 class linear_ugemm(napl_base):
-    """Apply a streaming unary linear layer with conditional spike generation.
+    r"""Apply a streaming unary linear layer with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
     free-running weight encoder used by :class:`linear`. It computes
@@ -18,6 +18,34 @@ class linear_ugemm(napl_base):
     ``FSULinearuGEMM(scaled=True)`` accumulation is implemented; the
     non-scaled output-comparator variant is not. This class matches UnarySim
     ``FSULinearuGEMM`` in scaled mode.
+
+    The precise target is the scaled affine map
+
+    .. math::
+
+       y = \frac{Wx + b}{s}.
+
+    Let :math:`p_{ij} = (W_{ij}+1)/2` for bipolar input or :math:`W_{ij}` for
+    unipolar input, and let :math:`q` be the number sequence. Each weight keeps
+    its own index :math:`k_{ij,t}`, advanced only by the matching input spike,
+
+    .. math::
+
+       k_{ij,t} = \sum_{\tau < t} x_{j,\tau},\qquad
+       \hat w_{ij,t} = \mathbf{1}\{p_{ij} > q_{k_{ij,t}}\},
+
+    and the per-timestep sum is
+
+    .. math::
+
+       c_t = \sum_j \hat w_{ij,t}\, x_{j,t} + b_t
+       + \underbrace{\sum_j \mathbf{1}\{p_{ij} \leq q_{k^{0}_{ij,t}}\}
+       (1 - x_{j,t})}_{\text{bipolar only}},
+
+    where the input-``0`` path keeps a second index advanced by
+    :math:`1 - x_{j,t}`. The output is
+    :math:`y_t = \mathrm{add\_any}(c_t;\, s)`, so the target is reached within
+    the stochastic-computing error of the conditionally generated streams.
 
     .. rubric:: Example
 
@@ -33,8 +61,11 @@ class linear_ugemm(napl_base):
 
     References
     ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*.
+    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Encoding advances conditionally on data, so the RTL counterpart holds
+    #: its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(
@@ -76,7 +107,7 @@ class linear_ugemm(napl_base):
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # These imports stay local to avoid the module-operation import cycle.
         from napl.sim.operation import add_any
-        from napl.sim.module.encoder import gen_num_seq
+        from napl.sim.operation.encode import gen_num_seq
 
         assert weight.dim() == 2, logger.error(
             f'linear_ugemm weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
@@ -134,6 +165,11 @@ class linear_ugemm(napl_base):
 
         #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

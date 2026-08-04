@@ -7,7 +7,7 @@ from loguru import logger
 
 
 class conv(napl_base):
-    """Apply a rate-coded unary convolution one timestep at a time.
+    r"""Apply a rate-coded unary convolution one timestep at a time.
 
     Use this layer when the input is an NCHW spike stream and weights should be
     encoded on a separate number-sequence dimension. Each timestep the weights are encoded
@@ -18,6 +18,28 @@ class conv(napl_base):
     ``in_channels * kh * kw + has_bias``, to stay in the unary range. Bipolar zero-padding uses a
     decorrelated rate-0.5 pad stream (a separate pad encoder), not a deterministic toggle.
     It supports rate-coded weights, ``groups=1``, and zero padding only.
+
+    The precise target is the scaled convolution
+
+    .. math::
+
+       y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
+
+    Let :math:`u_t` be the im2col patch spikes, :math:`w_t` the weight spikes
+    encoded on the separate RNG dimension, :math:`b_t` the bias spike, and
+    :math:`K` the kernel fan-in. The layer forms the per-timestep parallel count
+
+    .. math::
+
+       c_t = \begin{cases}
+       w_t u_t + b_t, & \text{unipolar},\\
+       2 w_t u_t - \sum_k u_{k,t} - \sum_k w_{k,t} + K + b_t, & \text{bipolar},
+       \end{cases}
+
+    and emits :math:`y_t = \mathrm{add\_any}(c_t;\, s)` folded back to NCHW.
+    Bipolar padding contributes a rate-``0.5`` spike drawn from the separate pad
+    stream rather than a constant, so it decodes to ``0`` without correlating
+    with the weight stream.
 
     .. rubric:: Example
 
@@ -53,12 +75,12 @@ class conv(napl_base):
                 and **width** (accumulator width, default ``12``). **name** is an
                 optional instance label and defaults to ``None``.
 
-**width** must satisfy ``2 ** (width - 1) > fan_in + has_bias``. Bias and
+        **width** must satisfy ``2 ** (width - 1) > fan_in + has_bias``. Bias and
         bipolar padding use the next number-sequence dimensions.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         from napl.sim.operation import add_any
-        from napl.sim.module.encoder import encoder
+        from napl.sim.operation.encode import encode
 
         assert weight.dim() == 4, logger.error(f'conv weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
         #: Trainable numeric convolution kernel encoded into a spike stream.
@@ -99,16 +121,16 @@ class conv(napl_base):
         dim = config.get('dim', 2)
         cfg = {'polarity': self.polarity, 'timestep': config['timestep'], 'generator': config['generator']}
         #: Encoder that converts the numeric convolution kernel to spikes.
-        self.w_encoder = encoder({**cfg, 'dim': dim})
+        self.w_encoder = encode({**cfg, 'dim': dim})
         #: Streaming unary adder that reduces each convolution product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
-            self.b_encoder = encoder({**cfg, 'dim': dim + 1})
+            self.b_encoder = encode({**cfg, 'dim': dim + 1})
         # Bipolar zero-padding uses a decorrelated rate-0.5 stream.
         if self.polarity == 'bipolar' and self.padding != (0, 0):
             #: Encoder supplying a decorrelated bipolar-zero padding stream.
-            self.pad_encoder = encoder({**cfg, 'dim': dim + 2})
+            self.pad_encoder = encode({**cfg, 'dim': dim + 2})
             # Python float pad bits avoid a device-to-host synchronization in F.pad.
             #: Period of the precomputed padding spike sequence.
             self.pad_len = self.pad_encoder.len
@@ -116,6 +138,11 @@ class conv(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

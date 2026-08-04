@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.base import global_config
-from napl.sim.module.avgpool2d import avgpool2d
+from napl.sim.module import avgpool2d
 from napl.utils._shared_test import streaming_suite
 
 

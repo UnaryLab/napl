@@ -4,12 +4,23 @@ from napl.sim.base import napl_base, hw_params
 
 
 class jkff(napl_base):
-    """
+    r"""
     Apply the JK flip-flop state transition to tensor inputs.
 
-    Use this streaming state element when each tensor position needs an
-    independent JK flip-flop. ``J=1, K=0`` sets, ``J=0, K=1`` clears, and
-    ``J=K=1`` toggles the stored bit.
+    Each tensor position follows the JK truth table
+
+    .. math::
+
+       \begin{array}{cc|cl}
+       j_t & k_t & q_t & \\
+       \hline
+       0 & 0 & q_{t-1} & \text{(hold)} \\
+       0 & 1 & 0 & \text{(reset)} \\
+       1 & 0 & 1 & \text{(set)} \\
+       1 & 1 & \overline{q_{t-1}} & \text{(toggle)}
+       \end{array}
+
+    The updated q_t is returned at each timestep.
 
     .. rubric:: Example
 
@@ -39,8 +50,6 @@ class jkff(napl_base):
               **name** may optionally label the instance; the default is ``{}``.
         """
         super().__init__(config, [], polarity_required=False)
-        #: Hardware latency and timing metadata for the registered flip-flop output.
-        self.hw = hw_params(pp_delay=1)
 
         #: Current JK flip-flop output state.
         self.q: torch.Tensor
@@ -49,6 +58,13 @@ class jkff(napl_base):
         #: Boolean complement of :attr:`q`, updated on every call.
         self.q_b: torch.Tensor
         self.register_buffer('q_b', torch.zeros(1, dtype=torch.bool))
+        #: Hardware latency and timing metadata for the registered flip-flop output.
+        self.hw = hw_params(pp_delay=1)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

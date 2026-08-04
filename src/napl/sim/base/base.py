@@ -176,6 +176,12 @@ class napl_base(torch.nn.Module):
     #: Whether each call represents one streaming timestep.
     streaming = True
 
+    #: Whether the RTL counterpart must hold its own encoder.
+    #: True when encoding advances conditionally on data, as in conditional
+    #: bitstream generation, so the encoder cannot be shared with other
+    #: operations.
+    internal_encode = False
+
 
     def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
         """Initialize shared configuration, execution state, and hardware metadata.
@@ -207,11 +213,39 @@ class napl_base(torch.nn.Module):
         #: User-facing module label derived from the configuration.
         self.name = check_name(config)
 
+        parts = type(self).__module__.split('.')
+        #: Simulation layer this class belongs to: the ``napl.sim`` subdirectory
+        #: of the defining module, such as ``"operation"``, ``"module"``,
+        #: ``"metric"``, ``"structure"``, or ``"algorithm"``. A class defined
+        #: outside ``napl.sim`` reports ``""``.
+        self.layer = parts[2] if len(parts) > 2 and parts[:2] == ['napl', 'sim'] else ''
+
         #: Number of streaming timesteps processed since the last reset.
         self.timestep_cur = 0
 
         #: Hardware latency and characterized timing metadata for this module.
         self.hw = hw_params()
+
+        #: Stream encoding required per input and produced per output, keyed by
+        #: ``forward()`` parameter name and output name; ``"rc"`` for rate coding
+        #: and ``"tc"`` for temporal coding. Unconstrained ports are omitted.
+        self.encoding_io = {}
+
+        #: Stream polarity required per input and produced per output, keyed by
+        #: ``forward()`` parameter name and output name; ``"unipolar"`` or
+        #: ``"bipolar"``. Unconstrained ports are omitted.
+        self.polarity_io = {}
+
+        #: Cross-correlation required between input streams, keyed by a tuple of
+        #: ``forward()`` parameter names; ``"zero"``, ``"pos"``, or ``"neg"``.
+        self.correlation_i = {}
+
+        if not isinstance(getattr(type(self), 'stability_flux', None), property):
+            #: Relative output stability flux of this module. A subclass may
+            #: expose ``stability_flux`` as a property instead, as the
+            #: stability_flux metric does for its measured value, and then no
+            #: placeholder is set here.
+            self.stability_flux = 1.0
 
 
     def _reset(self):

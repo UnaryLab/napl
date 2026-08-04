@@ -26,7 +26,7 @@ Output: ../vec/div_iscb.vec, one line per cycle:
 `reset` is 1 on the marker row (the testbench pulses i_rst_n low for that cycle
 and the model's pre-reset outputs on that row are don't-care / not checked), 0
 otherwise. The two variants share the input columns so the testbench can drive
-both DUTs from one stimulus, exactly like mul_and's vec format.
+both DUTs from one stimulus, exactly like mul_gaines's vec format.
 
 Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_div_iscb.py

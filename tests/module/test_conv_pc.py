@@ -9,9 +9,8 @@ from napl.utils._shared_test import (
     streaming_suite,
     timer,
 )
-from napl.sim.module import encoder
-from napl.sim.module.conv_pc import conv_pc
-from napl.sim.module.conv import conv
+from napl.sim.module import conv_pc, conv
+from napl.sim.operation import encode
 
 
 class napl_conv_pc(napl_base):
@@ -20,7 +19,7 @@ class napl_conv_pc(napl_base):
 
     def __init__(self, codec_config, pc_config, weight, bias, stride, padding):
         super().__init__()
-        self.encoder = encoder(codec_config)
+        self.encoder = encode(codec_config)
         self.pc = conv_pc(weight, bias, stride=stride, padding=padding, config=pc_config)
         self.acc = None
 
@@ -111,7 +110,7 @@ def _kernel_specific_checks():
         weight = perf_weight.to(device)
         bias = perf_bias.to(device)
         pc_cfg = {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2}
-        enc = encoder({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}).to(device)
+        enc = encode({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 1}).to(device)
         pc = conv_pc(weight, bias, stride=1, padding=0, config=pc_cfg).to(device)
         full = conv(weight, bias, stride=1, padding=0, config={**pc_cfg, 'width': 12}).to(device)
 

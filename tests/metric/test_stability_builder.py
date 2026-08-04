@@ -6,8 +6,7 @@ exactly. Performance is compared with the same builder on CPU.
 """
 import torch
 
-from napl.sim.metric import stability
-from napl.sim.metric.stability_builder import stability_builder
+from napl.sim.metric import stability, stability_builder
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices
 

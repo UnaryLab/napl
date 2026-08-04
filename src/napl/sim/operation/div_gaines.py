@@ -1,16 +1,39 @@
 import torch
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module import gen_num_seq
+from napl.sim.operation import encode
 
 
 class div_gaines(napl_base):
-    """
+    r"""
     Divide rate-coded streams with the Gaines counter construction.
 
     Use this stateful divider for unipolar or bipolar streams when a stochastic
     quotient is needed directly from an error-integrating saturating counter.
     The output has one cycle of modeled latency.
+
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \frac{x}{d}.
+
+    Let R_t = round(2**width G_t), where G_t is the configured number
+    sequence, and let y_t be sampled before the counter update. With d_t the
+    current divisor spike and d_{t-1} the saved divisor spike, the recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= \mathbf{1}\{scnt_t > R_t\},\\
+       i_t &= x_t,\quad \delta_t = y_t d_t
+       && (\text{unipolar}),\\
+       i_t &= 1-(d_{t-1} \oplus d_t \oplus y_t),\quad
+       \delta_t = x_t \oplus d_t
+       && (\text{bipolar}),\\
+       scnt_{t+1} &= \operatorname{clip}(scnt_t+i_t-\delta_t,
+       0, 2^{width}-1),\quad d_{t+1} = d_t.
+       \end{aligned}
 
     .. rubric:: Example
 
@@ -19,7 +42,7 @@ class div_gaines(napl_base):
         import torch
         from napl import div_gaines
 
-        divider = div_gaines({'polarity': 'unipolar', 'depth': 5,
+        divider = div_gaines({'polarity': 'unipolar', 'width': 5,
                               'generator': 'Sobol', 'dim': 1})
         quotient = divider(torch.tensor([1], dtype=torch.int8),
                            torch.tensor([1], dtype=torch.int8))
@@ -28,7 +51,7 @@ class div_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, 1969.
+        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
     """
 
 
@@ -36,7 +59,7 @@ class div_gaines(napl_base):
         self,
         config={
             'polarity' : 'bipolar',
-            'depth' : 5,
+            'width' : 5,
             'generator' : 'Sobol',
             'dim' : 1,
         }
@@ -51,32 +74,33 @@ class div_gaines(napl_base):
             - **config** – Configuration mapping.
 
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
-              - **depth**: Counter width in bits; the default is ``5``.
+              - **width**: Counter width in bits; the default is ``5``.
               - **generator**: Number-sequence generator for quotient thresholds; the default is ``"Sobol"``.
               - **dim**: Generator dimension forwarded when the threshold sequence is built; the default is ``1``.
               - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
               - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'depth', 'generator'], polarity_required=True)
-        # Output uses the counter state before the current update, giving one-cycle latency.
-        #: Hardware latency and timing metadata for the registered divider output.
-        self.hw = hw_params(pp_delay=1)
+        super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
 
         #: Saturating quotient-counter width in bits.
-        self.depth = config['depth']
-        config['width'] = self.depth
+        self.width = config['width']
 
-        # Python scalar thresholds span the counter range without device synchronization.
-        #: Periodic counter thresholds used to generate quotient spikes.
-        self.rng_seq = torch.floor(gen_num_seq(config).mul(2 ** self.depth)).tolist()
-        #: Current position in :attr:`rng_seq`.
-        self.idx = 0
+        #: Encoder supplying the periodic quotient-spike threshold comparison.
+        self.reference_encode = encode({'polarity': 'unipolar',
+                                  'timestep': 2 ** self.width,
+                                  'generator': config['generator'],
+                                  'dim': config.get('dim', 1)})
+        scaled = self.reference_encode.num_seq.mul(2 ** self.width)
+        assert torch.allclose(scaled, scaled.round(), atol=1e-9), \
+            f'Sequence value off the 1/{2 ** self.width} grid; the counter-scale view would not be exact.'
+        #: Counter-scale view of the encoder sequence, read by the RTL generator.
+        self.rng_seq = scaled.round().tolist()
 
         #: Largest value retained by the quotient counter.
-        self.scnt_max = 2 ** self.depth - 1
+        self.scnt_max = 2 ** self.width - 1
         #: Half-scale quotient-counter value restored by :meth:`_reset`.
-        self.scnt_init = 2 ** (self.depth - 1)
+        self.scnt_init = 2 ** (self.width - 1)
         # The half-scale scalar counter broadcasts to the input shape on first use.
         #: Saturating error counter that controls quotient spike probability.
         self.scnt: torch.Tensor
@@ -85,13 +109,21 @@ class div_gaines(napl_base):
         #: Previous bipolar divisor spike tensor used by the feedback equation.
         self.divisor_d: torch.Tensor
         self.register_buffer('divisor_d', torch.zeros(1, dtype=torch.int8))
+        # Output uses the counter state before the current update, giving one-cycle latency.
+        #: Hardware latency and timing metadata for the registered divider output.
+        self.hw = hw_params(pp_delay=1)
+
+        self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
+        self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}
+        self.correlation_i = {('dividend', 'divisor'): 'zero'}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
         """
-        Restore the local counter, delayed divisor, and sequence position.
+        Restore the local counter and delayed divisor; :meth:`reset` restarts
+        the encoder that holds the sequence position.
         """
-        self.idx = 0
         self.scnt.resize_(1).fill_(self.scnt_init)
         self.divisor_d.resize_(1).zero_()
 
@@ -117,8 +149,10 @@ class div_gaines(napl_base):
                                torch.tensor([1], dtype=torch.int8))
         """
 
-        output = torch.gt(self.scnt, self.rng_seq[self.idx]).type(torch.int8)
-        self.idx = (self.idx + 1) % len(self.rng_seq)
+        # Dividing by the power-of-two counter scale is exact, so comparing the
+        # scaled counter through the encoder reproduces the integer comparison.
+        reference_encode_bit = self.reference_encode(self.scnt.div(2 ** self.width))
+        output = reference_encode_bit.type(torch.int8)
         if output.shape != dividend.shape:
             output = output.expand(dividend.shape)
 

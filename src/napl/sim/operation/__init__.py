@@ -1,3 +1,5 @@
+from .decode import *
+from .encode import *
 from .add_any import *
 from .add_gaines import *
 from .add_ugemm import *
@@ -10,9 +12,8 @@ from .signabs_interleave import *
 from .signabs_shiftreg import *
 from .inhibit import *
 from .jkff import *
-from .mul_and import *
-from .mul_csg import *
-from .mul_shiftreg import *
+from .mul_ugemm import *
+from .mul_ugemm_sr import *
 from .mul_gaines import *
 from .relu_cnt import *
 from .relu_sat import *
@@ -43,4 +44,4 @@ from .min_tc import *
 from .max_tc import *
 from .round_fxp import *
 from .exp_n1 import *
-from .exp_ng import *
+from .exp_n2g import *

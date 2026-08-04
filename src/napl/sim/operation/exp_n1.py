@@ -2,7 +2,7 @@ import torch
 import math
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module.encoder import gen_num_seq
+from napl.sim.operation import encode
 from loguru import logger
 
 
@@ -13,6 +13,26 @@ class exp_n1(napl_base):
     This streaming kernel uses a truncated Maclaurin-series circuit. Use it
     when the input represents values in ``[0, 1]`` and a stochastic
     approximation of the negative exponential is required.
+
+    The precise target operation is
+
+    .. math::
+
+       f(x) = \\exp(-x).
+
+    For input rate ``x`` and stream length ``T``, the coefficient rates are
+    ``c_1 = Q_T(0.2)``, ``c_2 = Q_T(0.25)``, ``c_3 = Q_T(0.3333)``, and
+    ``c_4 = Q_T(0.5)``, where ``Q_T(v)`` is the ``torch.round`` quantization
+    to ``2**ceil(log2(T))`` levels used by the four coefficient streams. The
+    rate-domain operation implemented by the NAND chain is
+
+    .. math::
+
+       \\mathbb{E}[y] = 1 - x + c_4 x^2 - c_4 c_3 x^3
+       + c_4 c_3 c_2 x^4 - c_4 c_3 c_2 c_1 x^5.
+
+    With the default ``T = 256``, the coefficients are
+    ``(c_1, c_2, c_3, c_4) = (51/256, 1/4, 85/256, 1/2)``.
 
     .. rubric:: Example
 
@@ -52,7 +72,7 @@ class exp_n1(napl_base):
 
               - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
               - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.module.encoder.gen_num_seq`; the default is ``"sobol"``.
+              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"sobol"``.
               - **dim**: First Sobol dimension used for the four constant streams; the default is ``1``.
               - **name**: Optional module name.
         """
@@ -70,21 +90,21 @@ class exp_n1(napl_base):
         self.len = 2**self.width
         dim = config.get('dim', 1)
 
-        # DFF taps decorrelate the combinational NAND path without adding output latency.
-        #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
-
         # Rounded width-bit constants match the RTL registers and UnarySim SourceGen.
         const_q = torch.tensor([0.2000, 0.2500, 0.3333, 0.5000]).mul(self.len).round().div(self.len)
         # Consecutive dimensions provide four decorrelated sequences of period self.len.
-        seqs = torch.stack(
-            [gen_num_seq({'width': self.width, 'generator': config['generator'], 'dim': dim + i})
-             for i in range(4)], dim=1)
+        # One encoder per coefficient generates its full period once, here, so the
+        # hot path keeps reading Python ints.
+        const_q = const_q.type(self.ntype)
+        reference_encode = [encode({'polarity': 'unipolar', 'timestep': self.len,
+                                    'generator': config['generator'], 'dim': dim + i})
+                            for i in range(4)]
         #: Four periodic constant spike streams for the series coefficients.
         self.const_spike: torch.Tensor
         self.register_buffer(
             'const_spike',
-            torch.gt(const_q.unsqueeze(0).type(self.ntype), seqs).type(torch.int8),
+            torch.stack([torch.cat([reference_encode_i(const_q[i:i + 1]) for _ in range(self.len)])
+                         for i, reference_encode_i in enumerate(reference_encode)], dim=1).type(torch.int8),
         )
         self._const_bits = self.const_spike.tolist()
 
@@ -101,6 +121,14 @@ class exp_n1(napl_base):
         #: Input spike tensor delayed by four timesteps.
         self.input_d4: torch.Tensor
         self.register_buffer('input_d4', torch.zeros(1).type(self.stype))
+        # DFF taps decorrelate the combinational NAND path without adding output latency.
+        #: Hardware latency and timing metadata for the combinational output path.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'unipolar', 'output': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

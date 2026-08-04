@@ -22,10 +22,10 @@ agreed conventions.
 Each ported item passes a test in `tests/`:
 - **Streaming kernels & metrics:** encode -> run N timesteps -> decode; progressive
   error vs the analytic reference within a stochastic-computing bound (~1/sqrt(N)).
-  Matches the existing `test_mul_and.py` -> `accuracy.analyze(reference)` pattern.
+  Matches the existing `test_mul_gaines.py` -> `accuracy.analyze(reference)` pattern.
 - **Binary-domain trainable kernels (HUB/FXP/TLUT/Hard):** single-shot whole-tensor
   `forward()` vs the `nn.Linear`/`nn.Conv2d` float reference within the quantization bound.
-- **Known-answer sanity checks:** `mul_and` unipolar (1,1)->1,(1,0)->0; metric on a
+- **Known-answer sanity checks:** `mul_gaines` unipolar (1,1)->1,(1,0)->0; metric on a
   perfect stream reports ~0 error; Correlation of a stream with itself -> +1, with its
   inverse -> -1.
 
@@ -34,7 +34,7 @@ reference for the math). **Python-only**: the `imp/` RTL tree is untouched.
 
 ## Gap analysis (UnarySim main -> napl)
 
-Already present (no work): FSUMul->mul_and/mul_csg, FSUAdd->add_any, FSUDiv/CORDIV->div_*,
+Already present (no work): FSUMul->mul_gaines/mul_ugemm, FSUAdd->add_any, FSUDiv/CORDIV->div_*,
 FSUReLU->relu_*, FSUSqrt->sqrt_*, FSUSignAbs->signabs, FSUHardsigmoid->sigmoid_hard,
 FSUHardtanh->tanh_hard, JKFF/ShiftReg/Bi2Uni/Uni2Bi/SkewedSync, ProgError->metric/accuracy,
 RNG/BinGen/BSGen/RawScale folded into encoder/decoder/gen_num_seq.
@@ -59,8 +59,8 @@ Out of scope: `structure/` (biological layer), `algorithm/fft/fft.py`.
   `@napl_sim_timesteps` (streaming calls auto-tick); HUB/FXP/TLUT/Hard = single-shot (`streaming = False`, no tick), trainable via
   torch.autograd.Function + STE.
 - Gotchas: no `>>`/`<<` on float tensors (use pow2_lshift/pow2_rshift shims);
-  module.{linear,conv,rnn} import operation primitives lazily inside __init__ (avoids the
-  operation.mul_csg <-> module.encoder import cycle); conv bipolar zero-pad uses a
+  operation is self-contained and encoder/decoder live in it, so module.{linear,conv,rnn}
+  import operation primitives lazily inside __init__ only as a leftover; conv bipolar zero-pad uses a
   decorrelated rate-0.5 pad stream.
 - One test file per kernel under `tests/`, runnable by pytest and as a script;
   `tests/sweep_test.py` runs the full suite.
@@ -90,7 +90,7 @@ Out of scope: `structure/` (biological layer), `algorithm/fft/fft.py`.
    all-zero input finite (shares M2 rshift NaN guard).
 4. **[DONE]** module/mgu.py, module/mgu_hard.py, module/mgu_hardfxp.py, and module/mgu_hub.py MGU cells: mgu_hard (binary float, == manual hard-MGU exactly),
    mgu_hardfxp (round_fxp everywhere, rmse 0.010 vs mgu_hard), mgu (streaming inner cell:
-   linear scale=1 = linear+hardtanh, sigmoid_hard, mul_csg for fg*hx, mul_and for fg*ng,
+   linear scale=1 = linear+hardtanh, sigmoid_hard, mul_ugemm for fg*hx, mul_gaines for fg*ng,
    add_any scale=1 output), mgu_hub (hybrid: runs mgu over 2**width cycles, decodes with
    accuracy metric; rmse 0.032 vs mgu_hard). Caught & fixed a circular import (mgu.py must
    lazy-import napl.sim.operation inside __init__, like linear) that pytest masked but the

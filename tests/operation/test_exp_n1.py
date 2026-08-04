@@ -4,16 +4,16 @@ import math
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-from napl.sim.operation.exp_n1 import exp_n1
+from napl.sim.operation import encode, decode
+from napl.sim.operation import exp_n1
 from napl.sim.metric import accuracy
 
 
 class napl_exp_n1(napl_base):
     def __init__(self, codec_config, exp_n1_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.accuracy = accuracy({'polarity': codec_config['polarity']})
         self.exp_n1 = exp_n1(exp_n1_config)
 

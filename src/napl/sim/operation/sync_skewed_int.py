@@ -5,12 +5,24 @@ from napl.sim.base import napl_base, hw_params
 
 
 class sync_skewed_int(napl_base):
-    """
+    r"""
     Synchronize streams with an integral stochastic output.
 
-    Use this stateful variant when the first stream may exceed the second. It
-    accumulates first-stream spikes and releases a bounded integer digit whenever
-    the second stream spikes, while passing the second stream through unchanged.
+    Let x_1 be the current first-stream digit, x_2 the release spike,
+    c_{-1}=0, and M = 2**width-1. The exact update is
+
+    .. math::
+
+       \begin{aligned}
+       \tilde c_t &= c_{t-1}+x_{1,t},\\
+       y_{1,t} &= \mathbf{1}\{x_{2,t}=1\}
+       \operatorname{clip}(\tilde c_t,0,M),\\
+       c_t &= \operatorname{clip}(\tilde c_t-y_{1,t},0,M),\qquad
+       y_{2,t}=x_{2,t}.
+       \end{aligned}
+
+    The first stream accumulates until a release spike arrives, and the
+    second stream passes through unchanged.
 
     .. rubric:: Example
 
@@ -27,7 +39,7 @@ class sync_skewed_int(napl_base):
 
         .. rubric:: References
 
-        *VLSI Implementation of Deep Neural Network Using Integral Stochastic Computing*.
+        *VLSI Implementation of Deep Neural Network Using Integral Stochastic Computing*, TVLSI, 2017.
     """
 
 
@@ -50,8 +62,6 @@ class sync_skewed_int(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
-        #: Hardware latency and timing metadata for the combinational synchronizer.
-        self.hw = hw_params(pp_delay=0)
 
         #: Width of the stored integer stream-skew counter in bits.
         self.width = config['width']
@@ -66,6 +76,13 @@ class sync_skewed_int(napl_base):
         #: Per-element first-stream count awaiting release by the second stream.
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
+        #: Hardware latency and timing metadata for the combinational synchronizer.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input_2': 'rc'}
+        self.polarity_io = {'input_1': 'unipolar', 'input_2': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

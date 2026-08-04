@@ -7,16 +7,16 @@ from napl.sim.operation import div_gaines
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _gen_common import pair_streams, rep_pairs
+from _gen_common import require_seeded_sys, pair_streams, rep_pairs
 
 
 ROOT = Path(__file__).resolve().parent.parent
 VEC = ROOT / "vec" / "div_gaines.vec"
 PARAMS = ROOT / "vec" / "div_gaines_params.vh"
 ROM = ROOT / "vec" / "div_gaines_rom.hex"
-DEPTH = 5
+WIDTH = 5
 BASE_CONFIG = {
-    "depth": DEPTH,
+    "width": WIDTH,
     "generator": "sobol",
     "dim": 3,
 }
@@ -29,6 +29,9 @@ CODEC_UNI_0 = {
 CODEC_UNI_1 = {**CODEC_UNI_0, "dim": 2}
 CODEC_BI_0 = {**CODEC_UNI_0, "polarity": "bipolar"}
 CODEC_BI_1 = {**CODEC_BI_0, "dim": 2}
+
+
+require_seeded_sys(BASE_CONFIG, CODEC_UNI_0, CODEC_UNI_1, CODEC_BI_0, CODEC_BI_1)
 
 
 def drive(model, stream_0, stream_1, reset_at):
@@ -44,7 +47,7 @@ def drive(model, stream_0, stream_1, reset_at):
 
 def write_rom(model):
     lines = [
-        f"{int(value):0{DEPTH}b}"
+        f"{int(value):0{WIDTH}b}"
         for value in model.rng_seq
     ]
     ROM.write_text("\n".join(lines) + "\n")
@@ -68,7 +71,7 @@ def main():
     VEC.parent.mkdir(parents=True, exist_ok=True)
     write_rom(model_uni)
     PARAMS.write_text(
-        f"`define GEN_DEPTH {DEPTH}\n"
+        f"`define GEN_WIDTH {WIDTH}\n"
         f"`define GEN_PP_DELAY {model_uni.hw.pp_delay}\n"
     )
     with VEC.open("w") as output:

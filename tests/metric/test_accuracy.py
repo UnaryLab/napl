@@ -1,5 +1,5 @@
 """
-Per-device (cpu/cuda/mps) test of the accuracy metric on the canonical mul_csg
+Per-device (cpu/cuda/mps) test of the accuracy metric on the canonical mul_ugemm
 round-trip: the progressive error vs the analytic product stays within the SC
 bound, the metric agrees with the decoder, and a reset re-run reproduces the
 identical result. Performance is compared with the same metric on CPU.
@@ -10,25 +10,25 @@ import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.sim.metric import accuracy
-from napl.sim.module import decoder, encoder
-from napl.sim.operation import mul_csg
+from napl.sim.operation import decode, encode
+from napl.sim.operation import mul_ugemm
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 
 
-class napl_mul_csg(napl_base):
-    def __init__(self, codec_config, mul_csg_config, acc_config):
+class napl_mul_ugemm(napl_base):
+    def __init__(self, codec_config, mul_ugemm_config, acc_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
-        self.mul_csg = mul_csg(mul_csg_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
+        self.mul_ugemm = mul_ugemm(mul_ugemm_config)
         self.accuracy = accuracy(acc_config)
 
 
     @napl_sim_timesteps
     def forward(self, input_0, input_1, timesteps=256):
         i_spike = self.encoder(input_0)
-        o_spike = self.mul_csg(i_spike, input_1)
+        o_spike = self.mul_ugemm(i_spike, input_1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
@@ -41,12 +41,12 @@ def run_accuracy(input_0, input_1, device, timestep, model=None):
     }
     acc_config = {
         'polarity': 'bipolar',
-        'name': 'mul_csg_inst',
+        'name': 'mul_ugemm_inst',
     }
     i_0 = input_0.to(device)
     i_1 = input_1.to(device)
     if model is None:
-        model = napl_mul_csg(codec_config, codec_config, acc_config).to(device)
+        model = napl_mul_ugemm(codec_config, codec_config, acc_config).to(device)
     reference = i_0 * i_1
 
     with timer(device) as elapsed:

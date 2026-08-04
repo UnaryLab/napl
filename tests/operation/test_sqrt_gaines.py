@@ -4,16 +4,16 @@ import math
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-from napl.sim.operation.sqrt_gaines import sqrt_gaines
+from napl.sim.operation import encode, decode
+from napl.sim.operation import sqrt_gaines
 from napl.sim.metric import accuracy
 
 
 class napl_sqrt_gaines(napl_base):
     def __init__(self, codec_config, sqrt_gaines_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.sqrt_gaines = sqrt_gaines(sqrt_gaines_config)
         self.accuracy = accuracy(codec_config)
 

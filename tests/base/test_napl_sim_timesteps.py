@@ -4,7 +4,7 @@ import torch
 import napl
 
 from napl.sim.base import napl_base, napl_sim_timesteps
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.metric import accuracy
 from napl.utils._shared_test import devices, timer
 
@@ -12,8 +12,8 @@ from napl.utils._shared_test import devices, timer
 class codec(napl_base):
     def __init__(self, config):
         super().__init__()
-        self.encoder = encoder(config)
-        self.decoder = decoder(config)
+        self.encoder = encode(config)
+        self.decoder = decode(config)
         self.accuracy = accuracy(config)
 
 

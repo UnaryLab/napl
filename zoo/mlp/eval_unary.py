@@ -42,7 +42,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from napl import encoder, linear_pc, relu_hub
+from napl import encode, linear_pc, relu_hub
 
 from model import MLP3_clamp_eval
 
@@ -93,7 +93,7 @@ def stream_layer(value_in, weight, bias, in_dim, w_dim, timestep, device, record
     """
     out_features, in_features = weight.shape
     entry = in_features + 1  # Include the bias term.
-    enc = encoder({'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': in_dim}).to(device)
+    enc = encode({'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': in_dim}).to(device)
     fc = linear_pc(weight.clone(), bias.clone(),
                        {'polarity': POLARITY, 'timestep': timestep, 'generator': GENERATOR, 'dim': w_dim}).to(device)
 

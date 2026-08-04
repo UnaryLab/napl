@@ -4,12 +4,23 @@ from napl.sim.base import napl_base, hw_params
 
 
 class mul_gaines(napl_base):
-    """
+    r"""
     Multiply unary streams with the Gaines gate construction.
 
-    Use this stateless operation when naming the Gaines construction explicitly
-    is useful. It is gate-equivalent to :class:`napl.mul_and`: AND for unipolar
-    streams and XNOR for bipolar streams.
+    Use this stateless operation for two already-decorrelated spike streams:
+    AND for unipolar streams and XNOR for bipolar streams.
+
+    For binary input spikes ``s_0`` and ``s_1``, the exact per-timestep gate is
+
+    .. math::
+
+       y_t = \begin{cases}
+       s_{0,t} s_{1,t}, & \text{unipolar},\\
+       s_{0,t} s_{1,t} + (1-s_{0,t})(1-s_{1,t}), & \text{bipolar}.
+       \end{cases}
+
+    Thus the unipolar rate is ``p_0 p_1`` and the bipolar decoded value is the
+    product of the two bipolar decoded input values.
 
     .. rubric:: Example
 
@@ -26,7 +37,7 @@ class mul_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*.
+        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
     """
 
 
@@ -52,6 +63,11 @@ class mul_gaines(napl_base):
         # The unipolar AND and bipolar XNOR paths are combinational.
         #: Hardware latency and timing metadata for the combinational Gaines multiplier.
         self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}
+        self.correlation_i = {('input_0', 'input_1'): 'zero'}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

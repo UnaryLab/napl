@@ -60,12 +60,42 @@ def search_max_stab(p_low_L, p_high_L, L, search_range):
 
 
 class stability_norm(napl_base):
-    """
+    r"""
     Measure value-independent normalized stability of a spike stream.
 
     This metric divides observed stability by the estimated maximum stability for
     the source value and current stream length. Use it to compare streams whose
     encoded values have different best-case convergence behavior.
+
+    The precise target divides observed stability :math:`S_T` by the best
+    stability any stream of the same length can reach for the same source value
+    and threshold,
+
+    .. math::
+
+       N_T = \frac{S_T}{S^{\max}_T}.
+
+    Let :math:`p` be the encoded probability of the source, :math:`\theta` the
+    threshold, and :math:`\theta' = \theta/2` for bipolar or :math:`\theta` for
+    unipolar input. The metric estimates :math:`S^{\max}_T` on the power-of-two
+    grid :math:`L = 2^{\lceil \log_2 T \rceil}` by searching the admissible
+    probability band for the segmented-uniform stream with the shortest unstable
+    prefix :math:`\ell`, then evaluates
+
+    .. math::
+
+       \ell = \mathrm{search}\!\left(
+       \lfloor L\,\max(p-\theta',0)\rfloor,\;
+       \lceil L\,\min(p+\theta',1)\rceil,\; L,\;
+       \lfloor 2\theta L + 1 \rfloor\right),
+
+    .. math::
+
+       S^{\max}_T = \max\left(1 - \frac{\ell}{T},\, 0\right),\qquad
+       N_T = \mathrm{clamp}\left(\frac{S_T}{S^{\max}_T},\, 0,\, 1\right),
+
+    with a ``nan`` ratio mapped to ``0``. The result is an estimate because the
+    search covers segmented-uniform streams only.
 
     .. rubric:: Example
 
@@ -83,7 +113,7 @@ class stability_norm(napl_base):
 
         .. rubric:: References
 
-        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*.
+        *Normalized Stability: A Cross-Level Design Metric for Early Termination in Stochastic Computing*, ASP-DAC, 2021.
     """
 
 

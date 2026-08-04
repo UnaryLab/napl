@@ -10,10 +10,10 @@ NAPL is UnaryLab's framework for programmable spike processing (PSP). It uses on
 number or tensor
       |
       v
-   encoder  ->  one-bit spike stream  ->  operation(s) or streaming layer(s)
+   encode  ->  one-bit spike stream  ->  operation(s) or streaming layer(s)
                                                      |
                                                      v
-                                             decoder or metric
+                                             decode or metric
                                                      |
                                                      v
                                               number or statistic
@@ -45,7 +45,7 @@ The usual streaming path is:
 spike_a = encoder_a(value_a)
 spike_b = encoder_b(value_b)
 spike_y = operation(spike_a, spike_b)
-value_y = decoder(spike_y)
+value_y = decode(spike_y)
 ```
 
 Call the full path once per timestep. The encoder uses the current sequence element, operations transform the current spike bits, and the decoder updates its progressive estimate.
@@ -73,13 +73,13 @@ Single-shot execution is used by binary linear and convolution layers, binary re
 
 ## Package map
 
-The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/imp/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_and, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_and` also work.
+The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/imp/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_gaines, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_gaines` also work.
 
 | Path | Responsibility | Main components |
 | --- | --- | --- |
 | `src/napl/sim/base/` | Shared module lifecycle and global contracts | `napl_base`, timestep decorators, `hw_params`, `pvt_corner`, `timing`, global dtype config |
-| `src/napl/sim/module/` | Stream endpoints and neural layers | encoder, decoder; linear, convolution, recurrent, and pooling layers in streaming, HUB, FXP, TLUT, Gaines, and uGEMM variants |
-| `src/napl/sim/operation/` | Reusable spike and binary primitives | arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
+| `src/napl/sim/module/` | Neural layers | linear, convolution, recurrent, and pooling layers in streaming, HUB, FXP, TLUT, Gaines, and uGEMM variants |
+| `src/napl/sim/operation/` | Stream endpoints and reusable spike and binary primitives | encode, decode; arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
 | `src/napl/sim/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder` |
 | `src/napl/sim/algorithm/` | Compositions of modules and operations | FFT butterfly |
 | `src/napl/imp/operation/` | Synthesizable operation counterparts | per-operation RTL, testbenches, and golden-vector generators |
@@ -91,13 +91,15 @@ The Python simulation model lives under `src/napl/sim/` and the hardware tree un
 
 ### Module layer
 
-`module/encoder.py` converts values into spikes by comparing their encoded probability against a generated number sequence. `module/decoder.py` counts spikes and exposes a progressive decoded value. The remaining module files build tensor-shaped layers and recurrent cells from PyTorch operations and NAPL primitives.
+The module files build tensor-shaped layers and recurrent cells from PyTorch operations and NAPL primitives.
 
 Streaming layers keep computation in the spike domain. Partial-count and uGEMM variants change the internal accumulation method while preserving per-timestep execution. Gaines linears select combinations of Gaines multiplication and addition. HUB, FXP, TLUT, and hard variants operate in the single-shot domain.
 
 ### Operation layer
 
-Operations are small computational blocks used directly by programs and composed into higher-level modules. The package includes:
+`operation/encode.py` converts values into spikes by comparing their encoded probability against a generated number sequence, and `operation/decode.py` counts spikes and exposes a progressive decoded value.
+
+The remaining operations are small computational blocks used directly by programs and composed into higher-level modules. The package includes:
 
 - arithmetic and conversion: multiply, add, divide, square, square root, polarity conversion, sign and magnitude;
 - comparison and stream control: minimum, maximum, less-than, greater-than, synchronization;

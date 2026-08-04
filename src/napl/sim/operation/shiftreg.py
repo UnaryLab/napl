@@ -4,12 +4,22 @@ from napl.sim.base import napl_base, hw_params
 
 
 class shiftreg(napl_base):
-    """
+    r"""
     Delay a spike tensor with an alternating-initialized shift register.
 
-    Use this streaming register where the initial delay contents should alternate
-    between ``0`` and ``1`` instead of starting at zero. After filling, each call
-    returns the input from ``depth`` timesteps earlier.
+    Let R_t be the depth-row register and h_t its circular head. With
+    R_0[j] = j mod 2 and h_0 = 0, the exact recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= R_t[h_t],\\
+       R_{t+1}[h_t] &= x_t,\qquad
+       h_{t+1}=(h_t+1)\bmod depth.
+       \end{aligned}
+
+    After the alternating contents are emitted, each call returns the input
+    from depth timesteps earlier.
 
     .. rubric:: Example
 
@@ -43,9 +53,6 @@ class shiftreg(napl_base):
 
         #: Number of timesteps retained by the shift register.
         self.depth = config['depth']
-        # reg[head] is depth cycles old; RTL reset uses the same alternating i % 2 pattern.
-        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
-        self.hw = hw_params(pp_delay=self.depth)
         #: Alternating reset pattern and device anchor for the register.
         self.reg: torch.Tensor
         self.register_buffer('reg', torch.zeros(self.depth, dtype=self.stype))
@@ -57,6 +64,14 @@ class shiftreg(napl_base):
         self._head = 0
         #: Whether the register must be expanded for the next input shape.
         self.is_first_call = True
+        # reg[head] is depth cycles old; RTL reset uses the same alternating i % 2 pattern.
+        #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
+        self.hw = hw_params(pp_delay=self.depth)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

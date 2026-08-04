@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import sigmoid_hard
 from napl.sim.metric import accuracy
 
@@ -13,8 +13,8 @@ from napl.sim.metric import accuracy
 class napl_sigmoid_hard(napl_base):
     def __init__(self, codec_config, sigmoid_hard_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder = decode(codec_config)
         self.sigmoid_hard = sigmoid_hard(sigmoid_hard_config)
         self.accuracy = accuracy(codec_config)
 
@@ -51,7 +51,9 @@ def _kernel_specific_checks():
             sigmoid_hard_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.nn.Hardsigmoid()(input * 3)
-        sigmoid_hard_inst.accuracy.analyze(r_value, verbose=True)
+        error, _ = sigmoid_hard_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt()
+        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), rmse
         assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == codec_config['timestep']
         sigmoid_hard_inst.reset()
         assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == 0

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import torch
 
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.sim.operation import add_any
 
 
@@ -30,7 +30,7 @@ def encode_segments(polarity, values):
     """Encode each test row as one independent scalar RTL circuit's input stream."""
     segments = []
     for values_row in values:
-        enc = encoder({
+        enc = encode({
             "polarity": polarity,
             "timestep": TIMESTEP,
             "generator": "sobol",

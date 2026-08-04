@@ -1,11 +1,32 @@
 import torch
 
 class butterfly_binary(torch.nn.Module):
-    """
+    r"""
     Evaluate an exact radix-2 complex butterfly in the binary domain.
 
     Use this stateless PyTorch module as a reference for
     :class:`butterfly_spike` or wherever spike-stream simulation is unnecessary.
+
+    The precise target is the radix-2 decimation-in-time butterfly on complex
+    inputs :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
+
+    .. math::
+
+       y_0 = x_0 + w x_1,\qquad y_1 = x_0 - w x_1.
+
+    The module evaluates that target exactly on the real and imaginary parts,
+
+    .. math::
+
+       t_r = w_r x_{1r} - w_i x_{1i},\qquad
+       t_i = w_r x_{1i} + w_i x_{1r},
+
+    .. math::
+
+       y_{0r} = x_{0r} + t_r,\quad y_{0i} = x_{0i} + t_i,\quad
+       y_{1r} = x_{0r} - t_r,\quad y_{1i} = x_{0i} - t_i,
+
+    so the only error is floating-point rounding.
 
     .. rubric:: Example
 

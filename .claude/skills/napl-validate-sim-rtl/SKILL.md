@@ -6,7 +6,7 @@ description: >-
   user wants to confirm a kernel's generated RTL matches the Python model, check
   sim-vs-RTL or hardware-vs-model equivalence, verify the Verilog is functionally
   correct, run the golden-vector co-simulation against the test's inputs, or asks "does
-  the RTL match the kernel", "validate the Verilog for mul_and", "is the shiftreg
+  the RTL match the kernel", "validate the Verilog for mul_gaines", "is the shiftreg
   hardware correct", "check sim against RTL for add_any". The bar is bit-exact: the RTL
   output must equal the Python model output
   cycle-for-cycle on the streams the test encodes. Sibling to napl-gen-rtl,
@@ -59,7 +59,7 @@ Python model as the reference: when the two differ, the RTL is wrong unless the 
 
 ## Inputs
 
-- The napl kernel to validate (e.g. `operation.mul_and`, `operation.shiftreg`), plus its
+- The napl kernel to validate (e.g. `operation.mul_gaines`, `operation.shiftreg`), plus its
   `tests/<subpackage>/test_<kernel>.py` and its RTL directory `src/napl/imp/operation/<op>/`.
 - **Validate-only:** if `src/napl/imp/operation/<op>/` does not exist (no RTL yet), STOP and
   report that the kernel has no RTL to validate, pointing the user to the **napl-port-unarysim**
@@ -109,7 +109,7 @@ Validate one kernel per subagent.
 
 ### Step 1 - Resolve the kernel, its test, and its RTL
 
-Pin down the napl class (e.g. `operation.mul_and`, `operation.shiftreg`), its source under
+Pin down the napl class (e.g. `operation.mul_gaines`, `operation.shiftreg`), its source under
 `src/napl/sim/operation/`, its `tests/<subpackage>/test_<kernel>.py`, and its RTL directory
 `src/napl/imp/operation/<op>/`. The op directory and `make test` OP name is the class name.
 
@@ -123,7 +123,7 @@ job, and this skill checks an existing implementation.
 Read `test_<kernel>.py` for the inputs you must reuse: the codec configs (polarity, generator,
 Sobol dim, timestep), the regimes it covers (both polarities, known-answer corners such as a
 stream vs itself / vs its complement, edge inputs like all-zero), and how the op is wired
-(encoder(s) -> op -> decoder). Read the RTL module's port list and the testbench's vector
+(encode(s) -> op -> decoder). Read the RTL module's port list and the testbench's vector
 format (`$fscanf` columns) so your generated vectors line up with what the testbench reads.
 Note the op's `self.hw.pp_delay` (input-to-output latency in cycles) and what `reset()`
 initializes, including non-zero reset state (e.g. `shiftreg` reloads `reg[i] = i % 2`, not
@@ -161,7 +161,7 @@ Key points:
   at the granularity the hardware accepts.
 - **Cover both polarities** if the op has unipolar and bipolar variants (one RTL module per
   polarity postfix, per the implementation spec), emitting the per-polarity expected column the
-  testbench reads (see `mul_and`'s vec format: `in_0 in_1 out_unipolar out_bipolar`).
+  testbench reads (see `mul_gaines`'s vec format: `in_0 in_1 out_unipolar out_bipolar`).
 - **Stateful ops need a reset between independent streams.** Each representative stream is an
   independent experiment, so the model must `reset()` between them and the testbench must pulse
   `i_rst_n` low between segments. If covering more than one stream requires the testbench to
@@ -180,7 +180,7 @@ Key points:
   whose reset value is not directly observable in the next output, this mid-stream reset is the
   only way the co-sim can surface a wrong reset value at all.
 
-Two live patterns to copy: `imp/operation/mul_and/gen/gen_mul_and.py` (combinational,
+Two live patterns to copy: `imp/operation/mul_gaines/gen/gen_mul_gaines.py` (combinational,
 exhaustive input product) and `imp/operation/shiftreg/gen/gen_shiftreg.py` +
 `shiftreg_tb.v` (stateful, a single per-cycle spike stream replayed after one reset). Adapt the
 nearer one, swapping its ad hoc input source for the mirrored test encoders.
@@ -287,7 +287,7 @@ recorded row to the user as part of the verdict.
   date so re-validations of one kernel group together.
 - `RULE_IMP.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked,
   the `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/imp/operation/mul_and/` - canonical combinational example (gen, tb, rtl).
+- `src/napl/imp/operation/mul_gaines/` - canonical combinational example (gen, tb, rtl).
 - `src/napl/imp/operation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero
   reset, the `forward()`-equals-`posedge` and `reset()`-equals-`i_rst_n` mapping.
 - `tests/<subpackage>/test_<kernel>.py` - the source of the inputs and regimes to reuse.

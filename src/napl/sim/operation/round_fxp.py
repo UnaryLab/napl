@@ -60,12 +60,31 @@ def round_ste(input, fracwidth=0, min_val=None, max_val=None):
 
 
 class round_fxp(napl_base):
-    """
+    r"""
     Quantize a tensor to a signed fixed-point format.
 
     This single-shot binary-domain kernel rounds to increments of
     ``2**(-fracwidth)`` and clamps to the representable range. Use it for
     quantization-aware training because the input gradient passes through unchanged.
+
+    The precise target is the nearest value on the signed fixed-point grid of
+    resolution :math:`2^{-f}`, with :math:`f` the **fracwidth**,
+
+    .. math::
+
+       y = 2^{-f} \left[\,x\,2^{f}\,\right].
+
+    Let :math:`W = i + f` with :math:`i` the **intwidth**. The kernel evaluates
+    that target and saturates the scaled code to the representable range,
+
+    .. math::
+
+       y = 2^{-f}\,\mathrm{clamp}\!\left(
+       \left[\,x\,2^{f}\,\right],\; -2^{W},\; 2^{W}-1\right),
+
+    where :math:`[\cdot]` rounds to the nearest integer. The clamp is the only
+    departure from the target, and the backward pass returns the incoming
+    gradient unchanged rather than the derivative of either expression.
 
     .. rubric:: Example
 
@@ -114,6 +133,11 @@ class round_fxp(napl_base):
         # The simulator applies the saturating clamp combinationally.
         #: Modeled scalar latency of the single-shot quantizer.
         self.delay = 0
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

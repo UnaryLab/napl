@@ -5,11 +5,30 @@ from napl.sim.base import hw_params, napl_base
 
 
 class relu_shiftreg(napl_base):
-    """
+    r"""
     Apply ReLU to a bipolar rate-coded stream using a shift-register estimate.
 
-    Use this streaming kernel when recent output history should determine the
-    sign estimate without a multi-bit saturating counter.
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \max(x,0).
+
+    Let R_t be the depth-element register, h_t its circular head, c_t the
+    current register count, and d_t the delayed count used by the output
+    decision. After first-call initialization with R_0[j] = j mod 2, the
+    exact state update is
+
+    .. math::
+
+       \begin{aligned}
+       y_0 &= 1,\\
+       y_t &= x_t \mathbin{\lor}
+       \mathbf{1}\{d_t<depth/2\}\quad (t\geq 1),\\
+       c_{t+1} &= c_t+y_t-R_t[h_t],\qquad d_{t+1}=c_t,\\
+       R_{t+1}[h_t] &= y_t,\qquad
+       h_{t+1}=(h_t+1)\bmod depth.
+       \end{aligned}
 
     .. rubric:: Example
 
@@ -23,7 +42,7 @@ class relu_shiftreg(napl_base):
     """
 
 
-    def __init__(self, config={'depth': 8}):
+    def __init__(self, config={'depth': 4}):
         """
         Configure the shift-register estimator.
 
@@ -47,8 +66,6 @@ class relu_shiftreg(napl_base):
         )
         #: Half-depth count threshold that represents bipolar zero.
         self.depth_half = self.depth / 2
-        #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
 
         #: Circular register of recent ReLU output spikes.
         self.reg: torch.Tensor
@@ -67,6 +84,13 @@ class relu_shiftreg(napl_base):
         self.head = 0
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the combinational output path.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

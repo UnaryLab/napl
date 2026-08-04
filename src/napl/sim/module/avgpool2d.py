@@ -4,11 +4,30 @@ from napl.sim.base import napl_base
 
 
 class avgpool2d(napl_base):
-    """Average-pool a unary spike stream one timestep at a time.
+    r"""Average-pool a unary spike stream one timestep at a time.
 
     Use this module as the unary counterpart of ``torch.nn.AvgPool2d``. It
     accumulates each pooled spike tensor and emits spikes whose rate represents
     the window mean for either unipolar or bipolar encoding.
+
+    The precise target is the pooling window mean,
+
+    .. math::
+
+       y = \mathrm{avgpool2d}(x).
+
+    Let :math:`m_t = \mathrm{avgpool2d}(s_t)` be the pooled spike fraction for the
+    current timestep. The module integrates that fraction and emits a spike each
+    time the accumulator reaches one,
+
+    .. math::
+
+       \tilde a_t = a_{t-1} + m_t,\qquad
+       y_t = \mathbf{1}\{\tilde a_t \geq 1\},\qquad
+       a_t = \tilde a_t - y_t,
+
+    so the emitted rate tracks the target with an accumulator error below one
+    spike.
 
     .. rubric:: Example
 
@@ -55,6 +74,11 @@ class avgpool2d(napl_base):
         #: Residual pooled value carried forward until it emits an output spike.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
+
+        self.encoding_io = {'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

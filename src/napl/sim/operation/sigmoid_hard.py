@@ -5,11 +5,27 @@ from napl.sim.operation import add_any
 
 
 class sigmoid_hard(napl_base):
-    """
-    Apply the hard-sigmoid transform ``(x + 1) / 2`` to a spike stream.
+    r"""
+    Apply the hard-sigmoid transform to a unipolar or bipolar spike stream.
 
-    Use this streaming scaled-adder kernel with either unipolar or bipolar
-    rate-coded input when a linear hard-sigmoid approximation is sufficient.
+    The precise target rate-domain transform is
+
+    .. math::
+
+       f(x) = \frac{x+1}{2}.
+
+    Let z_t = x_t + 1 be the mode-specific input to the scale-two adder.
+    With a_0 = 0, its exact carry recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       \tilde a_t &= \operatorname{clip}(a_{t-1}+z_t,-8,7),\\
+       y_t &= \mathbf{1}\{\tilde a_t\geq 2\},\qquad
+       a_t = \tilde a_t-2y_t.
+       \end{aligned}
+
+    Thus the rate-domain operation is E[y] = (E[x]+1)/2.
 
     .. rubric:: Example
 
@@ -42,8 +58,6 @@ class sigmoid_hard(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity'], polarity_required=True)
-        #: Hardware latency and timing metadata for the composed hard sigmoid.
-        self.hw = hw_params(pp_delay=0)
 
         #: Scaled unary adder that implements the affine sigmoid transform.
         self.scaled_add = add_any({
@@ -51,6 +65,13 @@ class sigmoid_hard(napl_base):
             'scale' : 2,
             'width' : 4,
             })
+        #: Hardware latency and timing metadata for the composed hard sigmoid.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

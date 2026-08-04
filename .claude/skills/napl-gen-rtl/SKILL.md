@@ -3,7 +3,7 @@ name: napl-gen-rtl
 description: >-
   Generate the synthesizable Verilog RTL for a napl operation, verified against its Python
   functional model by golden-vector co-simulation. Use whenever the user wants to create,
-  write, emit, or lower a napl op to Verilog/RTL/hardware ("generate RTL for mul_and",
+  write, emit, or lower a napl op to Verilog/RTL/hardware ("generate RTL for mul_gaines",
   "write the Verilog for add_any", "implement shiftreg in hardware", "lower sqrt_emit to
   RTL", "make the hardware for this op"), even without the word "RTL". It emits one module
   per polarity variant plus a testbench and a golden-vector generator under
@@ -51,7 +51,7 @@ forces an unsound gate-level design onto a class that has no natural circuit.
 
 ## Inputs
 
-- The napl `operation` class to lower (e.g. `mul_and`, `shiftreg`, `add_any`). **Operation
+- The napl `operation` class to lower (e.g. `mul_gaines`, `shiftreg`, `add_any`). **Operation
   subpackage only** - napl `module`/`metric`/`algorithm` classes are whole-tensor or statistical,
   not per-timestep gate circuits, so they have no RTL; report that and stop if asked for one.
 - Run through the project env: `conda run -n napl python ...` and
@@ -92,7 +92,7 @@ Generate one operation per subagent.
 
 ### Step 1 - Resolve the operation
 
-Pin down the napl `operation` class (e.g. `mul_and`, `shiftreg`, `add_any`), its source under
+Pin down the napl `operation` class (e.g. `mul_gaines`, `shiftreg`, `add_any`), its source under
 `src/napl/sim/operation/`, and its `tests/operation/test_<op>.py`. The op directory and `make test`
 OP name is the class name: `src/napl/imp/operation/<op>/`. **Operation subpackage only** - napl
 `module`/`metric`/`algorithm` classes are whole-tensor or statistical, not per-timestep gate
@@ -101,7 +101,7 @@ circuits, so they have no RTL; report that and stop if asked for one.
 ### Step 2 - Read the Python model as the spec
 
 The Python `forward()` is the contract. Read it (and `__init__`/`reset()`) for: the per-timestep
-logic and its polarity branches (e.g. `mul_and` is AND unipolar / XNOR bipolar); what state it
+logic and its polarity branches (e.g. `mul_gaines` is AND unipolar / XNOR bipolar); what state it
 holds; what `reset()` initializes, **including non-zero reset state** (`shiftreg` reloads
 `reg[i] = i % 2`, not zeros); and the input/output spike shape. If a matching module exists in
 UnarySim's RTL you may refer to it for structure, but the napl model is the source of truth.
@@ -129,7 +129,7 @@ following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
   `30`), so the module is correct at any size. The verified value flows from the model: the gen script
   emits the param header (below) and the testbench overrides the parameter from it. Do NOT mirror a
   size as a hand-copied `localparam`/constant kept in sync by a "must match" comment - that is the
-  drift this inheritance removes. An op with no sizing config (e.g. combinational `mul_and`, whose
+  drift this inheritance removes. An op with no sizing config (e.g. combinational `mul_gaines`, whose
   only datum is the 1-bit spike) declares no parameters.
 - **Timing mapping:** one Python `forward()` timestep == one `posedge i_clk`. Active-low `i_rst_n`
   maps to the Python `reset()`, and must bring every register to the EXACT post-`reset()` state of
@@ -138,7 +138,7 @@ following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
   (`from napl.sim.operation import <op>`), never a hand-derived truth table. Read the op's sizing config
   **once** (mirroring `test_<op>.py`'s op config), build the model from it, drive it per timestep from
   `model.reset()` at t=0, and record per-cycle (inputs, output), one polarity column per variant (see
-  `mul_and`'s `in_0 in_1 out_unipolar out_bipolar`). The bit-serial RTL has one 1-bit datapath, so
+  `mul_gaines`'s `in_0 in_1 out_unipolar out_bipolar`). The bit-serial RTL has one 1-bit datapath, so
   drive scalar streams. **Also emit `vec/<op>_params.vh`** from that same config with one
   `` `define GEN_<PARAM> <value> `` per sizing field (e.g. `` `define GEN_DEPTH 2 ``); this header is
   the single source of truth the RTL inherits its sizes from. Ops with no sizing config emit no header.
@@ -150,7 +150,7 @@ following the repo-root `RULE_IMP.md` and the auto-injected Verilog rules:
   resolve under the fixed Makefile) and instantiate the DUT with the override
   `<op> #(.PARAM(`GEN_PARAM)) dut (...)`, so the verified hardware is the model's configuration.
 
-Copy the nearest live pattern: `imp/operation/mul_and/` (combinational, no sizing params) or
+Copy the nearest live pattern: `imp/operation/mul_gaines/` (combinational, no sizing params) or
 `imp/operation/shiftreg/` (stateful, non-zero reset, the canonical *parameterized* example: `DEPTH`
 parameter overridden from `vec/shiftreg_params.vh`). Do NOT edit the shared `Makefile` - it is already
 generic via `OP=` and runs the gen script (which writes the header) before compiling.
@@ -173,7 +173,7 @@ the **minimum** across them (the napl-port-unarysim convention). Write it back t
 contract: `self.hw = hw_params(pp_delay=<n>)` in `__init__` after `super().__init__(...)` (update the
 `pp_delay=` arg if a `self.hw = hw_params(...)` line exists; replace a legacy `self.delay = n`; add it
 otherwise). Ensure the file imports it: `from napl.sim.base import napl_base, hw_params`. See
-`operation/mul_and.py` and `operation/shiftreg.py` for the idiom. This field must match the RTL for sim/HW
+`operation/mul_gaines.py` and `operation/shiftreg.py` for the idiom. This field must match the RTL for sim/HW
 timing to agree.
 
 ### Step 6 - Record the run (always)
@@ -212,9 +212,9 @@ Deliver the verdict: class, RTL module(s), status, `make test` result, pp_delay,
   class name.
 - `RULE_IMP.md` (repo root) - the RTL rules: layout, commands, naming, combinational vs clocked, the
   `i_clk`/`i_rst_n` and reset-state contract.
-- `src/napl/imp/operation/mul_and/` - canonical combinational example (rtl, tb, gen).
+- `src/napl/imp/operation/mul_gaines/` - canonical combinational example (rtl, tb, gen).
 - `src/napl/imp/operation/shiftreg/` - canonical stateful example: per-cycle stream, non-zero reset.
-- `src/napl/sim/base/base.py` - `hw_params` (the `pp_delay` contract); `operation/mul_and.py`,
+- `src/napl/sim/base/base.py` - `hw_params` (the `pp_delay` contract); `operation/mul_gaines.py`,
   `operation/shiftreg.py` show the `self.hw = hw_params(pp_delay=...)` idiom.
 - `.claude/skills/napl-validate-sim-rtl/SKILL.md` - sibling: validates a generated RTL against the
   test's inputs (the verification counterpart to this generation skill).

@@ -8,7 +8,7 @@ from napl.sim.base import napl_base
 
 
 class mgu_hardpt(napl_base):
-    """Apply a PyTorch-layout MGU cell with bounded hard activations.
+    r"""Apply a PyTorch-layout MGU cell with bounded hard activations.
 
     Use this single-shot cell when parameters must follow the two-chunk
     input-hidden and hidden-hidden layout used by PyTorch recurrent cells. It is
@@ -16,6 +16,39 @@ class mgu_hardpt(napl_base):
     hidden-hidden linears split into forget and new gates. Hard sigmoid, hard
     tanh, and explicit range clamps keep intermediate values in the legal unary
     range. The cell is single-shot and trainable.
+
+    The precise target is the Minimal Gated Unit recurrence in the PyTorch
+    two-chunk layout, with :math:`g^i = W_{ih} x + b_{ih}` and
+    :math:`g^h = W_{hh} h + b_{hh}` each split into forget and new halves,
+
+    .. math::
+
+       f = \sigma\!\left(g^i_f + g^h_f\right),\qquad
+       n = \tanh\!\left(g^i_n + f \odot g^h_n\right),\qquad
+       h' = (1 - f) \odot n + f \odot h.
+
+    The cell evaluates that recurrence with hard activations and clamps every
+    stage to the legal unary range,
+
+    .. math::
+
+       \tilde g^i = \mathrm{clamp}(g^i, -1, 1),\qquad
+       \tilde g^h = \mathrm{clamp}(g^h, -1, 1),
+
+    .. math::
+
+       f = \sigma_h\!\left(\mathrm{clamp}\left(
+       \tilde g^i_f + \tilde g^h_f,\, -1,\, 1\right)\right),\qquad
+       n = \tanh_h\!\left(\tilde g^i_n + f \odot \tilde g^h_n\right),
+
+    .. math::
+
+       h' = \mathrm{clamp}\!\left(n - f \odot n + f \odot h,\, -1,\, 1\right),
+
+    where :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)` and
+    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)` when **hard** is ``True``, and
+    the exact ``Sigmoid`` and ``Tanh`` otherwise. The two gate-linear clamps stay
+    hard regardless of that setting.
 
     .. rubric:: Example
 
@@ -79,6 +112,11 @@ class mgu_hardpt(napl_base):
         for w in [self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh]:
             if w is not None:
                 w.data = truncated_normal(w, 0.0, stdv)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

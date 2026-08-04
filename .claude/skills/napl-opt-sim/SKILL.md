@@ -3,7 +3,7 @@ name: napl-opt-sim
 description: >-
   Optimize a napl kernel/op/module's functional simulation for speed and report the
   measured CPU and GPU speedup, gated on its test_<kernel>.py still passing. Use
-  whenever the user wants a napl op/kernel/layer to run faster ("speed up mul_and",
+  whenever the user wants a napl op/kernel/layer to run faster ("speed up mul_gaines",
   "make conv faster on GPU", "optimize add_any", "why is sqrt_emit slow", "profile
   and accelerate linear"), wants a before/after speedup number on CPU and/or
   MPS/CUDA, or asks to accelerate the napl simulation without changing results, even
@@ -52,7 +52,7 @@ reports honestly, including a regression on one device or a no-change (~1.0x) ou
 
 ## Inputs
 
-- The napl kernel/op/module target to speed up (e.g. `operation.mul_and`,
+- The napl kernel/op/module target to speed up (e.g. `operation.mul_gaines`,
   `module.conv`, `operation.add_any`).
 - Run everything through the project env: `conda run -n napl python ...` (a bare `python`
   is the wrong interpreter). Heredocs piped through `conda run` swallow stdout, so write a
@@ -100,11 +100,11 @@ kernel per subagent.
 
 ### Step 1 - Resolve the kernel and its test
 
-Pin down the exact napl class (e.g. `operation.mul_and`, `module.conv`,
+Pin down the exact napl class (e.g. `operation.mul_gaines`, `module.conv`,
 `operation.add_any`) and its source file under `src/napl/`. Its workload and correctness
 gate both come from `tests/<subpackage>/test_<kernel>.py` (e.g.
-`tests/operation/test_mul_and.py`). Read that test: it defines the canonical wiring
-(encoder(s) -> op -> decoder over timesteps), the configs, and the input construction you
+`tests/operation/test_mul_gaines.py`). Read that test: it defines the canonical wiring
+(encode(s) -> op -> decoder over timesteps), the configs, and the input construction you
 will reuse. Most op/kernel tests expose a `napl_<kernel>` module class plus a
 `test_<kernel>()` function; some (binary-domain `*_hub`/`*_fxp`/`*_tlut`/`*_hard`) inline
 their wiring instead.
@@ -137,7 +137,7 @@ into tensor ops, kill redundant `.clone()`/dtype casts/allocations in the hot pa
 an elementwise spike-product reduction with a `matmul`, hoist invariants out of the
 timestep loop, avoid `torch.roll`-style full-buffer reallocation (see the circular-buffer
 idiom in `shiftreg`/`dff`). `decoder` uses the lazy-readout pattern in
-`src/napl/sim/metric/accuracy.py:50-75` and `src/napl/sim/module/decoder.py:30-58`:
+`src/napl/sim/metric/accuracy.py:50-75` and `src/napl/sim/operation/decoder.py:30-58`:
 `forward()` accumulates only and the on-demand `spike_value` property computes the readout,
 giving a 2.28x isolated CPU speedup. For another class, if adopting this pattern changes the
 `forward()` return contract, surface it as an explicit API task and never apply it silently.

@@ -8,7 +8,7 @@ from loguru import logger
 
 
 class mgu_hub(napl_base):
-    """Evaluate an MGU through an internal unary simulation in one call.
+    r"""Evaluate an MGU through an internal unary simulation in one call.
 
     Use this hybrid unary-binary cell when callers provide numeric tensors but
     the MGU computation should run through spike encoders, a streaming
@@ -16,6 +16,31 @@ class mgu_hub(napl_base):
     ``hx`` into spike streams, runs :class:`mgu` for ``2 ** width`` cycles, and
     decodes the output with the ``accuracy`` metric. Its gate equations match
     :class:`mgu_hard` with hard activations, using caller-provided weights.
+
+    The precise target is the Minimal Gated Unit recurrence
+
+    .. math::
+
+       f = \sigma\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = (1 - f) \odot n + f \odot h.
+
+    Rather than evaluating that recurrence numerically, the wrapper encodes both
+    operands into bipolar spike streams, runs the streaming :class:`mgu` cell for
+    the full period, and decodes the progressive value,
+
+    .. math::
+
+       T = 2^{\text{width}},\qquad
+       h' = \frac{2}{T}\sum_{t=1}^{T} \mathrm{mgu}\!\left(
+       \mathrm{enc}_1(x)_t,\, \mathrm{enc}_2(h)_t\right) - 1,
+
+    with the two encoders on separate RNG dimensions. The result therefore
+    carries both the saturating-adder behavior of :class:`mgu` and the
+    stochastic-computing error of a length-:math:`T` run.
 
     .. rubric:: Example
 
@@ -84,6 +109,11 @@ class mgu_hub(napl_base):
         #: Accumulator width used by each internal streaming linear layer.
         self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
 
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
+
 
     def _reset(self):
         """Reset state owned directly by the hybrid wrapper.
@@ -109,7 +139,7 @@ class mgu_hub(napl_base):
         not store ``hx`` and, as a single-shot module, does not advance
         ``timestep_cur``.
         """
-        from napl.sim.module.encoder import encoder
+        from napl.sim.operation.encode import encode
         from napl.sim.metric import accuracy
         from napl.sim.module.mgu import mgu
         if hx is None:
@@ -117,7 +147,7 @@ class mgu_hub(napl_base):
         ts = 2 ** self.width
 
         def enc(d):
-            return encoder({'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator, 'dim': d})
+            return encode({'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator, 'dim': d})
         i_enc, h_enc = enc(1), enc(2)
         cell = mgu(self.weight_f, self.bias_f, self.weight_n, self.bias_n, hx,
                        {'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator,

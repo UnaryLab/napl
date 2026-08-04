@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import sync_skewed
 from napl.sim.metric import accuracy
 
@@ -13,10 +13,10 @@ from napl.sim.metric import accuracy
 class napl_sync_skewed(napl_base):
     def __init__(self, codec_config1, codec_config2, sync_skewed_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder0 = decoder(codec_config1)
-        self.decoder1 = decoder(codec_config1)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder0 = decode(codec_config1)
+        self.decoder1 = decode(codec_config1)
         self.sync_skewed = sync_skewed(sync_skewed_config)
         self.accuracy0 = accuracy(codec_config1)
         self.accuracy1 = accuracy(codec_config1)
@@ -70,8 +70,12 @@ def _kernel_specific_checks():
         with timer(device) as elapsed:
             sync_skewed_inst(input_0, input_1, timesteps=codec_config1['timestep'])
 
-        sync_skewed_inst.accuracy0.analyze(input_0, verbose=True)
-        sync_skewed_inst.accuracy1.analyze(input_1, verbose=True)
+        error_0, _ = sync_skewed_inst.accuracy0.analyze(input_0, verbose=True)
+        rmse_0 = error_0.pow(2).mean().sqrt()
+        assert rmse_0 <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), rmse_0
+        error_1, _ = sync_skewed_inst.accuracy1.analyze(input_1, verbose=True)
+        rmse_1 = error_1.pow(2).mean().sqrt()
+        assert rmse_1 <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), rmse_1
         assert sync_skewed_inst.sync_skewed.timestep_cur == codec_config1['timestep']
         sync_skewed_inst.reset()
         assert sync_skewed_inst.sync_skewed.timestep_cur == 0

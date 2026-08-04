@@ -7,7 +7,7 @@ on CPU.
 import torch
 
 from napl.sim.metric import stability
-from napl.sim.module import encoder
+from napl.sim.operation import encode
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 
@@ -22,7 +22,7 @@ def run_stability(val, device, timestep, modules=None):
             'dim': 1,
         }
         modules = (
-            encoder(cfg).to(device),
+            encode(cfg).to(device),
             stability(
                 val, {'polarity': 'bipolar', 'threshold': 0.05}
             ).to(device),

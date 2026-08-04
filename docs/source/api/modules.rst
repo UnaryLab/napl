@@ -14,15 +14,11 @@ Module API
    conv_pc
    conv_tlut
    conv_ugemm
-   decoder
-   encoder
    gru_hardnuapt
    linear
    linear_fxp
    linear_gaines1
    linear_gaines2
-   linear_gaines3
-   linear_gaines4
    linear_hub
    linear_pc
    linear_tlut

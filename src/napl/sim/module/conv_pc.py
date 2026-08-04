@@ -6,7 +6,7 @@ from loguru import logger
 
 
 class conv_pc(napl_base):
-    """Return per-timestep parallel counts for a unary convolution.
+    r"""Return per-timestep parallel counts for a unary convolution.
 
     Use this streaming layer when downstream logic needs raw convolution product
     counts instead of a scaled output bitstream. It returns the per-timestep
@@ -27,6 +27,29 @@ class conv_pc(napl_base):
     stream. This class matches UnarySim ``FSUConv2dPC`` and supports ``groups=1``
     with zero padding only.
 
+    The precise target is the count whose time average recovers the convolution,
+
+    .. math::
+
+       \frac{1}{T}\sum_{t=1}^{T} c_t = \mathrm{conv2d}(x, W) + b
+       \ \ (\text{unipolar}),\qquad
+       \frac{2}{T}\sum_{t=1}^{T} c_t - e = \mathrm{conv2d}(x, W) + b
+       \ \ (\text{bipolar}),
+
+    with :math:`e = K + [\,\text{bias}\,]` and :math:`K` the kernel fan-in. Each
+    timestep the layer returns that count exactly, with :math:`u_t` the im2col
+    patch spikes and :math:`w_t` the freshly encoded weight spikes,
+
+    .. math::
+
+       c_t = \begin{cases}
+       u_t w_t^{\top} + b_t, & \text{unipolar},\\
+       u_t w_t^{\top} + b_t + (1 - u_t)(1 - w_t)^{\top}, & \text{bipolar},
+       \end{cases}
+
+    the bipolar line adding the input-``0`` AND path to complete the XNOR count,
+    so :math:`c_t \in [0, e]` and no accumulation is applied.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -41,7 +64,7 @@ class conv_pc(napl_base):
 
     References
     ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*.
+    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -65,7 +88,7 @@ class conv_pc(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.module.encoder import encoder
+        from napl.sim.operation.encode import encode
 
         assert weight.dim() == 4, logger.error(f'conv_pc weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
         #: Trainable numeric convolution kernel encoded into a spike stream.
@@ -99,14 +122,14 @@ class conv_pc(napl_base):
 
         cfg = {'polarity': self.polarity, 'timestep': config['timestep'], 'generator': config['generator']}
         #: Encoder that converts the numeric convolution kernel to spikes.
-        self.w_encoder = encoder({**cfg, 'dim': dim})
+        self.w_encoder = encode({**cfg, 'dim': dim})
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
-            self.b_encoder = encoder({**cfg, 'dim': dim + 1})
+            self.b_encoder = encode({**cfg, 'dim': dim + 1})
         # Bipolar zero-padding uses a decorrelated rate-0.5 stream.
         if self.polarity == 'bipolar' and self.padding != (0, 0):
             #: Encoder supplying a decorrelated bipolar-zero padding stream.
-            self.pad_encoder = encoder({**cfg, 'dim': dim + 2})
+            self.pad_encoder = encode({**cfg, 'dim': dim + 2})
             # Python float pad bits avoid a device-to-host synchronization in F.pad.
             #: Period of the precomputed padding spike sequence.
             self.pad_len = self.pad_encoder.len
@@ -114,6 +137,11 @@ class conv_pc(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
+
+        self.encoding_io = {'input_spike': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

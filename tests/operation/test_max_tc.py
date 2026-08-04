@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import max_tc
 from napl.sim.metric import accuracy
 
@@ -13,9 +13,9 @@ from napl.sim.metric import accuracy
 class napl_max_tc(napl_base):
     def __init__(self, codec_config1, codec_config2, max_tc_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder = decoder(codec_config1)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder = decode(codec_config1)
         self.max_tc = max_tc(max_tc_config)
         self.accuracy = accuracy({'polarity': codec_config1['polarity']})
 
@@ -59,7 +59,9 @@ def _kernel_specific_checks():
             max_tc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
 
         r_value = torch.max(input_0, input_1)
-        max_tc_inst.accuracy.analyze(r_value, verbose=True)
+        error, _ = max_tc_inst.accuracy.analyze(r_value, verbose=True)
+        rmse = error.pow(2).mean().sqrt()
+        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), rmse
         assert max_tc_inst.max_tc.timestep_cur == codec_config1['timestep']
         max_tc_inst.reset()
         assert max_tc_inst.max_tc.timestep_cur == 0

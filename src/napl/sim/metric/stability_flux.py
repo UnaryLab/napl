@@ -7,13 +7,24 @@ from loguru import logger
 
 
 class stability_flux(napl_base):
-    """
+    r"""
     Compare two spike streams through their element-wise stability ratio.
 
     Use this metric when relative stability matters more than either absolute
     stability. A ratio greater than ``1`` means the first stream is more stable.
     Division follows PyTorch semantics, so a zero denominator can produce
     ``inf`` or ``nan``.
+
+    With :math:`S^{(1)}_T` and :math:`S^{(2)}_T` the stabilities of the two
+    streams, the precise target is their ratio
+
+    .. math::
+
+       F_T = \frac{S^{(1)}_T}{S^{(2)}_T}.
+
+    The metric runs one :class:`napl.stability` monitor per stream and returns
+    the quotient of their values, so it evaluates the target exactly and leaves
+    a zero denominator as ``inf`` or ``nan``.
 
     .. rubric:: Example
 

@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import signabs
 from napl.sim.metric import accuracy
 
@@ -13,9 +13,9 @@ from napl.sim.metric import accuracy
 class napl_signabs(napl_base):
     def __init__(self, codec_config, signabs_config):
         super().__init__()
-        self.encoder = encoder(codec_config)
-        self.decoder_sign = decoder(codec_config)
-        self.decoder_abs = decoder(codec_config)
+        self.encoder = encode(codec_config)
+        self.decoder_sign = decode(codec_config)
+        self.decoder_abs = decode(codec_config)
         self.signabs = signabs(signabs_config)
         self.accuracy_sign = accuracy(codec_config)
         self.accuracy_abs = accuracy(codec_config)
@@ -55,8 +55,12 @@ def _kernel_specific_checks():
 
         r_value_sign = -torch.sign(input)
         r_value_abs = torch.abs(input)
-        signabs_inst.accuracy_sign.analyze(r_value_sign, verbose=True)
-        signabs_inst.accuracy_abs.analyze(r_value_abs, verbose=True)
+        sign_error, _ = signabs_inst.accuracy_sign.analyze(r_value_sign, verbose=True)
+        sign_rmse = sign_error.pow(2).mean().sqrt()
+        assert sign_rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), sign_rmse
+        abs_error, _ = signabs_inst.accuracy_abs.analyze(r_value_abs, verbose=True)
+        abs_rmse = abs_error.pow(2).mean().sqrt()
+        assert abs_rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), abs_rmse
         assert signabs_inst.signabs.timestep_cur == codec_config['timestep']
         signabs_inst.reset()
         assert signabs_inst.signabs.timestep_cur == 0

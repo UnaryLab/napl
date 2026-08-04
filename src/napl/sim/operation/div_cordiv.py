@@ -2,17 +2,41 @@ import torch
 import math
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module import gen_num_seq
+from napl.sim.operation import encode
 from loguru import logger
 
 
 class div_cordiv(napl_base):
-    """
+    r"""
     Divide synchronized unipolar streams by correlated division.
 
     Use this kernel when the dividend and divisor have already been correlated,
     for example by :class:`napl.sync_skewed`. It buffers recent quotient spikes
     and reuses them when the divisor does not spike.
+
+    The precise target rate-domain operation is
+
+    .. math::
+
+       y = \frac{x}{d}.
+
+    The kernel quantizes the number sequence into a history row index rather than
+    comparing a value against it, so a :class:`napl.encode` instance supplies the
+    sequence at construction and is not retained. The selection position is held
+    locally.
+
+    Let D = depth, G_t be the configured number sequence, x_t the dividend
+    spike, and d_t the divisor spike. The exact history recurrence is
+
+    .. math::
+
+       \begin{aligned}
+       j_t &= \lfloor D G_t \rfloor, &
+       q_t &= d_t x_t + (1-d_t)b_{t,j_t},\\
+       b_{t+1,j} &= (1-d_t)b_{t,j} + d_t b_{t,j+1}
+       && (0 \leq j < D-1),\\
+       b_{t+1,D-1} &= (1-d_t)b_{t,D-1} + d_t q_t.
+       \end{aligned}
 
     .. rubric:: Example
 
@@ -29,11 +53,11 @@ class div_cordiv(napl_base):
 
         .. rubric:: References
 
-        *Design of Division Circuits for Stochastic Computing*.
+        *Design of Division Circuits for Stochastic Computing*, ISVLSI, 2016.
 
-        *In-Stream Stochastic Division and Square Root via Correlation*.
+        *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
     """
 
 
@@ -61,19 +85,24 @@ class div_cordiv(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['depth', 'generator'], polarity_required=False)
-        #: Hardware latency and timing metadata for the correlated divider.
-        self.hw = hw_params(pp_delay=0)
 
         #: Number of recent quotient spikes retained for reuse.
         self.depth = config['depth']
         assert math.log2(self.depth) == math.ceil(math.log2(self.depth)), logger.error(f'Input depth <{self.depth}> is not power of 2.')
         #: Number-sequence width needed to address :attr:`depth` history rows.
         self.width = int(math.log2(self.depth))
-        config['width'] = self.width
 
+        # The encoder supplies the sequence once and is not retained.
+        reference_encode = encode({'polarity': 'unipolar',
+                                   'timestep': self.depth,
+                                   'generator': config['generator'],
+                                   'dim': config.get('dim', 1),
+                                   'seed': config.get('seed', None),
+                                   'taps': config.get('taps', None)})
         #: Periodic tensor of quotient-history row selections.
         self.rand_seq: torch.Tensor
-        self.register_buffer('rand_seq', torch.floor(gen_num_seq(config).mul(self.depth)).type(torch.long))
+        self.register_buffer('rand_seq',
+            torch.floor(reference_encode.num_seq.mul(self.depth)).type(torch.long))
         # Python scalar indices avoid device synchronization on each timestep.
         #: Python-list view of :attr:`rand_seq` used for per-timestep indexing.
         self.rand_seq_idx = self.rand_seq.tolist()
@@ -86,6 +115,13 @@ class div_cordiv(napl_base):
 
         #: Whether :attr:`buffer_q` must be expanded to the input shape.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the correlated divider.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'quotient': 'rc'}
+        self.polarity_io = {'dividend': 'unipolar', 'divisor': 'unipolar', 'quotient': 'unipolar'}
+        self.correlation_i = {('dividend', 'divisor'): 'pos'}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
@@ -101,16 +137,19 @@ class div_cordiv(napl_base):
 
     def forward(self, dividend, divisor):
         """
-        Divide one timestep of synchronized unipolar spikes.
+        Divide one timestep of synchronized unipolar spikes with broadcast-compatible inputs.
 
         Args:
             dividend: Current 0/1 dividend spike tensor.
-            divisor: Current 0/1 divisor spike tensor with the same shape as
+            divisor: Current 0/1 divisor spike tensor broadcastable against
                 ``dividend``.
 
         Returns:
-            A quotient spike tensor with the input shape. The call updates the
-            sampled quotient history and advances its sequence index.
+            A quotient spike tensor with the broadcast shape of the inputs. The
+            call updates the sampled quotient history and advances its sequence
+            index.
+            The history shape is fixed by the first call after ``reset()``; a
+            different input shape requires ``reset()``.
 
         **Example:**
 
@@ -119,19 +158,9 @@ class div_cordiv(napl_base):
             quotient = divider(torch.tensor([1], dtype=torch.int8),
                                torch.tensor([1], dtype=torch.int8))
         """
-        assert dividend.shape == divisor.shape, logger.error(
-            f'Input shapes must match: dividend <{tuple(dividend.shape)}>, '
-            f'divisor <{tuple(divisor.shape)}>.'
-        )
         if self.is_first_call:
-            dividend_shape = list(dividend.shape)
-            divisor_shape = list(divisor.shape)
-            if len(dividend_shape) > len(divisor_shape):
-                input_shape = dividend_shape
-            else:
-                input_shape = divisor_shape
-            input_shape.insert(0, self.depth)
-            self.buffer_q.resize_(input_shape)
+            input_shape = torch.broadcast_shapes(dividend.shape, divisor.shape)
+            self.buffer_q.resize_((self.depth, *input_shape))
             for row in range(self.depth):
                 self.buffer_q[row].fill_(row % 2)
             self.is_first_call = False
@@ -140,7 +169,7 @@ class div_cordiv(napl_base):
         rand_q = self.buffer_q[self.rand_seq_idx[self.idx]]
         self.idx = (self.idx + 1) % self.depth
 
-        quotient = torch.where(divisor_eq_1, dividend, rand_q).view(dividend.size())
+        quotient = torch.where(divisor_eq_1, dividend, rand_q)
 
         # Shift low to high so each row reads the next history row before it changes.
         buf = self.buffer_q

@@ -6,12 +6,34 @@ from loguru import logger
 
 
 class correlation(napl_base):
-    """
+    r"""
     Measure stochastic cross-correlation (SCC) between two spike streams.
 
     Use this metric to quantify correlation from bit-pair counts accumulated over
     time. Supplying only the first stream measures its one-timestep-delayed
     autocorrelation.
+
+    Let ``a``, ``b``, ``c``, and ``d`` count the ``11``, ``10``, ``01``, and
+    ``00`` bit pairs over ``n`` timesteps. The precise target is the SCC
+
+    .. math::
+
+       \mathrm{SCC} = \begin{cases}
+       \dfrac{ad-bc}{n\min(a+b,\,a+c)-(a+b)(a+c)}, & ad > bc,\\[1.2ex]
+       \dfrac{ad-bc}{(a+b)(a+c)-n\max(a-d,\,0)}, & ad \leq bc.
+       \end{cases}
+
+    The metric accumulates ``a``, ``a+b``, and ``a+c`` and derives ``d`` from
+    ``n``, so it evaluates the target exactly except that each denominator is
+    floored at ``1`` to keep degenerate counts finite:
+
+    .. math::
+
+       \mathrm{SCC} = \frac{ad-bc}{\max(D,\,1)},\qquad
+       D = \begin{cases}
+       n\min(a+b,\,a+c)-(a+b)(a+c), & ad > bc,\\
+       (a+b)(a+c)-n\max(a-d,\,0), & ad \leq bc.
+       \end{cases}
 
     .. rubric:: Example
 
@@ -30,7 +52,7 @@ class correlation(napl_base):
 
         .. rubric:: References
 
-        *Exploiting Correlation in Stochastic Circuit Design*.
+        *Exploiting Correlation in Stochastic Circuit Design*, ICCD, 2013.
     """
 
 

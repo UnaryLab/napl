@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.module import decoder, encoder
+from napl.sim.operation import decode, encode
 from napl.sim.operation import signabs_interleave
 from napl.utils._shared_test import devices, streaming_suite
 
@@ -40,9 +40,9 @@ def check_sign():
     }
     for device in devices():
         values = values_cpu.to(device)
-        enc = encoder(config).to(device)
+        enc = encode(config).to(device)
         operation = signabs_interleave({'width': 5}).to(device)
-        dec = decoder(config).to(device)
+        dec = decode(config).to(device)
         for _ in range(TIMESTEPS):
             sign, _ = operation(enc(values))
             dec(sign)

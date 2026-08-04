@@ -1,5 +1,6 @@
 import copy
 import math
+from inspect import signature
 from statistics import median
 from time import perf_counter
 from typing import Callable, Optional, Sequence, Tuple
@@ -165,6 +166,16 @@ _STREAMING_DEFAULTS = {
 }
 
 
+# Normalize apply_operation to the (operation, spikes, values) form.
+def _wrap_apply_operation(apply_operation):
+    if apply_operation is None:
+        return lambda operation, spikes, values: operation(*spikes)
+    parameters = signature(apply_operation).parameters
+    if len(parameters) >= 3:
+        return apply_operation
+    return lambda operation, spikes, values: apply_operation(operation, spikes)
+
+
 # Build codec settings for a pipeline.
 def _codec_config(polarity, timestep, dim):
     return {
@@ -209,17 +220,17 @@ def _make_pipeline(polarity, timestep, device, input_count, cfg):
     if output_polarity is None:
         output_polarity = polarity
 
-    from napl.sim.module import decoder, encoder
+    from napl.sim.operation import decode, encode
     encoders = []
     for input_polarity, dim, generator in zip(
         input_polarities, encoder_dims, encoder_generators
     ):
         codec_config = _codec_config(input_polarity, timestep, dim=dim)
         codec_config['generator'] = generator
-        encoders.append(encoder(codec_config).to(device))
+        encoders.append(encode(codec_config).to(device))
     operation = cfg['make_operation'](polarity, timestep, device).to(device)
     if cfg['make_readout'] is None:
-        dec = decoder(
+        dec = decode(
             _codec_config(output_polarity, timestep, dim=1)
         ).to(device)
     else:
@@ -237,7 +248,7 @@ def _run_pipeline(cfg, pipeline, values, timestep, check_progress,
     trace = []
     for step in range(1, timestep + 1):
         spikes = tuple(enc(value) for enc, value in zip(encoders, values))
-        spike_out = cfg['apply_operation'](operation, spikes)
+        spike_out = cfg['apply_operation'](operation, spikes, values)
         dec(spike_out)
         if check_progress:
             for module in (*encoders, operation, dec):
@@ -388,14 +399,17 @@ def streaming_suite(cfg):
     """
     Run the streaming-kernel suite (known answer, analytic fidelity, reset
     and replay, performance) over every device and supported polarity.
+
+    An ``apply_operation`` callback takes ``(operation, spikes)``, or
+    ``(operation, spikes, values)`` when the operation also consumes a raw
+    unencoded input, as ``mul_ugemm`` does for its binary-domain operand.
     """
     cfg = _check_config(
         cfg, _STREAMING_REQUIRED, _STREAMING_DEFAULTS, 'streaming suite'
     )
     if not cfg['polarities']:
         raise NotImplementedError("streaming suite config: set 'polarities'")
-    if cfg['apply_operation'] is None:
-        cfg['apply_operation'] = lambda operation, spikes: operation(*spikes)
+    cfg['apply_operation'] = _wrap_apply_operation(cfg['apply_operation'])
     _streaming_known_answer(cfg)
     _streaming_fidelity(cfg)
     _streaming_reset_replay(cfg)

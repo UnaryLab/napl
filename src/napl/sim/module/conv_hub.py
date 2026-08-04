@@ -8,11 +8,40 @@ from napl.sim.module._shared import _init_conv_params, _conv2d_binary, _build_hu
 
 
 class conv_hub(napl_base):
-    """Apply a hybrid unary-binary approximation of ``torch.nn.Conv2d``.
+    r"""Apply a hybrid unary-binary approximation of ``torch.nn.Conv2d``.
 
     Use this single-shot trainable layer when convolution products should use a
     unary multiplication lookup map while the interface remains numeric. It
     supports ``groups=1``, zero padding, and requires ``widthi == widthw``.
+
+    The precise target is
+
+    .. math::
+
+       y = \mathrm{conv2d}(x, W) + b.
+
+    Lowering to image columns makes the convolution a matrix product, so the
+    layer evaluates the :class:`linear_hub` kernel on the patches and adds the
+    bias after folding. With :math:`u` the im2col patches,
+    :math:`C = 2^{\text{width}-1}` the cycle count, and :math:`M` the
+    unary AND-count value map,
+
+    .. math::
+
+       \hat u = \mathrm{clamp}\left(
+       \left\lfloor |u\,2^{-r_i}| \right\rfloor,\, 0,\, C-1\right),\qquad
+       \hat W = \mathrm{clamp}\left(
+       \left\lfloor |W\,2^{-r_w}| \right\rfloor,\, 0,\, C-1\right),
+
+    .. math::
+
+       y = \mathrm{fold}\!\left(\left(\mathrm{sgn}(u)\left[
+       M_{\hat u \hat W}\,\mathrm{sgn}(W)\right]^{\top}\right)
+       2^{-r_o}\right) + b.
+
+    Magnitudes are truncated rather than rounded, and each product is the unary
+    AND-count instead of an exact product, so the error is bounded by the
+    unary-multiplication bound at :math:`C` cycles.
 
     .. rubric:: Example
 
@@ -88,6 +117,11 @@ class conv_hub(napl_base):
         self.mapcbsg: torch.Tensor
         self.register_buffer('mapcbsg', mapcbsg)
         _init_conv_params(self, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

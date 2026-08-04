@@ -87,7 +87,7 @@ each item must follow; read it first to see what was already planned, ported, an
 UnarySim's classes (`kernel/`, `metric/`, `stream/`) and cross-reference napl to find which have **no
 napl counterpart**. The authoritative name correspondence is the bundled-next-door
 `.claude/skills/napl-validate-unarysim/references/mapping.md` (napl <-> UnarySim names + files), since
-names differ (UnarySim `FSUMul` is napl `mul_csg`, not a missing class). A class is a real gap only if
+names differ (UnarySim `FSUMul` is napl `mul_ugemm`, not a missing class). A class is a real gap only if
 the experiment-plan, mapping.md, and a search of `src/napl/` all show no napl equivalent.
 
 ```bash
@@ -118,7 +118,7 @@ following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling
 
 - **`napl_base` subclass** taking a single `config` dict; call
   `super().__init__(config, key_list, polarity_required)` to validate required keys. Use napl naming
-  (lowercase, descriptive: `mul_csg`, `linear`, not `FSUMul`); pick a name consistent with the
+  (lowercase, descriptive: `mul_ugemm`, `linear`, not `FSUMul`); pick a name consistent with the
   existing family (a PC variant of `linear` -> `linear_pc`).
 - **Dtypes:** spike tensors are `self.stype`, non-spike `self.ntype`. NEVER use `>>`/`<<` on float
   tensors (use `pow2_lshift`/`pow2_rshift` from `utils/utils.py`).
@@ -132,7 +132,7 @@ following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling
   `forward()` methods accumulate-only and expose derived readouts through on-demand properties.
   Sources such as `encoder` and in-stream spike operations must keep returning their per-timestep
   spikes. See `src/napl/sim/metric/accuracy.py:50-75` and
-  `src/napl/sim/module/decoder.py:30-58`.
+  `src/napl/sim/operation/decoder.py:30-58`.
 - **Adapt, do not transcribe, UnarySim's state idioms.** UnarySim pre-sizes scalar buffers and updates
   in place; napl's idiom is a scalar (`torch.zeros(1)`) accumulator that **broadcasts up to the input
   shape on the first `forward()` via an out-of-place op** (`self.acc.data = self.acc.add(delta)`).
@@ -147,7 +147,7 @@ following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling
 Add `tests/<subpackage>/test_<name>.py` by copying the matching skeleton:
 `tests/template_streaming_kernel.py` for per-timestep kernels, or
 `tests/template_single_shot_trainable.py` for trainable binary-domain kernels. Fill in every TODO
-(see `tests/operation/test_mul_and.py` for streaming wiring), run on **every device** (CPU +
+(see `tests/operation/test_mul_gaines.py` for streaming wiring), run on **every device** (CPU +
 MPS/CUDA), and check the correctness and performance gates in `RULE_SIM.md`, with an
 `if __name__ == '__main__'` entry point. Add the new correspondence to
 `.claude/skills/napl-validate-unarysim/references/mapping.md` so future validations find it.
@@ -178,7 +178,7 @@ result, and (if skipped/failed) why. Confirm the recorded row.
 
 ## Rules
 
-- **Port the math, not the names.** napl names are lowercase and descriptive (`mul_csg`, not
+- **Port the math, not the names.** napl names are lowercase and descriptive (`mul_ugemm`, not
   `FSUMul`); match the existing family's naming so the new class reads like its siblings.
 - **Different names are not missing classes.** Check mapping.md before declaring a gap; most UnarySim
   classes are already ported under a napl name.
@@ -204,7 +204,7 @@ result, and (if skipped/failed) why. Confirm the recorded row.
   the float-shift/lazy-import gotchas) the port must follow.
 - `tests/template_streaming_kernel.py` - the copy-paste skeleton for per-timestep kernels.
 - `tests/template_single_shot_trainable.py` - the copy-paste skeleton for trainable binary-domain kernels.
-- `tests/operation/test_mul_and.py` - the canonical worked example for a streaming operation.
+- `tests/operation/test_mul_gaines.py` - the canonical worked example for a streaming operation.
 - `/Users/diwu/Projects/UnarySim` - the local clone (read-only source); its `test/` dir shows the
   canonical wiring per class.
 - `.claude/skills/napl-gen-rtl/SKILL.md` - sibling generator (napl -> Verilog), same generate/validate

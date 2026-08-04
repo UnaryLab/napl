@@ -5,11 +5,37 @@ from napl.sim.base import hw_params, napl_base
 
 
 class signabs_interleave(napl_base):
-    """
+    r"""
     Split bipolar rate-coded spikes into sign and interleaved magnitude streams.
 
     Use this streaming counter-based kernel when the magnitude stream should be
     derived from alternating counter parity rather than directly from each input bit.
+
+    The precise target splits a bipolar value :math:`v` into its sign and
+    magnitude, so that the returned streams decode to
+
+    .. math::
+
+       \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
+       \mathrm{magnitude} = |v|.
+
+    The kernel runs the same saturating counter as :class:`signabs`, of width
+    :math:`w`, but takes the magnitude from the counter's parity rather than
+    from the current input spike,
+
+    .. math::
+
+       a_t = \mathrm{clamp}\!\left(a_{t-1} + 2 s_t - 1,\; 0,\; 2^{w}-1\right),
+       \qquad a_0 = 2^{w-1},
+
+    .. math::
+
+       \mathrm{sign}_t = \mathbf{1}\{a_t < 2^{w-1}\},\qquad
+       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus (a_t \bmod 2).
+
+    Reading the parity interleaves the magnitude spikes across timesteps, which
+    decorrelates them from the input stream at the cost of tracking a changing
+    input more slowly.
 
     .. rubric:: Example
 
@@ -47,13 +73,18 @@ class signabs_interleave(napl_base):
         self.acc_max = 2**self.width - 1
         #: Half-scale accumulator value that represents bipolar zero.
         self.acc_half = 2 ** (self.width - 1)
-        #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
         #: Running bipolar input count used to interleave sign and magnitude spikes.
         self.acc: torch.Tensor
         self.register_buffer('acc',
             torch.full((1,), self.acc_half, dtype=self.ntype),
         )
+        #: Hardware latency and timing metadata for the combinational outputs.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

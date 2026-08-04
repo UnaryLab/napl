@@ -8,11 +8,11 @@ table this parser extracts the key column(s) from deterministically.
 
 Output (stdout) is a single JSON object:
     {
-      "validated":    ["operation.mul_and", ...],   # napl-validate-unarysim-report.md  col "napl module"
-      "rtl_verified": ["mul_and", ...],              # napl-gen-rtl-report.md  rows Status=verified
+      "validated":    ["operation.mul_gaines", ...],   # napl-validate-unarysim-report.md  col "napl module"
+      "rtl_verified": ["mul_gaines", ...],              # napl-gen-rtl-report.md  rows Status=verified
       "rtl_skipped":  ["wta", ...],                  # napl-gen-rtl-report.md  rows Status=skipped
       "rtl_failed":   [...],                          # napl-gen-rtl-report.md  rows Status=failed
-      "improved":     {"src/napl/sim/operation/mul_and.py": "<git-hash>", ...}  # napl-opt-sim-report.md Source->Hash
+      "improved":     {"src/napl/sim/operation/mul_gaines.py": "<git-hash>", ...}  # napl-opt-sim-report.md Source->Hash
     }
 
 Missing report files yield empty collections (a fresh project has none).

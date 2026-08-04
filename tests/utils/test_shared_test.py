@@ -136,12 +136,12 @@ def test_benchmark():
         )
 
 
-def _mul_and_operation(polarity, timestep, device):
-    from napl.sim.operation import mul_and
-    return mul_and({'polarity': polarity})
+def _mul_gaines_operation(polarity, timestep, device):
+    from napl.sim.operation import mul_gaines
+    return mul_gaines({'polarity': polarity})
 
 
-def _mul_and_values(polarity):
+def _mul_gaines_values(polarity):
     from napl.utils import gen_rand_tensor
     return (
         gen_rand_tensor(polarity, shape=(128,), width=6),
@@ -149,17 +149,17 @@ def _mul_and_values(polarity):
     )
 
 
-def _mul_and_performance_values(polarity):
+def _mul_gaines_performance_values(polarity):
     low = -1.0 if polarity == 'bipolar' else 0.0
     values = torch.linspace(low, 1.0, 131072)
     return values, values.roll(17)
 
 
-def _mul_and_reference(values, polarity):
+def _mul_gaines_reference(values, polarity):
     return values[0] * values[1]
 
 
-def _mul_and_known_answer(polarity):
+def _mul_gaines_known_answer(polarity):
     # Both polarities encode 1.0 as all ones, so the product is exact.
     return (torch.tensor([1.0]), torch.tensor([1.0])), torch.tensor([1.0]), 0.0
 
@@ -169,11 +169,11 @@ def test_streaming_suite():
     streaming_suite({
         'polarities': ('unipolar', 'bipolar'),
         'tolerance_scale': 1.0,
-        'make_operation': _mul_and_operation,
-        'make_values': _mul_and_values,
-        'make_performance_values': _mul_and_performance_values,
-        'analytic_reference': _mul_and_reference,
-        'known_answer_case': _mul_and_known_answer,
+        'make_operation': _mul_gaines_operation,
+        'make_values': _mul_gaines_values,
+        'make_performance_values': _mul_gaines_performance_values,
+        'analytic_reference': _mul_gaines_reference,
+        'known_answer_case': _mul_gaines_known_answer,
         'timesteps': 64,
         'warmup_runs': 1,
         'trials': 3,

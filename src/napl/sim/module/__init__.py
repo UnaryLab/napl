@@ -1,5 +1,3 @@
-from .decoder import *
-from .encoder import *
 from .linear import *
 from .linear_pc import *
 from .linear_fxp import *
@@ -18,8 +16,6 @@ from .wta import *
 from .linear_ugemm import *
 from .linear_gaines1 import *
 from .linear_gaines2 import *
-from .linear_gaines3 import *
-from .linear_gaines4 import *
 from .conv_ugemm import *
 from .avgpool2d import *
 from .mgu_hardnua import *

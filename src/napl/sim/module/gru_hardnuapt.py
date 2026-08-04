@@ -8,13 +8,39 @@ from napl.sim.base import napl_base
 
 
 class gru_hardnuapt(napl_base):
-    """Apply a PyTorch-layout GRU cell with optional hard activations.
+    r"""Apply a PyTorch-layout GRU cell with optional hard activations.
 
     Use this single-shot cell to match UnarySim ``HardGRUCellNUAPT`` while keeping
     the standard three-chunk ``GRUCell`` parameter layout. In the binary domain,
     it replaces sigmoid with scaled hard sigmoid and tanh with hard tanh.
     Intermediate values are not bounded to the legal unary range. The cell is
     single-shot and trainable.
+
+    The precise target is the GRU recurrence in the PyTorch three-chunk layout,
+    with :math:`g^i = W_{ih} x + b_{ih}` and :math:`g^h = W_{hh} h + b_{hh}` each
+    split into reset, update, and new thirds,
+
+    .. math::
+
+       r = \sigma\!\left(g^i_r + g^h_r\right),\qquad
+       z = \sigma\!\left(g^i_z + g^h_z\right),\qquad
+       n = \tanh\!\left(g^i_n + r \odot g^h_n\right),
+
+    .. math::
+
+       h' = (1 - z) \odot n + z \odot h.
+
+    The cell evaluates that recurrence exactly, substituting the hard
+    activations,
+
+    .. math::
+
+       \sigma_h(v) = \mathrm{clip}\!\left(\frac{v}{2} + \frac{1}{2},\, 0,\, 1
+       \right),\qquad
+       \tanh_h(v) = \mathrm{clamp}(v, -1, 1),
+
+    when **hard** is ``True``, and the exact ``Sigmoid`` and ``Tanh`` otherwise.
+    No stage carries a range clamp, so :math:`h'` may leave ``[-1, 1]``.
 
     .. rubric:: Example
 
@@ -76,6 +102,11 @@ class gru_hardnuapt(napl_base):
         for w in [self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh]:
             if w is not None:
                 w.data = truncated_normal(w, 0.0, stdv)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from napl.utils._shared_test import devices, single_shot_suite, timer
-from napl.sim.module.mgu_hardpt import mgu_hardpt
+from napl.sim.module import mgu_hardpt
 
 
 def _ref_mgu_pt(x, hx, Wih, bih, Whh, bhh):

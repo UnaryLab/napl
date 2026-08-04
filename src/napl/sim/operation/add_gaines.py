@@ -2,7 +2,7 @@ import torch
 import math
 
 from napl.sim.base import napl_base, hw_params
-from napl.sim.module import gen_num_seq
+from napl.sim.operation import encode
 from loguru import logger
 
 
@@ -13,6 +13,34 @@ class add_gaines(napl_base):
     Use scaled mode to estimate the mean of a power-of-two number of unipolar
     or bipolar streams. Use non-scaled mode for an OR-based approximation to a
     small unipolar sum.
+
+    The precise target reductions are
+
+    .. math::
+
+       y_{\\mathrm{scaled}} = \\frac{1}{n}\\sum_i x_i,\\qquad
+       y_{\\mathrm{non-scaled}} = \\min\\left(1,\\sum_i x_i\\right).
+
+    Scaled addition quantizes the number sequence into an input index rather than
+    comparing a value against it, so a :class:`napl.encode` instance supplies the
+    sequence at construction and is not retained. The selection position is held
+    locally.
+
+    In scaled mode, with ``entry`` inputs and the configured number sequence
+    ``G_t``, the exact selected-input reduction is
+
+    .. math::
+
+       j_t = \\lfloor \\mathit{entry} G_t \\rfloor, \\qquad
+       y_t = x_{j_t,t}.
+
+    In non-scaled mode the exact unipolar reduction is
+
+    .. math::
+
+       y_t = \\max_i x_{i,t}.
+
+    Non-scaled bipolar input is not supported.
 
     .. rubric:: Example
 
@@ -29,7 +57,7 @@ class add_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, 1969.
+        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
     """
 
 
@@ -62,8 +90,6 @@ class add_gaines(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
-        #: Hardware latency and timing metadata for the Gaines adder.
-        self.hw = hw_params(pp_delay=0)
 
         #: Whether addition uses MUX-based averaging instead of an OR reduction.
         self.scaled = config['scaled']
@@ -77,12 +103,26 @@ class add_gaines(napl_base):
             self.entry = config['entry']
             assert math.log2(self.entry) == math.ceil(math.log2(self.entry)), \
                 logger.error(f'Input entry <{self.entry}> is not a power of 2.')
-            config['width'] = int(math.log2(self.entry))
+            # The encoder supplies the sequence once and is not retained.
+            reference_encode = encode({'polarity': 'unipolar',
+                                       'timestep': self.entry,
+                                       'generator': config['generator'],
+                                       'dim': config.get('dim', 1),
+                                       'seed': config.get('seed', None),
+                                       'taps': config.get('taps', None)})
             # Python scalar indices avoid device synchronization on each timestep.
             #: Periodic input indices selected by the configured number sequence.
-            self.sel_seq = torch.floor(gen_num_seq(config).mul(self.entry)).type(torch.long).tolist()
+            self.sel_seq = torch.floor(
+                reference_encode.num_seq.mul(self.entry)).type(torch.long).tolist()
             #: Current position in :attr:`sel_seq`, advanced after each scaled call.
             self.idx = 0
+        #: Hardware latency and timing metadata for the Gaines adder.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

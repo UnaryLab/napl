@@ -4,12 +4,17 @@ from napl.sim.base import napl_base
 
 
 class tanh_hub(napl_base):
-    """
+    r"""
     Apply hard tanh in the binary domain.
 
-    This single-shot kernel clips values to ``[-1, 1]`` with
-    :func:`torch.nn.functional.hardtanh`. Use it for bounded binary-domain
-    training or inference.
+    The single-shot forward operation is
+
+    .. math::
+
+       y = \operatorname{clip}(x,-1,1)
+       = \min(\max(x,-1),1).
+
+    This is the bounded binary-domain hard-tanh operation.
 
     .. rubric:: Example
 
@@ -41,6 +46,11 @@ class tanh_hub(napl_base):
         super().__init__(config, [])
         #: Modeled scalar latency of the single-shot hard tanh.
         self.delay = 0
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

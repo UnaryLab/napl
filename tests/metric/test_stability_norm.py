@@ -6,8 +6,8 @@ identical result. Performance is compared with the same metric on CPU.
 """
 import torch
 
-from napl.sim.metric.stability_norm import stability_norm
-from napl.sim.module import encoder
+from napl.sim.metric import stability_norm
+from napl.sim.operation import encode
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import benchmark, devices, timer
 
@@ -22,7 +22,7 @@ def run_stability_norm(val, device, timestep, modules=None):
             'dim': 1,
         }
         modules = (
-            encoder(cfg).to(device),
+            encode(cfg).to(device),
             stability_norm(
                 val.cpu(), {'polarity': 'bipolar', 'threshold': 0.05}
             ).to(device),

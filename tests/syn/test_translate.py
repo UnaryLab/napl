@@ -35,11 +35,11 @@ def test_polarity_variant_and_derived_parameter():
 def test_graph_translation_preserves_order():
     """Translate graph nodes in their supplied order."""
     bindings = translate_graph([
-        {"name": "a", "class": "mul_and", "config": {"polarity": "unipolar"}},
+        {"name": "a", "class": "mul_gaines", "config": {"polarity": "unipolar"}},
         {"name": "b", "class": "relu_sat", "config": {}},
     ])
     assert [binding.name for binding in bindings] == ["a", "b"]
-    assert [binding.rtl_module for binding in bindings] == ["mul_and_unipolar", "relu_sat"]
+    assert [binding.rtl_module for binding in bindings] == ["mul_gaines_unipolar", "relu_sat"]
 
 
 def test_missing_rtl_mapping_names_class():
@@ -63,7 +63,7 @@ def test_bindings_match_rtl_module_headers():
         },
         {"class": "shiftreg", "config": {"depth": 4}},
         {"class": "div_cordiv", "config": {"depth": 8}},
-        {"class": "mul_and", "config": {"polarity": "unipolar"}},
+        {"class": "mul_gaines", "config": {"polarity": "unipolar"}},
         {"class": "relu_sat", "config": {}},
         {"class": "sync_skewed_int", "config": {"width": 4}},
         {"class": "jkff", "config": {}},

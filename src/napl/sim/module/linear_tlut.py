@@ -13,7 +13,7 @@ from napl.sim.module._shared import (
 
 
 class linear_tlut(napl_base):
-    """Apply a temporal-LUT approximation of ``torch.nn.Linear``.
+    r"""Apply a temporal-LUT approximation of ``torch.nn.Linear``.
 
     Use this single-shot trainable layer to decompose either the input or weight
     into temporal digits while retaining a numeric interface. The chosen operand
@@ -22,6 +22,41 @@ class linear_tlut(napl_base):
     ``(formati, formatw)`` pair selects ``fxpfxp``, ``fxpfp``, or ``fpfp`` mode.
     The layer is single-shot, trains through a straight-through estimator, and
     approximates ``nn.Linear`` within the temporal-decomposition bound.
+
+    The precise target is the affine map
+
+    .. math::
+
+       y = x W^{\top} + b.
+
+    The selected operand is replaced by its temporal decomposition
+    :math:`D(\cdot)`, which peels ``degree`` digits of ``widtht`` bits and
+    clamps each to the run cycle range :math:`[-c+1,\, c-1]`,
+
+    .. math::
+
+       m_k = \mathrm{trunc}\!\left(m_{k-1} 2^{-w_t}\right),\qquad
+       f_k = \mathrm{clamp}\!\left(
+       2^{w_t}\,\mathrm{frac}\!\left(m_{k-1} 2^{-w_t}\right),\,
+       -c+1,\; c-1\right),
+
+    .. math::
+
+       D(m) = \sum_{k=1}^{\text{degree}} f_k\, 2^{-(\text{degree}-k+1) w_t},
+       \qquad m_0 = m.
+
+    In ``fxpfxp`` and ``fxpfp`` mode the source is first truncated to fixed
+    point, and the decomposition is rescaled by
+    :math:`2^{\,\delta + \text{width} + r}` with :math:`r` its dynamic shift; in
+    ``fpfp`` mode the mantissa from :math:`\mathrm{frexp}` is decomposed and
+    recomposed with :math:`\mathrm{ldexp}`. The layer then evaluates the target
+    on the substituted operand,
+
+    .. math::
+
+       y = \tilde x \tilde W^{\top} + b,
+
+    so the error is the discarded low-order digits plus the per-digit clamp.
 
     .. rubric:: Example
 
@@ -144,6 +179,11 @@ class linear_tlut(napl_base):
         self.delta = int(self.degree * self.widtht - self.width)
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

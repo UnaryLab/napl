@@ -2,14 +2,39 @@ import torch
 
 from loguru import logger
 from napl.sim.base import hw_params, napl_base
+from napl.sim.operation import encode
 
 
 class relu_tc(napl_base):
-    """
+    r"""
     Apply ReLU to a bipolar temporal-coded stream.
 
-    Use this streaming kernel with temporal 0/1 codes whose configured width
-    determines the half-scale phase boundary.
+    The precise target operation is
+
+    .. math::
+
+       y = \max(x,0).
+
+    Because :math:`\max(x,0)` is the temporal maximum of the input against a
+    stream carrying the value zero, the kernel generates that zero reference
+    internally and ORs it with the input, which is the comparison
+    :class:`napl.max_tc` performs on two supplied streams.
+
+    A composed :class:`napl.encode` instance supplies the reference stream: it
+    encodes a constant bipolar zero over the temporal number sequence q of
+    length L = 2**width, selecting the entry for timestep t itself. A bipolar
+    zero encodes to probability 1/2, so the exact output is
+
+    .. math::
+
+       \begin{aligned}
+       r_t &= \mathbf{1}\{\tfrac{1}{2} > q_{(t-1)\bmod L}\},\\
+       y_t &= x_t \mathbin{\lor} r_t.
+       \end{aligned}
+
+    The descending temporal sequence makes the reference rise at the midpoint
+    cycle, so an input rising earlier than the midpoint passes through
+    unchanged and an input rising later is replaced by zero.
 
     .. rubric:: Example
 
@@ -43,31 +68,39 @@ class relu_tc(napl_base):
         assert isinstance(self.width, int) and self.width > 0, logger.error(
             f'Invalid width: <{self.width}>; legal values: a positive integer.'
         )
-        #: Midpoint cycle that separates the two temporal output phases.
-        self.threshold = 2 ** (self.width - 1)
+        #: Temporal codeword length in cycles.
+        self.len = 2 ** self.width
+        #: Reference-stream source; encodes the bipolar zero as a temporal code.
+        self.reference_encode = encode({
+            'polarity': 'bipolar',
+            'timestep': self.len,
+            'generator': 'temporal',
+        })
         #: Hardware latency and timing metadata for the combinational output path.
         self.hw = hw_params(pp_delay=0)
-        #: Running sum of input bits in the current temporal codeword.
-        self.acc: torch.Tensor
-        self.register_buffer('acc', torch.zeros(1, dtype=self.ntype))
-        #: Number of temporal-code bits processed since reset.
-        self.cycle = 0
+
+        self.encoding_io = {'input': 'tc', 'output': 'tc'}
+        self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
         """
-        Clear the temporal accumulator and restart the local cycle counter.
+        Reset local state; this kernel holds none.
+
+        The reference stream position lives in the composed encoder, which
+        ``reset()`` restarts separately.
         """
-        self.acc.resize_(1).zero_()
-        self.cycle = 0
+        pass
 
 
     def forward(self, input: torch.Tensor):
         """
         Process one timestep of a bipolar temporal code.
 
-        The call increments the local cycle, accumulates ``input``, and emits
-        the phase-dependent ReLU bit.
+        The call reads one reference bit from the composed encoder and ORs it
+        with ``input``.
 
         Args:
             input: Tensor of current 0/1 temporal-code bits.
@@ -81,17 +114,6 @@ class relu_tc(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        self.cycle += 1
-        if self.acc.shape == input.shape:
-            self.acc.add_(input)
-        else:
-            updated = self.acc.add(input)
-            self.acc.resize_as_(updated).copy_(updated.detach())
-
-        if self.cycle <= self.threshold:
-            output = torch.le(self.acc, self.cycle)
-        else:
-            output = torch.gt(self.acc, self.threshold) & input.type(
-                torch.bool
-            )
+        reference_encode_bit = self.reference_encode(input.new_zeros(1))
+        output = input.type(torch.int8) | reference_encode_bit.type(torch.int8)
         return output.type(self.stype)

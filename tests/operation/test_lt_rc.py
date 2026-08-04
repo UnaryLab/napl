@@ -5,7 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
+from napl.sim.operation import encode, decode
 from napl.sim.operation import lt_rc
 from napl.sim.metric import accuracy
 
@@ -13,9 +13,9 @@ from napl.sim.metric import accuracy
 class napl_lt_rc(napl_base):
     def __init__(self, codec_config1, codec_config2, codec_config3, lt_rc_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder = decoder(codec_config3)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder = decode(codec_config3)
         self.lt_rc = lt_rc(lt_rc_config)
         self.accuracy = accuracy({'polarity': codec_config3['polarity']})
 

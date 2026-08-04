@@ -4,12 +4,24 @@ from napl.sim.base import napl_base, hw_params
 
 
 class sync_skewed(napl_base):
-    """
+    r"""
     Correlate two unipolar streams with skewed synchronization.
 
-    Use this stateful synchronizer before correlation-based operations when the
-    first stream's represented value does not exceed the second's. It retimes
-    the first stream while passing the second stream through unchanged.
+    Let x_1 and x_2 be the current spikes, c the stored skew count,
+    M = 2**width-1, and c_{-1}=0. Define
+
+    .. math::
+
+       \begin{aligned}
+       d_t &= x_{1,t}-x_{2,t},\qquad m_t=|d_t|,\\
+       s_t &= \mathbf{1}\{c_{t-1}\ne0\}
+       -\bigl(\mathbf{1}\{c_{t-1}\ne0\}
+       +\mathbf{1}\{c_{t-1}\ne M\}\bigr)x_{1,t},\\
+       y_{1,t} &= x_{1,t}+m_t s_t,\qquad y_{2,t}=x_{2,t},\\
+       c_t &= \operatorname{clip}(c_{t-1}+d_t,0,M).
+       \end{aligned}
+
+    The first stream is retimed while the second stream passes through.
 
     .. rubric:: Example
 
@@ -26,9 +38,9 @@ class sync_skewed(napl_base):
 
         .. rubric:: References
 
-        *In-Stream Stochastic Division and Square Root via Correlation*.
+        *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
     """
 
 
@@ -51,8 +63,6 @@ class sync_skewed(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], polarity_required=False)
-        #: Hardware latency and timing metadata for the combinational synchronizer.
-        self.hw = hw_params(pp_delay=0)
 
         #: Width of the stored stream-skew counter in bits.
         self.width=config['width']
@@ -63,6 +73,13 @@ class sync_skewed(napl_base):
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
         #: Whether :attr:`cnt` must be expanded for the first input shape.
         self.is_first_call = True
+        #: Hardware latency and timing metadata for the combinational synchronizer.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input_1': 'rc', 'input_2': 'rc', 'output_1': 'rc'}
+        self.polarity_io = {'input_1': 'unipolar', 'input_2': 'unipolar', 'output_1': 'unipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

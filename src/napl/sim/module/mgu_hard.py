@@ -9,11 +9,41 @@ from napl.sim.module._shared import _init_mgu_params
 
 
 class mgu_hard(napl_base):
-    """Apply a trainable single-shot MGU cell with bounded hard activations.
+    r"""Apply a trainable single-shot MGU cell with bounded hard activations.
 
     Use this binary-domain cell when intermediate and output values must remain in
     the legal unary range. It uses hard sigmoid and hard tanh by default and does
     not advance the streaming timestep.
+
+    The precise target is the Minimal Gated Unit recurrence
+
+    .. math::
+
+       f = \sigma\!\left(W_f [h, x] + b_f\right),\qquad
+       n = \tanh\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = (1 - f) \odot n + f \odot h.
+
+    The cell evaluates that recurrence with hard activations and an added clamp
+    on the forget-gate linear and on the output, keeping every intermediate value
+    in ``[-1, 1]``,
+
+    .. math::
+
+       f = \sigma_h\!\left(\mathrm{clamp}\left(
+       W_f [h, x] + b_f,\, -1,\, 1\right)\right),\qquad
+       n = \tanh_h\!\left(W_n [f \odot h, x] + b_n\right),
+
+    .. math::
+
+       h' = \mathrm{clamp}\!\left(n - f \odot n + f \odot h,\, -1,\, 1\right),
+
+    where :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)` and
+    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)` when **hard** is ``True``, and
+    the exact ``Sigmoid`` and ``Tanh`` otherwise. The hard activations and the
+    clamps are the only departures from the target.
 
     .. rubric:: Example
 
@@ -64,6 +94,11 @@ class mgu_hard(napl_base):
         #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -4,12 +4,17 @@ from napl.sim.base import napl_base
 
 
 class relu_hub(napl_base):
-    """
+    r"""
     Apply a bounded ReLU in the binary domain.
 
-    This single-shot kernel clips values to ``[0, scale]`` with
-    :func:`torch.nn.functional.hardtanh`. Use it for binary-domain training or
-    inference when the activation ceiling must be explicit.
+    The single-shot forward operation is
+
+    .. math::
+
+       y = \operatorname{clip}(x,0,scale)
+       = \min(\max(x,0),scale).
+
+    This is the binary-domain bounded ReLU.
 
     .. rubric:: Example
 
@@ -46,6 +51,11 @@ class relu_hub(napl_base):
         super().__init__(config, [])
         #: Upper bound applied to the clipped output tensor.
         self.scale = config.get('scale', 1.0)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

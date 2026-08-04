@@ -6,7 +6,7 @@ from loguru import logger
 
 
 class linear(napl_base):
-    """Apply a rate-coded unary fully connected layer one timestep at a time.
+    r"""Apply a rate-coded unary fully connected layer one timestep at a time.
 
     Use this layer when inputs are already spike tensors and weights should be
     encoded on a separate number-sequence dimension. It computes ``W x + b`` bit by bit.
@@ -17,6 +17,28 @@ class linear(napl_base):
     product divided by ``scale``, which defaults to
     ``in_features + has_bias``, so it represents ``(W x + b) / scale`` within
     the unary range.
+
+    The precise target is the scaled affine map
+
+    .. math::
+
+       y = \frac{Wx + b}{s}.
+
+    Let :math:`x_t` be the input spike vector, :math:`w_t` the weight spikes
+    encoded on the separate RNG dimension, :math:`b_t` the bias spike, and
+    :math:`n` the fan-in. The layer forms the per-timestep parallel count
+
+    .. math::
+
+       c_t = \begin{cases}
+       x_t w_t^{\top} + b_t, & \text{unipolar},\\
+       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
+       & \text{bipolar},
+       \end{cases}
+
+    and emits :math:`y_t = \mathrm{add\_any}(c_t;\, s)`, the scaled unary adder
+    with **scale** :math:`s`. The output rate approaches the target within the
+    stochastic-computing error of the encoded operand streams.
 
     .. rubric:: Example
 
@@ -31,7 +53,7 @@ class linear(napl_base):
 
     References
     ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*.
+    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -72,7 +94,7 @@ class linear(napl_base):
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # These imports stay local to avoid the module-operation import cycle.
         from napl.sim.operation import add_any
-        from napl.sim.module.encoder import encoder
+        from napl.sim.operation.encode import encode
 
         assert weight.dim() == 2, logger.error(f'linear weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
         #: Trainable numeric weight encoded into a spike stream.
@@ -106,15 +128,20 @@ class linear(napl_base):
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
         #: Encoder that converts the numeric weight to spikes.
-        self.w_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+        self.w_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
         #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': config.get('width', 12)})
 
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
-            self.b_encoder = encoder({'polarity': self.polarity, 'timestep': config['timestep'],
+            self.b_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

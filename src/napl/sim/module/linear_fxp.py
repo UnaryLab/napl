@@ -8,13 +8,48 @@ from napl.sim.module._shared import _init_linear_params, _linear_fxp_fn
 
 
 class linear_fxp(napl_base):
-    """Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
+    r"""Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
 
     Use this single-shot layer for quantization-aware evaluation or training. It dynamically scales input and weight
     to ``widthi``- and ``widthw``-bit fixed point through ``rshift_offset``,
     multiplies them, then restores the output scale. It is single-shot, trains
     through a straight-through estimator, and approximates ``nn.Linear`` within
     the quantization bound.
+
+    The precise target is the affine map
+
+    .. math::
+
+       y = x W^{\top} + b.
+
+    Let :math:`M_i` and :math:`M_w` be the quantile-clipped operand magnitudes.
+    ``rshift_offset`` derives the dynamic shifts
+
+    .. math::
+
+       r_i = \langle \log_2 M_i \rangle - (\text{widthi}-1),\qquad
+       r_w = \langle \log_2 M_w \rangle - (\text{widthw}-1),
+
+    where :math:`\langle\cdot\rangle` applies the configured **rounding** and a
+    zero magnitude maps to a zero offset. With
+    :math:`A_i = 2^{\text{widthi}-1}` and :math:`A_w = 2^{\text{widthw}-1}`, the
+    layer evaluates
+
+    .. math::
+
+       \hat x = \mathrm{clamp}\left(
+       \left[x\,2^{-r_i}\right],\, -A_i,\, A_i - 1\right),\qquad
+       \hat W = \mathrm{clamp}\left(
+       \left[W\,2^{-r_w}\right],\, -A_w,\, A_w - 1\right),
+
+    .. math::
+
+       y = \left(\hat x \hat W^{\top}\right) 2^{-r_o} + b,\qquad
+       r_o = -r_i - r_w,
+
+    where :math:`[\cdot]` rounds to the nearest integer. The rounding and clamp
+    are the only departures from the target, so the error is bounded by the
+    fixed-point quantization step.
 
     .. rubric:: Example
 
@@ -80,6 +115,11 @@ class linear_fxp(napl_base):
         #: Largest weight magnitude represented by the quantized kernel.
         self.max_abs_w = 2 ** (self.widthw - 1)
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

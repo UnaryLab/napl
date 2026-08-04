@@ -4,11 +4,26 @@ from napl.sim.base import napl_base, hw_params
 
 
 class tanh_pn(napl_base):
-    """
-    Approximate ``tanh(N * x / 2)`` with an ``N``-state FSM.
+    r"""
+    Compute a bipolar tanh FSM with a saturating counter.
 
-    Here ``N = 2**depth``. Use this streaming kernel with bipolar rate-coded
-    input when a saturating-counter tanh implementation is desired.
+    The precise target operation is
+
+    .. math::
+
+       f(x) = \tanh\left(\frac{N x}{2}\right),\qquad N=2^{depth}.
+
+    Let N = 2**depth, H = 2**(depth-1), and M = N-1. With a_0 = H, the
+    output uses the pre-update counter state:
+
+    .. math::
+
+       \begin{aligned}
+       y_t &= \mathbf{1}\{a_t\geq H\},\\
+       a_{t+1} &= \operatorname{clip}(a_t+2x_t-1,0,M).
+       \end{aligned}
+
+    The input and output are bipolar 0/1 rate-coded streams.
 
     .. rubric:: Example
 
@@ -24,7 +39,7 @@ class tanh_pn(napl_base):
 
         .. rubric:: References
 
-        B. D. Brown and H. C. Card, *Stochastic neural computation I: Computational elements*.
+        B. D. Brown and H. C. Card, *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
     """
 
 
@@ -47,8 +62,6 @@ class tanh_pn(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, ['depth'], polarity_required=False)
-        #: Hardware latency and timing metadata for the registered tanh output.
-        self.hw = hw_params(pp_delay=1)
 
         #: Width of the saturating tanh state counter in bits.
         self.depth = config['depth']
@@ -61,6 +74,13 @@ class tanh_pn(napl_base):
         #: Saturating state counter that drives the bipolar tanh output.
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
+        #: Hardware latency and timing metadata for the registered tanh output.
+        self.hw = hw_params(pp_delay=1)
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -7,12 +7,12 @@ from loguru import logger
 
 
 class conv_ugemm(napl_base):
-    """Apply streaming unary convolution with conditional spike generation.
+    r"""Apply streaming unary convolution with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
     free-running weight encoder used by :class:`conv`. It provides uGEMM-style
     conditional spike generation. Each weight-stream index advances when its
-    input spike is ``1``, following the ``mul_csg`` rule, so products are
+    input spike is ``1``, following the ``mul_ugemm`` rule, so products are
     input-driven. Per timestep, image-column input spikes gate the weight bits;
     bipolar mode adds the input-``0`` inverse path. A scaled unary adder emits
     the output spike and the decoded output represents
@@ -22,6 +22,35 @@ class conv_ugemm(napl_base):
     rate-``0.5`` stream, unlike :class:`conv`'s decorrelated pad
     encoder). It is rate-coded, supports ``groups=1`` and zero padding, and
     implements only the scaled UnarySim ``FSUConv2duGEMM`` mode.
+
+    The precise target is the scaled convolution
+
+    .. math::
+
+       y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
+
+    Let :math:`p_k` be the encoded weight probability, :math:`u_{k,t}` the im2col
+    patch spikes, and :math:`q` the number sequence. Each weight keeps its own
+    index, advanced only by the matching input spike,
+
+    .. math::
+
+       k_{t} = \sum_{\tau < t} u_{\tau},\qquad
+       \hat w_{t} = \mathbf{1}\{p > q_{k_{t}}\},
+
+    and the per-timestep sum is
+
+    .. math::
+
+       c_t = \sum_k \hat w_{k,t}\, u_{k,t} + b_t
+       + \underbrace{\sum_k \mathbf{1}\{p_k \leq q_{k^{0}_{t}}\}
+       (1 - u_{k,t})}_{\text{bipolar only}},
+
+    where the input-``0`` path keeps a second index advanced by
+    :math:`1 - u_{k,t}`. The output is
+    :math:`y_t = \mathrm{add\_any}(c_t;\, s)`. In the code both paths are gated
+    by shifting the compared threshold by :math:`\pm 2`, which is equivalent to
+    masking the inactive lanes.
 
     .. rubric:: Example
 
@@ -37,8 +66,11 @@ class conv_ugemm(napl_base):
 
     References
     ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*.
+    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Encoding advances conditionally on data, so the RTL counterpart holds
+    #: its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
@@ -67,7 +99,7 @@ class conv_ugemm(napl_base):
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
         # These imports stay local to avoid the module-operation import cycle.
         from napl.sim.operation import add_any
-        from napl.sim.module.encoder import gen_num_seq
+        from napl.sim.operation.encode import gen_num_seq
 
         assert weight.dim() == 4, logger.error(
             f'conv_ugemm weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
@@ -139,6 +171,11 @@ class conv_ugemm(napl_base):
         #: Streaming unary adder that reduces each convolution product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
         self._im2col_key = None
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):

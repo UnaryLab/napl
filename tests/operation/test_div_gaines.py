@@ -4,18 +4,17 @@ import math
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import encoder, decoder
-# div_gaines is not exported from operation/__init__.py.
-from napl.sim.operation.div_gaines import div_gaines
+from napl.sim.operation import encode, decode
+from napl.sim.operation import div_gaines
 from napl.sim.metric import accuracy
 
 
 class napl_div_gaines(napl_base):
     def __init__(self, codec_config1, codec_config2, div_gaines_config):
         super().__init__()
-        self.encoder0 = encoder(codec_config1)
-        self.encoder1 = encoder(codec_config2)
-        self.decoder = decoder(codec_config1)
+        self.encoder0 = encode(codec_config1)
+        self.encoder1 = encode(codec_config2)
+        self.decoder = decode(codec_config1)
         self.accuracy = accuracy({'polarity': codec_config1['polarity']})
         self.div_gaines = div_gaines(div_gaines_config)
 
@@ -46,7 +45,7 @@ def run_div_gaines(device, polarity, quotient_cpu, divisor_cpu):
     }
     div_gaines_config={
         'polarity': polarity,
-        'depth': 5,
+        'width': 5,
         'generator': 'sobol',
         'dim': 3,
     }
@@ -71,7 +70,7 @@ def run_div_gaines(device, polarity, quotient_cpu, divisor_cpu):
     assert div_gaines_inst.div_gaines.timestep_cur == timestep
     div_gaines_inst.reset()
     assert div_gaines_inst.div_gaines.timestep_cur == 0
-    assert div_gaines_inst.div_gaines.idx == 0
+    assert div_gaines_inst.div_gaines.reference_encode.timestep_cur == 0
 
 
 def _kernel_specific_checks():
@@ -105,7 +104,7 @@ def _kernel_specific_checks():
 def make_operation(polarity, _timestep, _device):
     return div_gaines({
         'polarity': polarity,
-        'depth': 5,
+        'width': 5,
         'generator': 'sobol',
         'dim': 3,
     })

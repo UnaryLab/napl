@@ -8,7 +8,7 @@ from napl.sim.module._shared import _init_linear_params, _build_hub_map, _linear
 
 
 class linear_hub(napl_base):
-    """Apply a hybrid unary-binary approximation of ``torch.nn.Linear``.
+    r"""Apply a hybrid unary-binary approximation of ``torch.nn.Linear``.
 
     Use this single-shot trainable layer when products should use a precomputed
     unary multiplication value map while the interface remains numeric. Input and weight are
@@ -18,6 +18,40 @@ class linear_hub(napl_base):
     estimator, and approximates ``nn.Linear``
     within the unary-multiplication bound. Rate coding, sign-magnitude.
     Requires ``widthi == widthw``.
+
+    The precise target is the affine map
+
+    .. math::
+
+       y = x W^{\top} + b.
+
+    Let :math:`r_i`, :math:`r_w`, and :math:`r_o` be the dynamic shifts from
+    ``rshift_offset`` and :math:`C = 2^{\text{width}-1}` the cycle count. The
+    value map holds the bitstream AND-count of two unary streams driven by the
+    RNG sequences :math:`g^i` and :math:`g^w`,
+
+    .. math::
+
+       M_{ab} = \sum_{k < m_a} \mathbf{1}\{b > g^{w}_{k}\},\qquad
+       m_a = \sum_{k < C} \mathbf{1}\{a > g^{i}_{k}\},
+
+    and the layer evaluates
+
+    .. math::
+
+       \hat x = \mathrm{clamp}\left(
+       \left\lfloor |x\,2^{-r_i}| \right\rfloor,\, 0,\, C-1\right),\qquad
+       \hat W = \mathrm{clamp}\left(
+       \left\lfloor |W\,2^{-r_w}| \right\rfloor,\, 0,\, C-1\right),
+
+    .. math::
+
+       y = \left(\mathrm{sgn}(x)\left[
+       M_{\hat x \hat W}\,\mathrm{sgn}(W)\right]^{\top}\right) 2^{-r_o} + b.
+
+    Magnitudes are truncated rather than rounded, and each product is the unary
+    AND-count instead of an exact product, so the error is bounded by the
+    unary-multiplication bound at :math:`C` cycles.
 
     .. rubric:: Example
 
@@ -109,6 +143,11 @@ class linear_hub(napl_base):
         self.register_buffer('mapcbsg', mapcbsg)
 
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
 
 
     def _reset(self):
