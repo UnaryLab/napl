@@ -2,7 +2,6 @@ import torch
 import math
 import numpy as np
 
-from napl.utils import *
 from napl.sim.base import napl_base, global_config
 from loguru import logger
 from pylfsr import LFSR

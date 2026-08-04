@@ -2,7 +2,7 @@ import torch
 import math
 import torch.nn.functional as F
 
-from napl.utils import *
+from napl.utils import truncated_normal
 from napl.sim.base import napl_base
 # Operation imports stay inside __init__ to avoid the module-operation import cycle.
 

@@ -1,10 +1,8 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.operation import sigmoid_hub
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _kernel_specific_checks():
@@ -17,24 +15,18 @@ def _kernel_specific_checks():
         x = x_cpu.to(device)
         sigmoid = sigmoid_hub().to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        sigmoid_result = sigmoid(x)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            sigmoid_result = sigmoid(x)
 
-        sync(device)
-        start = time.perf_counter()
-        F.hardsigmoid(x * 3)
-        sync(device)
-        reference_elapsed = time.perf_counter() - start
+        with timer(device) as reference_elapsed:
+            F.hardsigmoid(x * 3)
 
         assert torch.allclose(sigmoid_result, F.hardsigmoid(x * 3))
 
-        ratio = reference_elapsed / elapsed
+        ratio = reference_elapsed.seconds / elapsed.seconds
         print(
-            f'[{device}] kernel={elapsed * 1000:.3f}ms, '
-            f'reference={reference_elapsed * 1000:.3f}ms, ratio={ratio:.2f}x'
+            f'[{device}] kernel={elapsed.seconds * 1000:.3f}ms, '
+            f'reference={reference_elapsed.seconds * 1000:.3f}ms, ratio={ratio:.2f}x'
         )
 
     print('Test passed.')
@@ -51,6 +43,10 @@ def make_module_pair():
 
 def make_inputs():
     return (torch.linspace(-3.0, 3.0, 257),)
+
+
+def make_performance_values():
+    return (make_inputs()[0].repeat(512),)
 
 
 def known_answer_case():
@@ -73,6 +69,7 @@ CONFIG = {
     'gradient_rtol': 0.0,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

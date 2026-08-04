@@ -1,9 +1,8 @@
-import time
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
 # This class is not exported from module/__init__.
@@ -118,36 +117,27 @@ def _kernel_specific_checks():
 
         spikes = [enc(input_x).clone() for _ in range(timestep)]
         enc.reset()
-        sync(device)
-        t0 = time.time()
-        for s in spikes:
-            gl(s)
-        sync(device)
-        t_gl = time.time() - t0
+        with timer(device) as t_gl:
+            for s in spikes:
+                gl(s)
         gl.reset()
-        sync(device)
-        t0 = time.time()
-        for s in spikes:
-            lin(s)
-        sync(device)
-        t_lin = time.time() - t0
+        with timer(device) as t_lin:
+            for s in spikes:
+                lin(s)
         lin.reset()
-        print(f'[{device}] perf: linear_gaines1 {t_gl*1e3:.1f}ms vs linear {t_lin*1e3:.1f}ms '
-              f'(ratio {t_lin/max(t_gl,1e-9):.2f}x)')
+        print(f'[{device}] perf: linear_gaines1 {t_gl.seconds*1e3:.1f}ms vs linear {t_lin.seconds*1e3:.1f}ms '
+              f'(ratio {t_lin.seconds/max(t_gl.seconds,1e-9):.2f}x)')
 
     print('Test passed.')
 
 
 def _suite_weight(polarity):
+    # The 16-entry suite uses a 4-bit threshold RNG.
     if polarity == 'unipolar':
-        return torch.tensor([
-            [0.25, 0.5, 0.75, 1.0],
-            [1.0, 0.75, 0.5, 0.25],
-        ])
-    return torch.tensor([
-        [-0.75, -0.25, 0.25, 0.75],
-        [0.75, 0.25, -0.25, -0.75],
-    ])
+        row = torch.linspace(0.0, 1.0, 16)
+    else:
+        row = torch.linspace(-1.0, 1.0, 16)
+    return torch.stack((row, row.flip(0)))
 
 
 def make_operation(polarity, timestep, _device):
@@ -164,17 +154,23 @@ def make_operation(polarity, timestep, _device):
 
 
 def make_values(polarity):
-    return (torch.ones(4),)
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(low, high, 16),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(32768, 1),)
 
 
 def analytic_reference(values, polarity):
     return _scaled_ref(
-        _suite_weight(polarity) @ values[0], polarity, 4
+        _suite_weight(polarity) @ values[0], polarity, 16
     )
 
 
 def known_answer_case(polarity):
-    values = torch.ones(4)
+    values = torch.ones(16)
     return (
         (values,),
         analytic_reference((values,), polarity),
@@ -187,6 +183,7 @@ CONFIG = {
     'tolerance_scale': 3.2,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

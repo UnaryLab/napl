@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import min_tc
 from napl.sim.metric import accuracy
@@ -56,18 +55,15 @@ def _kernel_specific_checks():
         input_0 = input_0_cpu.to(device)
         input_1 = input_1_cpu.to(device)
         min_tc_inst = napl_min_tc(codec_config1, codec_config2, min_tc_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        min_tc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            min_tc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
 
         r_value = torch.min(input_0, input_1)
         min_tc_inst.accuracy.analyze(r_value, verbose=True)
         assert min_tc_inst.min_tc.timestep_cur == codec_config1['timestep']
         min_tc_inst.reset()
         assert min_tc_inst.min_tc.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
     
     print('Test passed.')
 
@@ -81,8 +77,15 @@ def make_operation(polarity, timestep, _device):
     })
 
 
-def make_values(_polarity):
-    left = torch.linspace(-0.9, 0.9, 128)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    left = torch.linspace(lo, hi, 128)
+    return left, left.roll(31)
+
+
+def make_performance_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    left = torch.linspace(lo, hi, 131072)
     return left, left.roll(31)
 
 
@@ -90,16 +93,22 @@ def analytic_reference(values, _polarity):
     return torch.minimum(values[0], values[1])
 
 
-def known_answer_case(_polarity):
-    values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
-    return values, torch.tensor([-1.0, -1.0]), 0.0
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = (torch.tensor([0.0, 1.0]), torch.tensor([1.0, 0.0]))
+        expected = torch.tensor([0.0, 0.0])
+    else:
+        values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
+        expected = torch.tensor([-1.0, -1.0])
+    return values, expected, 0.0
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_generators': ['temporal', 'temporal'],
@@ -109,7 +118,7 @@ CONFIG = {
 
 
 def test_min_tc():
-    """Verify min_tc against analytic and known-answer streams, including reset and timing."""
+    """Verify min_tc for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

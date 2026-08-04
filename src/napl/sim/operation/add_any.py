@@ -62,8 +62,7 @@ class add_any(napl_base):
         )
 
         #: Accumulated amount consumed when an output spike is emitted.
-        self.scale: torch.Tensor
-        self.register_buffer('scale', torch.tensor(config['scale'], dtype=self.ntype))
+        self.scale = config['scale']
         #: Bipolar centering offset inferred from the input count on first use.
         self.offset = 0
         #: Running centered input sum used to decide when to emit a spike.
@@ -126,5 +125,5 @@ class add_any(napl_base):
             self.accumulator.resize_as_(updated).copy_(updated.detach())
         output = torch.ge(self.accumulator, self.scale).type(self.ntype)
         # With scale > 0, emitting a carry preserves the accumulator bounds.
-        self.accumulator.addcmul_(output, self.scale, value=-1)
+        self.accumulator.sub_(output, alpha=self.scale)
         return output.type(self.stype)

@@ -1,7 +1,6 @@
 import torch
 from loguru import logger
 
-from napl.utils import *
 from napl.sim.base import napl_base, hw_params
 
 

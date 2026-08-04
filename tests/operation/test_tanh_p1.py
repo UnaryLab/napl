@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 # tanh_p1 is not exported from operation/__init__.py.
 from napl.sim.operation.tanh_p1 import tanh_p1
@@ -58,11 +57,8 @@ def _kernel_specific_checks():
 
         tanh_p1_inst = napl_tanh_p1(codec_config, tanh_p1_config).to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        tanh_p1_inst(input, timesteps=timestep)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            tanh_p1_inst(input, timesteps=timestep)
 
         tanh_p1_inst.accuracy.analyze(r_value, verbose=True)
         rmse = torch.sqrt(torch.mean((tanh_p1_inst.decoder.spike_value - r_value)**2)).item()
@@ -78,7 +74,7 @@ def _kernel_specific_checks():
         tanh_p1_inst.reset()
         assert tanh_p1_inst.tanh_p1.timestep_cur == 0
 
-        print(f'[{device}] rmse={rmse:.4f}, {timestep} timesteps x 10000 elems in {elapsed*1000:.1f} ms')
+        print(f'[{device}] rmse={rmse:.4f}, {timestep} timesteps x 10000 elems in {elapsed.seconds*1000:.1f} ms')
 
     print('Test passed.')
 
@@ -96,6 +92,10 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
+
+
 def analytic_reference(values, _polarity):
     return torch.tanh(values[0])
 
@@ -110,6 +110,7 @@ CONFIG = {
     'tolerance_scale': 1.6,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [5],

@@ -1,4 +1,3 @@
-import time
 import torch
 import torch.nn.functional as F
 
@@ -8,7 +7,7 @@ from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import (
     devices,
     streaming_suite,
-    sync,
+    timer,
 )
 from napl.sim.module import encoder
 from napl.sim.module.conv_pc import conv_pc
@@ -118,22 +117,16 @@ def _kernel_specific_checks():
 
         spikes = [enc(x).clone() for _ in range(timestep)]
         enc.reset()
-        sync(device)
-        t0 = time.time()
-        for spike in spikes:
-            pc(spike)
-        sync(device)
-        t_pc = time.time() - t0
+        with timer(device) as t_pc:
+            for spike in spikes:
+                pc(spike)
         pc.reset()
-        sync(device)
-        t0 = time.time()
-        for spike in spikes:
-            full(spike)
-        sync(device)
-        t_full = time.time() - t0
+        with timer(device) as t_full:
+            for spike in spikes:
+                full(spike)
         full.reset()
-        print(f'[{device}] perf: conv_pc {t_pc*1e3:.1f}ms vs conv {t_full*1e3:.1f}ms '
-              f'(speedup {t_full/max(t_pc,1e-9):.2f}x)')
+        print(f'[{device}] perf: conv_pc {t_pc.seconds*1e3:.1f}ms vs conv {t_full.seconds*1e3:.1f}ms '
+              f'(speedup {t_full.seconds/max(t_pc.seconds,1e-9):.2f}x)')
 
     print('Test passed.')
 
@@ -152,8 +145,13 @@ def make_operation(polarity, timestep, _device):
 
 
 def make_values(polarity):
-    low = -0.75 if polarity == 'bipolar' else 0.0
-    return (torch.linspace(low, 0.75, 16).reshape(1, 1, 4, 4),)
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(low, high, 16).reshape(1, 1, 4, 4),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(8192, 1, 1, 1),)
 
 
 def analytic_reference(values, polarity):
@@ -171,6 +169,7 @@ CONFIG = {
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'make_readout': lambda _polarity, _timestep, _device: accuracy(

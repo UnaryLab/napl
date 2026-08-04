@@ -1,10 +1,8 @@
-import time
-
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder, linear
 from napl.sim.metric import accuracy
 
@@ -55,11 +53,8 @@ def _kernel_specific_checks():
         inst = napl_linear(
             codec_config, lin_config, weight, bias
         ).to(device)
-        sync(device)
-        start = time.perf_counter()
-        inst(input_x, timesteps=timestep)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            inst(input_x, timesteps=timestep)
 
         entry = in_features + 1
         r_value = (weight @ input_x + bias) / entry
@@ -67,7 +62,7 @@ def _kernel_specific_checks():
         rmse = torch.sqrt(err.abs().pow(2).mean())
         print(
             f'[{device}] linear rmse={rmse.item():.4f}, '
-            f'max={err.abs().max().item():.4f}, time={elapsed * 1000:.1f}ms'
+            f'max={err.abs().max().item():.4f}, time={elapsed.seconds * 1000:.1f}ms'
         )
         assert rmse < 0.05, (device, rmse)
         assert inst.linear.timestep_cur == timestep
@@ -104,8 +99,15 @@ def make_operation(polarity, timestep, _device):
     )
 
 
-def make_values(_polarity):
-    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+def make_values(polarity):
+    if polarity == 'unipolar':
+        return (torch.tensor([0.0, 0.25, 0.75, 1.0]),)
+    return (torch.tensor([-1.0, -0.25, 0.25, 1.0]),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(32768, 1),)
 
 
 def analytic_reference(values, polarity):
@@ -122,10 +124,11 @@ def known_answer_case(polarity):
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 4.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -134,7 +137,7 @@ CONFIG = {
 
 
 def test_linear():
-    """Verify linear against analytic and known-answer streams, including reset and timing."""
+    """Verify linear for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

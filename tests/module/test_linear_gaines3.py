@@ -1,9 +1,8 @@
-import time
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module.encoder import encoder
 from napl.sim.module.linear_gaines3 import linear_gaines3
 from napl.sim.module.linear import linear
@@ -134,12 +133,10 @@ def _kernel_specific_checks():
         for name, mod in [('gaines3', gl), ('lin', lin)]:
             enc.reset()
             mod.reset()
-            sync(device)
-            start = time.time()
-            for _ in range(timestep):
-                mod(enc(input_x))
-            sync(device)
-            times[name] = time.time() - start
+            with timer(device) as elapsed:
+                for _ in range(timestep):
+                    mod(enc(input_x))
+            times[name] = elapsed.seconds
             enc.reset()
             mod.reset()
         print(f'{device}: gaines3 {times["gaines3"]:.4f}s vs lin {times["lin"]:.4f}s '
@@ -166,9 +163,13 @@ def make_operation(polarity, timestep, _device):
 
 
 def make_values(polarity):
-    if polarity == 'unipolar':
-        return (torch.linspace(0.1, 0.9, 64),)
-    return (torch.linspace(-0.75, 0.75, 64),)
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(low, high, 64),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(2048, 1),)
 
 
 def analytic_reference(values, polarity):
@@ -189,6 +190,7 @@ CONFIG = {
     'tolerance_scale': 1.6,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [2],
@@ -198,7 +200,7 @@ CONFIG = {
 
 
 def test_linear_gaines3():
-    """Verify linear_gaines3 against analytic and known-answer streams, including reset and timing."""
+    """Verify linear_gaines3 for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

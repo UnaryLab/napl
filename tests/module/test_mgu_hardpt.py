@@ -1,9 +1,7 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 from napl.sim.module.mgu_hardpt import mgu_hardpt
 
 
@@ -50,19 +48,14 @@ def _kernel_specific_checks():
 
         # Compare the cell and functional reference on identical inputs.
         n = 50
-        sync(device)
-        t0 = time.perf_counter()
-        for _ in range(n):
-            c(x, hx)
-        sync(device)
-        t_cell = time.perf_counter() - t0
-        t0 = time.perf_counter()
-        for _ in range(n):
-            _ref_mgu_pt(x, hx, c.weight_ih, c.bias_ih, c.weight_hh, c.bias_hh)
-        sync(device)
-        t_ref = time.perf_counter() - t0
-        print(f'[{device}] mgu_hardpt {t_cell*1e3/n:.3f} ms/iter, '
-              f'reference {t_ref*1e3/n:.3f} ms/iter, ratio {t_ref/max(t_cell,1e-12):.2f}x')
+        with timer(device) as t_cell:
+            for _ in range(n):
+                c(x, hx)
+        with timer(device) as t_ref:
+            for _ in range(n):
+                _ref_mgu_pt(x, hx, c.weight_ih, c.bias_ih, c.weight_hh, c.bias_hh)
+        print(f'[{device}] mgu_hardpt {t_cell.seconds*1e3/n:.3f} ms/iter, '
+              f'reference {t_ref.seconds*1e3/n:.3f} ms/iter, ratio {t_ref.seconds/max(t_cell.seconds,1e-12):.2f}x')
 
     # Soft mode uses sigmoid and tanh.
     soft = mgu_hardpt(isz, hsz, bias=True, config={'hard': False})
@@ -104,6 +97,10 @@ def make_inputs():
     )
 
 
+def make_performance_values():
+    return tuple(value.repeat(16384, 1) for value in make_inputs())
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     inputs = make_inputs()
@@ -136,6 +133,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

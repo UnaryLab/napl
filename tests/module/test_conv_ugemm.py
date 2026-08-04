@@ -1,10 +1,9 @@
-import time
 import torch
 import torch.nn.functional as F
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.module.conv_ugemm import conv_ugemm
 from napl.sim.module.conv import conv
@@ -107,22 +106,16 @@ def _kernel_specific_checks():
 
         spikes = [enc(x).clone() for _ in range(timestep)]
         enc.reset()
-        sync(device)
-        t0 = time.time()
-        for spike in spikes:
-            ugemm(spike)
-        sync(device)
-        t_ugemm = time.time() - t0
+        with timer(device) as t_ugemm:
+            for spike in spikes:
+                ugemm(spike)
         ugemm.reset()
-        sync(device)
-        t0 = time.time()
-        for spike in spikes:
-            full(spike)
-        sync(device)
-        t_full = time.time() - t0
+        with timer(device) as t_full:
+            for spike in spikes:
+                full(spike)
         full.reset()
-        print(f'[{device}] perf: conv_ugemm {t_ugemm*1e3:.1f}ms vs conv {t_full*1e3:.1f}ms '
-              f'(ratio {t_full/max(t_ugemm,1e-9):.2f}x)')
+        print(f'[{device}] perf: conv_ugemm {t_ugemm.seconds*1e3:.1f}ms vs conv {t_full.seconds*1e3:.1f}ms '
+              f'(ratio {t_full.seconds/max(t_ugemm.seconds,1e-9):.2f}x)')
 
     print('Test passed.')
 
@@ -141,8 +134,13 @@ def make_operation(polarity, timestep, _device):
 
 
 def make_values(polarity):
-    low = -0.75 if polarity == 'bipolar' else 0.0
-    return (torch.linspace(low, 0.75, 16).reshape(1, 1, 4, 4),)
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(low, high, 16).reshape(1, 1, 4, 4),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(8192, 1, 1, 1),)
 
 
 def analytic_reference(values, _polarity):
@@ -160,6 +158,7 @@ CONFIG = {
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -168,7 +167,7 @@ CONFIG = {
 
 
 def test_conv_ugemm():
-    """Verify conv_ugemm against analytic and known-answer streams, including reset and timing."""
+    """Verify conv_ugemm for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

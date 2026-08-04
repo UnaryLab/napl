@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import sync_skewed
 from napl.sim.metric import accuracy
@@ -68,18 +67,15 @@ def _kernel_specific_checks():
         input_0 = input_0_cpu.to(device)
         input_1 = input_1_cpu.to(device)
         sync_skewed_inst = napl_sync_skewed(codec_config1, codec_config2, sync_skewed_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        sync_skewed_inst(input_0, input_1, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            sync_skewed_inst(input_0, input_1, timesteps=codec_config1['timestep'])
 
         sync_skewed_inst.accuracy0.analyze(input_0, verbose=True)
         sync_skewed_inst.accuracy1.analyze(input_1, verbose=True)
         assert sync_skewed_inst.sync_skewed.timestep_cur == codec_config1['timestep']
         sync_skewed_inst.reset()
         assert sync_skewed_inst.sync_skewed.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
     
     print('Test passed.')
 
@@ -89,8 +85,14 @@ def make_operation(_polarity, _timestep, _device):
 
 
 def make_values(_polarity):
-    first = torch.linspace(0.0, 0.75, 128)
-    second = torch.linspace(0.25, 1.0, 128)
+    first = torch.linspace(0.0, 1.0, 128)
+    second = torch.linspace(1.0, 0.0, 128)
+    return first, second
+
+
+def make_performance_values(_polarity):
+    first = torch.linspace(0.0, 1.0, 131072)
+    second = torch.linspace(1.0, 0.0, 131072)
     return first, second
 
 
@@ -99,7 +101,7 @@ def analytic_reference(values, _polarity):
 
 
 def known_answer_case(_polarity):
-    values = (torch.tensor([0.0, 0.5]), torch.tensor([0.5, 1.0]))
+    values = (torch.tensor([0.0, 1.0]), torch.tensor([1.0, 0.0]))
     return values, values[1], 0.0
 
 
@@ -108,6 +110,7 @@ CONFIG = {
     'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [1, 3],
@@ -118,7 +121,7 @@ CONFIG = {
 
 
 def test_sync_skewed():
-    """Verify sync_skewed against analytic and known-answer streams, including reset and timing."""
+    """Verify sync_skewed across the full unipolar range and input ordering."""
     streaming_suite(CONFIG)
 
 

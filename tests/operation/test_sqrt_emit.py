@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import sqrt_emit
 from napl.sim.metric import accuracy
@@ -48,18 +47,15 @@ def _kernel_specific_checks():
     for device in devices():
         input = input_cpu.to(device)
         sqrt_emit_inst = napl_sqrt_emit(codec_config, sqrt_emit_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        sqrt_emit_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            sqrt_emit_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.sqrt(input)
         sqrt_emit_inst.accuracy.analyze(r_value, verbose=True)
         assert sqrt_emit_inst.sqrt_emit.timestep_cur == codec_config['timestep']
         sqrt_emit_inst.reset()
         assert sqrt_emit_inst.sqrt_emit.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -72,6 +68,10 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
+
+
 def analytic_reference(values, _polarity):
     return torch.sqrt(values[0])
 
@@ -82,10 +82,11 @@ def known_answer_case(_polarity):
 
 
 CONFIG = {
-    'polarities': ['unipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [4],
@@ -95,7 +96,7 @@ CONFIG = {
 
 
 def test_sqrt_emit():
-    """Verify sqrt_emit against analytic and known-answer streams, including reset and timing."""
+    """Verify sqrt_emit for both polarities on the non-negative square-root domain."""
     streaming_suite(CONFIG)
 
 

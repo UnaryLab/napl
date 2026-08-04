@@ -26,6 +26,12 @@ def make_values(polarity):
     )
 
 
+def make_performance_values(polarity):
+    low = -1.0 if polarity == 'bipolar' else 0.0
+    values = torch.linspace(low, 1.0, 131072, dtype=global_config.ntype)
+    return values, values.roll(17)
+
+
 def analytic_reference(values, polarity):
     return values[0] * values[1]
 
@@ -51,6 +57,7 @@ CONFIG = {
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': TIMESTEPS,

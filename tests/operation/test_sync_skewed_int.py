@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation.sync_skewed_int import sync_skewed_int
 from napl.sim.metric import accuracy
@@ -72,12 +71,9 @@ def _kernel_specific_checks():
         in_1 = input_1.to(device)
 
         inst = napl_sync_skewed_int(codec_config1, codec_config2, sync_skewed_int_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        inst(in_0, in_1, timesteps=timestep)
-        sync(device)
-        elapsed = time.perf_counter() - start
-        print(f'[{device}] {timestep} timesteps x {in_0.numel()} elems: {elapsed:.3f} s')
+        with timer(device) as elapsed:
+            inst(in_0, in_1, timesteps=timestep)
+        print(f'[{device}] {timestep} timesteps x {in_0.numel()} elems: {elapsed.seconds:.3f} s')
 
         # Output 1 conserves input 0 up to the counter residual.
         inst.accuracy0.analyze(in_0, verbose=True)
@@ -111,8 +107,14 @@ def make_operation(_polarity, _timestep, _device):
 
 
 def make_values(_polarity):
-    first = torch.linspace(0.0, 0.75, 128)
-    second = torch.linspace(0.25, 1.0, 128)
+    first = torch.linspace(0.0, 1.0, 128)
+    second = torch.linspace(1.0, 0.0, 128)
+    return first, second
+
+
+def make_performance_values(_polarity):
+    first = torch.linspace(0.0, 1.0, 131072)
+    second = torch.linspace(1.0, 0.0, 131072)
     return first, second
 
 
@@ -121,7 +123,7 @@ def analytic_reference(values, _polarity):
 
 
 def known_answer_case(_polarity):
-    values = (torch.tensor([0.0, 0.5]), torch.tensor([0.5, 1.0]))
+    values = (torch.tensor([0.0, 1.0]), torch.tensor([1.0, 0.0]))
     return values, values[1], 0.0
 
 
@@ -130,6 +132,7 @@ CONFIG = {
     'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [1, 3],
@@ -140,7 +143,7 @@ CONFIG = {
 
 
 def test_sync_skewed_int():
-    """Verify sync_skewed_int against analytic and known-answer streams, including reset and timing."""
+    """Verify sync_skewed_int across the full unipolar range and input ordering."""
     streaming_suite(CONFIG)
     try:
         sync_skewed_int({'width': 8})

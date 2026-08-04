@@ -1,11 +1,9 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.module import conv_fxp, conv_hub, conv_tlut
 from napl.utils import conv2d_output_shape, pow2_rshift, rshift_offset
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _binary_conv_reference(module, input, linear_reference):
@@ -81,22 +79,16 @@ def _kernel_specific_checks():
             'tlut': lambda pad: conv_tlut(ic, oc, k, padding=pad, weight_ext=weight, bias_ext=bias).to(device),
         }
         for pad in [0, 1]:
-            sync(device)
-            start = time.perf_counter()
-            ref = F.conv2d(x, weight, bias, stride=1, padding=pad)
-            sync(device)
-            ref_elapsed = time.perf_counter() - start
+            with timer(device) as ref_elapsed:
+                ref = F.conv2d(x, weight, bias, stride=1, padding=pad)
             for name, build in builders.items():
                 module = build(pad)
-                sync(device)
-                start = time.perf_counter()
-                y = module(x)
-                sync(device)
-                elapsed = time.perf_counter() - start
+                with timer(device) as elapsed:
+                    y = module(x)
                 rmse = (y - ref).pow(2).mean().sqrt().item()
                 print(
                     f'[{device}] pad={pad} conv_{name}: rmse={rmse:.4f}, '
-                    f'ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+                    f'ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
                 )
                 assert y.shape == ref.shape
                 assert rmse < 0.05, (device, name, pad, rmse)
@@ -147,6 +139,10 @@ def make_inputs():
     return (torch.linspace(-0.75, 0.75, 25).reshape(1, 1, 5, 5),)
 
 
+def make_performance_values():
+    return (make_inputs()[0].repeat(4096, 1, 1, 1),)
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     values = torch.ones(1, 1, 3, 3) * 0.5
@@ -177,6 +173,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

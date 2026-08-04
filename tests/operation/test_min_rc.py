@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import min_rc
 from napl.sim.metric import accuracy
@@ -66,18 +65,15 @@ def _kernel_specific_checks():
         input_0 = input_0_cpu.to(device)
         input_1 = input_1_cpu.to(device)
         min_rc_inst = napl_min_rc(codec_config1, codec_config2, codec_config3, min_rc_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        min_rc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            min_rc_inst(input_0, input_1, timesteps=codec_config1['timestep'])
 
         r_value = torch.min(input_0, input_1)
         r_value_arg = torch.argmin(torch.stack([input_0, input_1], dim=0), dim=0)
         _, value_result = min_rc_inst.accuracy0.analyze(r_value, verbose=True)
         _, arg_result = min_rc_inst.accuracy1.analyze(r_value_arg, verbose=True)
 
-        print(f'[{device}] value max error index: {value_result.max_absolute_index.item():7d}; arg max error index: {arg_result.max_absolute_index.item():7d}; time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] value max error index: {value_result.max_absolute_index.item():7d}; arg max error index: {arg_result.max_absolute_index.item():7d}; time: {elapsed.seconds * 1000:.1f} ms')
         assert min_rc_inst.min_rc.timestep_cur == codec_config1['timestep']
         min_rc_inst.reset()
         assert min_rc_inst.min_rc.timestep_cur == 0
@@ -94,8 +90,15 @@ def make_operation(polarity, timestep, _device):
     })
 
 
-def make_values(_polarity):
-    left = torch.linspace(-0.9, 0.9, 128)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    left = torch.linspace(lo, hi, 128)
+    return left, left.roll(31)
+
+
+def make_performance_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    left = torch.linspace(lo, hi, 131072)
     return left, left.roll(31)
 
 
@@ -103,16 +106,22 @@ def analytic_reference(values, _polarity):
     return torch.minimum(values[0], values[1])
 
 
-def known_answer_case(_polarity):
-    values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
-    return values, torch.tensor([-1.0, -1.0]), 3.0 / math.sqrt(256)
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = (torch.tensor([0.0, 1.0]), torch.tensor([1.0, 0.0]))
+        expected = torch.tensor([0.0, 0.0])
+    else:
+        values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
+        expected = torch.tensor([-1.0, -1.0])
+    return values, expected, 3.0 / math.sqrt(256)
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'apply_operation': lambda operation, spikes: operation(*spikes)[0],
@@ -122,7 +131,7 @@ CONFIG = {
 
 
 def test_min_rc():
-    """Verify min_rc against analytic and known-answer streams, including reset and timing."""
+    """Verify min_rc for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

@@ -1,4 +1,3 @@
-import time
 import sys
 
 import torch
@@ -7,7 +6,7 @@ sys.path.insert(0, '/Users/diwu/Projects')
 
 from napl.sim.base import global_config
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, timer
 from napl.sim.module import encoder, mgu, mgu_hard, mgu_hub
 from napl.sim.operation import mul_shiftreg
 from UnarySim.kernel.rnn import FSUMGUCell
@@ -27,11 +26,8 @@ def test_mgu_hub():
         ref = ref.to(device)
         x = x_cpu.to(device)
         hx = hx_cpu.to(device)
-        sync(device)
-        start = time.perf_counter()
-        y_ref = ref(x, hx)
-        sync(device)
-        ref_elapsed = time.perf_counter() - start
+        with timer(device) as ref_elapsed:
+            y_ref = ref(x, hx)
         hub = mgu_hub(
             isz,
             hsz,
@@ -42,15 +38,12 @@ def test_mgu_hub():
             bias_n=ref.bias_n.data,
             config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol'},
         ).to(device)
-        sync(device)
-        start = time.perf_counter()
-        y_hub = hub(x, hx)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            y_hub = hub(x, hx)
         rmse = (y_hub - y_ref).pow(2).mean().sqrt().item()
         print(
             f'[{device}] mgu_hub rmse={rmse:.4f}, '
-            f'hard/hub ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+            f'hard/hub ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
         )
 
         assert y_hub.shape == y_ref.shape

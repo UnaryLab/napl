@@ -1,10 +1,8 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.operation import relu_hub
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _kernel_specific_checks():
@@ -19,19 +17,13 @@ def _kernel_specific_checks():
         relu = relu_hub().to(device)
         relu_scaled = relu_hub({'scale': 6.0}).to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        relu_result = relu(x)
-        relu_scaled_result = relu_scaled(x)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            relu_result = relu(x)
+            relu_scaled_result = relu_scaled(x)
 
-        sync(device)
-        start = time.perf_counter()
-        F.hardtanh(x, 0.0, 1.0)
-        F.hardtanh(x, 0.0, 6.0)
-        sync(device)
-        reference_elapsed = time.perf_counter() - start
+        with timer(device) as reference_elapsed:
+            F.hardtanh(x, 0.0, 1.0)
+            F.hardtanh(x, 0.0, 6.0)
 
         assert torch.allclose(relu_result, F.hardtanh(x, 0.0, 1.0))
         assert torch.allclose(relu_scaled_result, F.hardtanh(x, 0.0, 6.0))
@@ -45,10 +37,10 @@ def _kernel_specific_checks():
         xg = torch.tensor([0.5], device=device, requires_grad=True)
         relu(xg).backward()
         assert xg.grad.item() == 1.0
-        ratio = reference_elapsed / elapsed
+        ratio = reference_elapsed.seconds / elapsed.seconds
         print(
-            f'[{device}] kernel={elapsed * 1000:.3f}ms, '
-            f'reference={reference_elapsed * 1000:.3f}ms, ratio={ratio:.2f}x'
+            f'[{device}] kernel={elapsed.seconds * 1000:.3f}ms, '
+            f'reference={reference_elapsed.seconds * 1000:.3f}ms, ratio={ratio:.2f}x'
         )
 
     print('Test passed.')
@@ -60,6 +52,10 @@ def make_module_pair():
 
 def make_inputs():
     return (torch.linspace(-3.0, 3.0, 257),)
+
+
+def make_performance_values():
+    return (make_inputs()[0].repeat(512),)
 
 
 def known_answer_case():
@@ -82,6 +78,7 @@ CONFIG = {
     'gradient_rtol': 0.0,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

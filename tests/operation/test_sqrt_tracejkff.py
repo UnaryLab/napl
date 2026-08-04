@@ -15,6 +15,10 @@ def make_values(polarity):
     )
 
 
+def make_performance_values(_polarity):
+    return (torch.linspace(0, 1, 131072, dtype=global_config.ntype),)
+
+
 def analytic_reference(values, polarity):
     return torch.sqrt(values[0])
 
@@ -32,6 +36,7 @@ CONFIG = {
     'tolerance_scale': 5.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
 }

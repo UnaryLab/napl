@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import square_dff
 from napl.sim.metric import accuracy
@@ -49,18 +48,15 @@ def _kernel_specific_checks():
     for device in devices():
         input = input_cpu.to(device)
         square_dff_inst = napl_square_dff(codec_config, square_dff_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        square_dff_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            square_dff_inst(input, timesteps=codec_config['timestep'])
 
         r_value = input * input
         square_dff_inst.accuracy.analyze(r_value, verbose=True)
         assert square_dff_inst.square_dff.timestep_cur == codec_config['timestep']
         square_dff_inst.reset()
         assert square_dff_inst.square_dff.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -69,24 +65,31 @@ def make_operation(polarity, _timestep, _device):
     return square_dff({'polarity': polarity, 'depth': 1})
 
 
-def make_values(_polarity):
-    return (torch.linspace(-1.0, 1.0, 128),)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 128),)
+
+
+def make_performance_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 131072),)
 
 
 def analytic_reference(values, _polarity):
     return values[0].square()
 
 
-def known_answer_case(_polarity):
-    values = torch.tensor([-1.0, 0.0, 1.0])
+def known_answer_case(polarity):
+    values = torch.tensor([0.0, 0.5, 1.0]) if polarity == 'unipolar' else torch.tensor([-1.0, 0.0, 1.0])
     return (values,), values.square(), 0.35
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -95,7 +98,7 @@ CONFIG = {
 
 
 def test_square_dff():
-    """Verify square_dff against analytic and known-answer streams, including reset and timing."""
+    """Verify square_dff for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

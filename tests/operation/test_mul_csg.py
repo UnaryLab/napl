@@ -1,12 +1,11 @@
 import math
-import time
 
 import torch
 
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import mul_csg
 from napl.sim.metric import accuracy
@@ -70,18 +69,15 @@ def test_mul_csg():
         input_0 = input_0_cpu.to(device)
         input_1 = input_1_cpu.to(device)
         mul_csg_inst = napl_mul_csg(codec_config, mul_csg_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        mul_csg_inst(input_0, input_1, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            mul_csg_inst(input_0, input_1, timesteps=codec_config['timestep'])
 
         r_value = input_0 * input_1
         mul_csg_inst.accuracy.analyze(r_value, verbose=True)
         assert mul_csg_inst.mul_csg.timestep_cur == codec_config['timestep']
         mul_csg_inst.reset()
         assert mul_csg_inst.mul_csg.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 

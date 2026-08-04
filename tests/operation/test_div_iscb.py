@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import div_iscb
 from napl.sim.metric import accuracy
@@ -67,11 +66,8 @@ def _kernel_specific_checks():
         divisor = input_1.to(device)
         div_iscb_inst = napl_div_iscb(codec_config1, codec_config2, div_iscb_config).to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        div_iscb_inst(dividend, divisor, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            div_iscb_inst(dividend, divisor, timesteps=codec_config1['timestep'])
 
         r_value = dividend / divisor
         error, _ = div_iscb_inst.accuracy.analyze(r_value, verbose=True)
@@ -81,7 +77,7 @@ def _kernel_specific_checks():
         assert div_iscb_inst.div_iscb.timestep_cur == codec_config1['timestep']
         div_iscb_inst.reset()
         assert div_iscb_inst.div_iscb.timestep_cur == 0
-        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed.seconds:.3f}s')
     
     print('Test passed.')
 
@@ -90,10 +86,25 @@ def make_operation(polarity, _timestep, _device):
     return div_iscb({'polarity': polarity})
 
 
-def make_values(_polarity):
-    quotient = torch.linspace(-0.75, 0.75, 128)
-    divisor = torch.full_like(quotient, 0.875)
-    divisor[::2] = -0.875
+def make_values(polarity):
+    if polarity == 'unipolar':
+        quotient = torch.linspace(0.0, 1.0, 128)
+        divisor = torch.linspace(0.25, 1.0, 128)
+    else:
+        quotient = torch.linspace(-1.0, 1.0, 128)
+        magnitude = torch.linspace(0.25, 1.0, 64)
+        divisor = torch.cat((magnitude, -magnitude))
+    return quotient * divisor, divisor
+
+
+def make_performance_values(polarity):
+    if polarity == 'unipolar':
+        quotient = torch.linspace(0.0, 1.0, 131072)
+        divisor = torch.linspace(0.25, 1.0, 131072)
+    else:
+        quotient = torch.linspace(-1.0, 1.0, 131072)
+        magnitude = torch.linspace(0.25, 1.0, 65536)
+        divisor = torch.cat((magnitude, -magnitude))
     return quotient * divisor, divisor
 
 
@@ -101,16 +112,20 @@ def analytic_reference(values, _polarity):
     return values[0] / values[1]
 
 
-def known_answer_case(_polarity):
-    values = (torch.tensor([-0.25, 0.25]), torch.tensor([0.5, -0.5]))
-    return values, torch.tensor([-0.5, -0.5]), 0.25
+def known_answer_case(polarity):
+    if polarity == 'unipolar':
+        values = (torch.tensor([0.0, 1.0]), torch.tensor([0.25, 1.0]))
+        return values, torch.tensor([0.0, 1.0]), 0.25
+    values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
+    return values, torch.tensor([-1.0, -1.0]), 0.25
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 4.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -119,7 +134,7 @@ CONFIG = {
 
 
 def test_div_iscb():
-    """Verify div_iscb against analytic and known-answer streams, including reset and timing."""
+    """Verify div_iscb for both polarities with legal quotients and nonzero divisors."""
     streaming_suite(CONFIG)
 
 

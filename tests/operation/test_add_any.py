@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
 from napl.sim.metric import accuracy
@@ -54,11 +53,8 @@ def _kernel_specific_checks():
         input = input_cpu.to(device)
         add_any_inst = napl_add_any(codec_config, add_any_config).to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        add_any_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            add_any_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.sum(input, dim=-1) / add_any_config['scale']
         error, _ = add_any_inst.accuracy.analyze(r_value, verbose=True)
@@ -69,17 +65,23 @@ def _kernel_specific_checks():
         assert add_any_inst.add_any.timestep_cur == codec_config['timestep']
         add_any_inst.reset()
         assert add_any_inst.add_any.timestep_cur == 0
-        print(f'[{device}] rmse={rmse:.4f}, time={elapsed:.3f}s')
+        print(f'[{device}] rmse={rmse:.4f}, time={elapsed.seconds:.3f}s')
     
     print('Test passed.')
 
 
-def make_operation(_polarity, _timestep, _device):
-    return add_any({'polarity': 'bipolar', 'scale': 8, 'width': 20})
+def make_operation(polarity, _timestep, _device):
+    return add_any({'polarity': polarity, 'scale': 8, 'width': 20})
 
 
-def make_values(_polarity):
-    return (torch.linspace(-0.75, 0.75, 512).reshape(64, 8),)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 512).reshape(64, 8),)
+
+
+def make_performance_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 16384 * 8).reshape(16384, 8),)
 
 
 def analytic_reference(values, _polarity):
@@ -87,16 +89,17 @@ def analytic_reference(values, _polarity):
 
 
 def known_answer_case(_polarity):
-    values = torch.full((8, 8), 0.25)
+    values = torch.ones((8, 8))
     return (values,), values.mean(dim=-1), 2.0 / math.sqrt(256)
 
 
 CONFIG = {
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'timesteps': 256,
     'tolerance_scale': 2.0,
     'apply_operation': lambda operation, spikes: operation(spikes[0], dim=-1),
@@ -105,7 +108,7 @@ CONFIG = {
 
 
 def test_add_any():
-    """Verify add_any against analytic and known-answer streams, including reset and timing."""
+    """Verify add_any for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

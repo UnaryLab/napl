@@ -2,7 +2,6 @@ import torch
 
 from napl.sim.base import napl_base
 from napl.sim.metric._shared import analyze
-from napl.utils import *
 from loguru import logger
 
 
@@ -138,7 +137,7 @@ class accuracy(napl_base):
         Args:
             reference: Expected numeric value with the same logical shape as the spike stream.
             verbose: Set to ``True`` to print the analysis summary.
-            scale_ref: Multiplier applied to ``reference``; the comparison uses ``reference * scale_ref``.
+            scale_ref: Divisor applied to ``reference``; the comparison uses ``reference / scale_ref``.
 
         Returns:
             A pair containing the per-element signed progressive error and its complete :class:`napl.sim.metric._shared.Analysis` summary.
@@ -154,7 +153,7 @@ class accuracy(napl_base):
         """
         assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
         spike_value = self.spike_value
-        progressive_error = spike_value.sub(reference.mul(scale_ref)).detach()
+        progressive_error = spike_value.sub(reference.div(scale_ref)).detach()
         result = analyze(
             progressive_error,
             verbose=verbose,

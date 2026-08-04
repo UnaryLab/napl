@@ -1,10 +1,9 @@
 import sys
-import time
 
 import torch
 import torch.nn.functional as F
 
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 from napl.sim.module.mgu_hardnua import mgu_hardnua
 
 sys.path.insert(0, '/Users/diwu/Projects')
@@ -60,18 +59,14 @@ def _kernel_specific_checks():
         n = 200
         for m in (cell, ref_cell):
             m(x, hx)  # Warm up before timing.
-        sync(device)
-        t0 = time.perf_counter()
-        for _ in range(n):
-            cell(x, hx)
-        sync(device)
-        t1 = time.perf_counter()
-        for _ in range(n):
-            ref_cell(x, hx)
-        sync(device)
-        t2 = time.perf_counter()
-        print(f'[{device}] napl {t1 - t0:.4f}s vs UnarySim {t2 - t1:.4f}s '
-              f'-> speedup {(t2 - t1) / max(t1 - t0, 1e-12):.2f}x')
+        with timer(device) as napl_elapsed:
+            for _ in range(n):
+                cell(x, hx)
+        with timer(device) as unarysim_elapsed:
+            for _ in range(n):
+                ref_cell(x, hx)
+        print(f'[{device}] napl {napl_elapsed.seconds:.4f}s vs UnarySim {unarysim_elapsed.seconds:.4f}s '
+              f'-> speedup {unarysim_elapsed.seconds / max(napl_elapsed.seconds, 1e-12):.2f}x')
 
     print('Test passed.')
 
@@ -110,6 +105,10 @@ def make_inputs():
     )
 
 
+def make_performance_values():
+    return tuple(value.repeat(16384, 1) for value in make_inputs())
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     inputs = make_inputs()
@@ -142,6 +141,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

@@ -50,6 +50,10 @@ def make_inputs():
     return (value,)
 
 
+def make_performance_values():
+    return (make_inputs()[0].repeat(4096, 1),)
+
+
 def known_answer_case():
     _, bias = _parameters()
     value = torch.zeros(_BATCH, _IN_FEATURES)
@@ -78,6 +82,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

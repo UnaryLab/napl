@@ -1,6 +1,6 @@
 import torch
 
-from napl.utils import *
+from napl.utils import conv2d_output_shape, num2tuple
 from napl.sim.base import napl_base
 from loguru import logger
 

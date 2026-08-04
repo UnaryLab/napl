@@ -1,7 +1,6 @@
 import torch
 
 from napl.sim.base import napl_base, napl_sim_timesteps
-from napl.utils import *
 from napl.sim.module import encoder, decoder
 from napl.sim.metric import accuracy
 from napl.sim.operation import mul_csg, add_any

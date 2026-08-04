@@ -1,11 +1,9 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.module import linear_hub
 from napl.utils import pow2_rshift, rshift_offset
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def test_linear_hub_truncates_scaled_magnitudes():
@@ -50,21 +48,15 @@ def _kernel_specific_checks():
             weight_ext=weight,
             bias_ext=bias,
         ).to(device)
-        sync(device)
-        start = time.perf_counter()
-        y = lin(x)
-        sync(device)
-        elapsed = time.perf_counter() - start
-        sync(device)
-        start = time.perf_counter()
-        ref = F.linear(x, weight, bias)
-        sync(device)
-        ref_elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            y = lin(x)
+        with timer(device) as ref_elapsed:
+            ref = F.linear(x, weight, bias)
         rmse = (y - ref).pow(2).mean().sqrt().item()
         print(
             f'[{device}] linear_hub rmse={rmse:.5f}, '
             f'max={(y-ref).abs().max().item():.5f}, '
-            f'ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+            f'ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
         )
         assert y.shape == ref.shape
         assert rmse < 0.06, (device, rmse)
@@ -111,6 +103,10 @@ def make_inputs():
     return (torch.linspace(-0.75, 0.75, 32).reshape(8, 4),)
 
 
+def make_performance_values():
+    return (make_inputs()[0].repeat(4096, 1),)
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     values = torch.tensor([[0.5, 0.25, -0.25, -0.5]])
@@ -132,6 +128,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

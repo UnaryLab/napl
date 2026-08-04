@@ -31,6 +31,8 @@ Golden-vector co-simulation is the source of functional truth. Expected outputs 
 
 Every Python `test_*` function used by this verification flow starts with a concise one-line docstring that states the behavior it verifies.
 
+RTL co-simulation uses the fidelity-scale input shape from the streaming suite's `make_values`; the `make_performance_values` workload is for Python-side timing only and is not required for RTL vectors or co-simulation.
+
 For each RTL-backed change:
 
 1. Run the operation's Python test under the rules in [RULE_SIM.md](RULE_SIM.md).

@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import uni2bi
 from napl.sim.metric import accuracy
@@ -54,17 +53,14 @@ def _kernel_specific_checks():
     for device in devices():
         input = input_cpu.to(device)
         uni2bi_inst = napl_uni2bi(codec_config1, codec_config2, uni2bi_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        uni2bi_inst(input, timesteps=codec_config1['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            uni2bi_inst(input, timesteps=codec_config1['timestep'])
 
         uni2bi_inst.accuracy.analyze(input, verbose=True)
         assert uni2bi_inst.uni2bi.timestep_cur == codec_config1['timestep']
         uni2bi_inst.reset()
         assert uni2bi_inst.uni2bi.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -75,6 +71,10 @@ def make_operation(_polarity, _timestep, _device):
 
 def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
+
+
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
 
 
 def analytic_reference(values, _polarity):
@@ -91,6 +91,7 @@ CONFIG = {
     'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'input_polarities': ['unipolar'],

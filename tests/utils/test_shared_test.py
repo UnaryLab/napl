@@ -149,6 +149,12 @@ def _mul_and_values(polarity):
     )
 
 
+def _mul_and_performance_values(polarity):
+    low = -1.0 if polarity == 'bipolar' else 0.0
+    values = torch.linspace(low, 1.0, 131072)
+    return values, values.roll(17)
+
+
 def _mul_and_reference(values, polarity):
     return values[0] * values[1]
 
@@ -165,6 +171,7 @@ def test_streaming_suite():
         'tolerance_scale': 1.0,
         'make_operation': _mul_and_operation,
         'make_values': _mul_and_values,
+        'make_performance_values': _mul_and_performance_values,
         'analytic_reference': _mul_and_reference,
         'known_answer_case': _mul_and_known_answer,
         'timesteps': 64,
@@ -201,6 +208,10 @@ def _fxp_inputs():
     return (torch.rand(8, 8) * 1.6 - 0.8,)
 
 
+def _fxp_performance_values():
+    return (torch.linspace(-0.8, 0.8, 131072 * 8).reshape(131072, 8),)
+
+
 def _fxp_known_answer():
     # Zero input isolates the bias exactly.
     candidate, reference = _fxp_pair()
@@ -233,6 +244,7 @@ def test_single_shot_suite():
         'known_answer_case': _fxp_known_answer,
         'gradient_case': _fxp_gradient_case,
         'expected_ste_gradients': _fxp_expected_gradients,
+        'make_performance_values': _fxp_performance_values,
         'warmup_runs': 1,
         'trials': 3,
     })

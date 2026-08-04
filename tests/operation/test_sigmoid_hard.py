@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import sigmoid_hard
 from napl.sim.metric import accuracy
@@ -48,18 +47,15 @@ def _kernel_specific_checks():
     for device in devices():
         input = input_cpu.to(device)
         sigmoid_hard_inst = napl_sigmoid_hard(codec_config, sigmoid_hard_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        sigmoid_hard_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            sigmoid_hard_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.nn.Hardsigmoid()(input * 3)
         sigmoid_hard_inst.accuracy.analyze(r_value, verbose=True)
         assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == codec_config['timestep']
         sigmoid_hard_inst.reset()
         assert sigmoid_hard_inst.sigmoid_hard.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -68,25 +64,32 @@ def make_operation(polarity, _timestep, _device):
     return sigmoid_hard({'polarity': polarity})
 
 
-def make_values(_polarity):
-    return (torch.linspace(-1.0, 1.0, 128),)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 128),)
+
+
+def make_performance_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 131072),)
 
 
 def analytic_reference(values, _polarity):
     return torch.nn.functional.hardsigmoid(values[0] * 3)
 
 
-def known_answer_case(_polarity):
-    values = torch.tensor([-1.0, 0.0, 1.0])
+def known_answer_case(polarity):
+    values = torch.tensor([0.0, 0.5, 1.0]) if polarity == 'unipolar' else torch.tensor([-1.0, 0.0, 1.0])
     expected = torch.nn.functional.hardsigmoid(values * 3)
     return (values,), expected, 3.0 / math.sqrt(256)
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -95,7 +98,7 @@ CONFIG = {
 
 
 def test_sigmoid_hard():
-    """Verify sigmoid_hard against analytic and known-answer streams, including reset and timing."""
+    """Verify sigmoid_hard for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

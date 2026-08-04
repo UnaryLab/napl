@@ -1,9 +1,8 @@
-import time
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.module.linear import linear
 from napl.sim.module.linear_ugemm import linear_ugemm
@@ -97,22 +96,16 @@ def _kernel_specific_checks():
 
         spikes = [enc(input_x).clone() for _ in range(timestep)]
         enc.reset()
-        sync(device)
-        t0 = time.time()
-        for s in spikes:
-            ug(s)
-        sync(device)
-        t_ug = time.time() - t0
+        with timer(device) as t_ug:
+            for s in spikes:
+                ug(s)
         ug.reset()
-        sync(device)
-        t0 = time.time()
-        for s in spikes:
-            lin(s)
-        sync(device)
-        t_lin = time.time() - t0
+        with timer(device) as t_lin:
+            for s in spikes:
+                lin(s)
         lin.reset()
-        print(f'[{device}] perf: linear_ugemm {t_ug*1e3:.1f}ms vs linear {t_lin*1e3:.1f}ms '
-              f'(ratio {t_lin/max(t_ug,1e-9):.2f}x)')
+        print(f'[{device}] perf: linear_ugemm {t_ug.seconds*1e3:.1f}ms vs linear {t_lin.seconds*1e3:.1f}ms '
+              f'(ratio {t_lin.seconds/max(t_ug.seconds,1e-9):.2f}x)')
 
     print('Test passed.')
 
@@ -144,9 +137,13 @@ def make_operation(polarity, timestep, _device):
 
 
 def make_values(polarity):
-    if polarity == 'unipolar':
-        return (torch.tensor([0.1, 0.3, 0.5, 0.7]),)
-    return (torch.tensor([-0.75, -0.25, 0.25, 0.75]),)
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(low, high, 4),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(32768, 1),)
 
 
 def analytic_reference(values, polarity):
@@ -167,6 +164,7 @@ CONFIG = {
     'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [2],
@@ -176,7 +174,7 @@ CONFIG = {
 
 
 def test_linear_ugemm():
-    """Verify linear_ugemm against analytic and known-answer streams, including reset and timing."""
+    """Verify linear_ugemm for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

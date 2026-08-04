@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation.add_ugemm import add_ugemm
 from napl.sim.metric import accuracy
@@ -40,11 +39,8 @@ def run_case(polarity, scaled, input, device, timestep=256):
     input = input.to(device)
     inst = napl_add_ugemm(codec_config, add_ugemm_config).to(device)
 
-    sync(device)
-    start = time.perf_counter()
-    inst(input, timesteps=timestep)
-    sync(device)
-    elapsed = time.perf_counter() - start
+    with timer(device) as elapsed:
+        inst(input, timesteps=timestep)
 
     entry = input.size(-1)
     if scaled:
@@ -64,7 +60,7 @@ def run_case(polarity, scaled, input, device, timestep=256):
     inst.reset()
     assert inst.add_ugemm.timestep_cur == 0
 
-    print(f'[{device}] polarity={polarity} scaled={scaled}: MAE={mae:.5f} time={elapsed:.3f}s')
+    print(f'[{device}] polarity={polarity} scaled={scaled}: MAE={mae:.5f} time={elapsed.seconds:.3f}s')
 
 
 def _kernel_specific_checks():
@@ -93,14 +89,18 @@ def _kernel_specific_checks():
 
 def _suite_config(polarity, scaled):
     entry = 8
-    low = -0.75 if polarity == 'bipolar' else 0.0
+    low, high = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
     scale = 1.0 if scaled else 1.0 / entry
 
     def make_operation(_polarity, _timestep, _device):
         return add_ugemm({'polarity': polarity, 'scaled': scaled})
 
     def make_values(_polarity):
-        values = torch.linspace(low, 0.75, 512).reshape(64, entry) * scale
+        values = torch.linspace(low, high, 512).reshape(64, entry) * scale
+        return (values,)
+
+    def make_performance_values(_polarity):
+        values = torch.linspace(low, high, 131072).reshape(16384, entry) * scale
         return (values,)
 
     def analytic_reference(values, _polarity):
@@ -110,13 +110,14 @@ def _suite_config(polarity, scaled):
         return result.clamp(-1.0 if polarity == 'bipolar' else 0.0, 1.0)
 
     def known_answer_case(_polarity):
-        value = -0.25 if polarity == 'bipolar' else 0.25
+        value = 1.0
         values = torch.full((8, entry), value * scale)
         return (values,), analytic_reference((values,), polarity), 2.0 / math.sqrt(256)
 
     return {
         'make_operation': make_operation,
         'make_values': make_values,
+        'make_performance_values': make_performance_values,
         'analytic_reference': analytic_reference,
         'known_answer_case': known_answer_case,
         'polarities': [polarity],

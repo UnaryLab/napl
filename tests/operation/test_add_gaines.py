@@ -1,10 +1,9 @@
-import time
 import math
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import add_any
 # add_gaines is not exported from operation/__init__.py.
@@ -152,22 +151,18 @@ def _kernel_specific_perf():
 
         op = add_any({'polarity': 'unipolar', 'scale': entry, 'width': 10}).to(device)
         op(spikes, dim=0)  # Warm up before timing.
-        sync(device)
-        t0 = time.perf_counter()
-        for _ in range(iters):
-            op(spikes, dim=0)
-        sync(device)
-        results['add_any'] = time.perf_counter() - t0
+        with timer(device) as elapsed:
+            for _ in range(iters):
+                op(spikes, dim=0)
+        results['add_any'] = elapsed.seconds
 
         op = add_gaines({'polarity': 'unipolar', 'scaled': True, 'entry': entry,
                          'generator': 'sobol', 'dim': 5}).to(device)
         op(spikes, dim=0)  # Warm up before timing.
-        sync(device)
-        t0 = time.perf_counter()
-        for _ in range(iters):
-            op(spikes, dim=0)
-        sync(device)
-        results['add_gaines'] = time.perf_counter() - t0
+        with timer(device) as elapsed:
+            for _ in range(iters):
+                op(spikes, dim=0)
+        results['add_gaines'] = elapsed.seconds
 
         ratio = results['add_any'] / results['add_gaines']
         print(f'{device}: add_gaines {results["add_gaines"]:.4f}s vs add_any {results["add_any"]:.4f}s, speedup x{ratio:.2f}')
@@ -186,8 +181,12 @@ def _scaled_operation(polarity, _timestep, _device):
 
 
 def _scaled_values(polarity):
-    lo = -0.75 if polarity == 'bipolar' else 0.0
-    return (torch.linspace(lo, 0.75, 64).repeat(8, 1),)
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 64).repeat(8, 1),)
+
+
+def _scaled_performance_values(polarity):
+    return (_scaled_values(polarity)[0].repeat(1, 256),)
 
 
 def _scaled_reference(values, _polarity):
@@ -195,7 +194,7 @@ def _scaled_reference(values, _polarity):
 
 
 def _scaled_known_answer(polarity):
-    value = -0.25 if polarity == 'bipolar' else 0.25
+    value = 1.0
     values = torch.full((8, 8), value)
     return (values,), values.mean(dim=0), 3.0 / math.sqrt(256)
 
@@ -203,6 +202,7 @@ def _scaled_known_answer(polarity):
 SCALED_CONFIG = {
     'make_operation': _scaled_operation,
     'make_values': _scaled_values,
+    'make_performance_values': _scaled_performance_values,
     'analytic_reference': _scaled_reference,
     'known_answer_case': _scaled_known_answer,
     'polarities': ['unipolar', 'bipolar'],
@@ -219,6 +219,10 @@ def _or_operation(_polarity, _timestep, _device):
 def _or_values(_polarity):
     base = torch.linspace(0.0, 0.15, 64)
     return tuple(base.roll(index * 7) for index in range(4))
+
+
+def _or_performance_values(_polarity):
+    return tuple(value.repeat(2048) for value in _or_values(_polarity))
 
 
 def _or_reference(values, _polarity):
@@ -242,6 +246,7 @@ def _all_kernel_specific_checks():
 OR_CONFIG = {
     'make_operation': _or_operation,
     'make_values': _or_values,
+    'make_performance_values': _or_performance_values,
     'analytic_reference': _or_reference,
     'known_answer_case': _or_known_answer,
     'polarities': ['unipolar'],
@@ -253,7 +258,7 @@ OR_CONFIG = {
 
 
 def test_add_gaines():
-    """Verify add_gaines against analytic and known-answer streams, including reset and timing."""
+    """Verify add_gaines; OR mode uses unipolar inputs in the [0, 0.15] range."""
     streaming_suite(SCALED_CONFIG)
     streaming_suite(OR_CONFIG)
 

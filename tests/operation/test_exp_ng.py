@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 # exp_ng is not exported from operation/__init__.py.
 from napl.sim.operation.exp_ng import exp_ng
@@ -58,11 +57,8 @@ def _kernel_specific_checks():
 
         exp_ng_inst = napl_exp_ng(codec_config_in, codec_config_out, exp_ng_config).to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        exp_ng_inst(input, timesteps=codec_config_in['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            exp_ng_inst(input, timesteps=codec_config_in['timestep'])
 
         r_value = torch.exp(input * (-2 * exp_ng_config['gain']))
 
@@ -76,7 +72,7 @@ def _kernel_specific_checks():
         exp_ng_inst.reset()
         assert exp_ng_inst.exp_ng.timestep_cur == 0
 
-        print(f'[{device}] Test passed in {elapsed:.3f} s.')
+        print(f'[{device}] Test passed in {elapsed.seconds:.3f} s.')
 
 
 def make_operation(_polarity, _timestep, _device):
@@ -85,6 +81,10 @@ def make_operation(_polarity, _timestep, _device):
 
 def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
+
+
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
 
 
 def analytic_reference(values, _polarity):
@@ -101,6 +101,7 @@ CONFIG = {
     'tolerance_scale': 1.6,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'input_polarities': ['bipolar'],

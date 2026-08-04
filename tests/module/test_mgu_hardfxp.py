@@ -1,10 +1,8 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.module import mgu_hard, mgu_hardfxp
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _ref_mgu(x, hx, Wf, bf, Wn, bn):
@@ -30,18 +28,12 @@ def _kernel_specific_checks():
         cell = cell.to(device)
         x = x_cpu.to(device)
         hx = hx_cpu.to(device)
-        sync(device)
-        start = time.perf_counter()
-        y = cell(x, hx)
-        sync(device)
-        elapsed = time.perf_counter() - start
-        sync(device)
-        start = time.perf_counter()
-        _ref_mgu(
-            x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n
-        )
-        sync(device)
-        ref_elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            y = cell(x, hx)
+        with timer(device) as ref_elapsed:
+            _ref_mgu(
+                x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n
+            )
 
         cfx = mgu_hardfxp(
             isz, hsz, bias=True, config={'intwidth': 3, 'fracwidth': 6}
@@ -56,7 +48,7 @@ def _kernel_specific_checks():
         rmse = (cfx(x, hx) - y).pow(2).mean().sqrt().item()
         print(
             f'[{device}] mgu_hardfxp rmse={rmse:.4f}, '
-            f'hard/reference ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+            f'hard/reference ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
         )
         assert rmse < 0.05, (device, rmse)
 
@@ -104,6 +96,10 @@ def make_inputs():
     )
 
 
+def make_performance_values():
+    return tuple(value.repeat(16384, 1) for value in make_inputs())
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     inputs = make_inputs()
@@ -135,6 +131,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

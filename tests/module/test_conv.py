@@ -1,11 +1,9 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder, conv
 
 
@@ -45,16 +43,13 @@ def _kernel_specific_checks():
         bias = bias_cpu.to(device)
         for pad in [0, 1]:
             inst = napl_conv(codec, weight, bias, 1, pad, conv_config).to(device)
-            sync(device)
-            start = time.perf_counter()
-            inst(x, timesteps=timestep)
-            sync(device)
-            elapsed = time.perf_counter() - start
+            with timer(device) as elapsed:
+                inst(x, timesteps=timestep)
             ref = F.conv2d(x, weight, bias, stride=1, padding=pad) / entry
             rmse = (inst.decoder.spike_value - ref).pow(2).mean().sqrt().item()
             print(
                 f'[{device}] pad={pad} conv rmse={rmse:.4f}, '
-                f'time={elapsed * 1000:.1f}ms'
+                f'time={elapsed.seconds * 1000:.1f}ms'
             )
             assert inst.decoder.spike_value.shape == ref.shape
             assert rmse < 0.03, (device, pad, rmse)
@@ -79,8 +74,14 @@ def make_operation(polarity, timestep, _device):
     )
 
 
-def make_values(_polarity):
-    return (torch.linspace(-0.75, 0.75, 16).reshape(1, 1, 4, 4),)
+def make_values(polarity):
+    lo, hi = (0.0, 1.0) if polarity == 'unipolar' else (-1.0, 1.0)
+    return (torch.linspace(lo, hi, 16).reshape(1, 1, 4, 4),)
+
+
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(8192, 1, 1, 1),)
 
 
 def analytic_reference(values, _polarity):
@@ -94,10 +95,11 @@ def known_answer_case(_polarity):
 
 
 CONFIG = {
-    'polarities': ['bipolar'],
+    'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -106,7 +108,7 @@ CONFIG = {
 
 
 def test_conv():
-    """Verify conv against analytic and known-answer streams, including reset and timing."""
+    """Verify conv for both polarities against analytic and known-answer streams."""
     streaming_suite(CONFIG)
 
 

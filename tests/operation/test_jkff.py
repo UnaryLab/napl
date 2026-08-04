@@ -1,10 +1,8 @@
-import time
-
 import torch
 
 from napl.sim.base import global_config
 from napl.sim.operation import jkff
-from napl.utils._shared_test import devices, sync
+from napl.utils._shared_test import devices, timer
 
     
 def test_jkff():
@@ -20,22 +18,19 @@ def test_jkff():
         j = first_j.to(device)
         k = first_k.to(device)
 
-        sync(device)
-        start = time.perf_counter()
-        first_result = jkff_inst(j, k).detach().cpu().clone()
-        second_result = jkff_inst(
-            second_j.to(device),
-            second_k.to(device),
-        ).detach().cpu().clone()
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            first_result = jkff_inst(j, k).detach().cpu().clone()
+            second_result = jkff_inst(
+                second_j.to(device),
+                second_k.to(device),
+            ).detach().cpu().clone()
 
         assert torch.equal(first_result, torch.tensor([[0, 0, 1, 1]], dtype=global_config.stype))
         assert torch.equal(second_result, torch.tensor([[1, 1, 0, 1]], dtype=global_config.stype))
         assert jkff_inst.timestep_cur == 2
         jkff_inst.reset()
         assert jkff_inst.timestep_cur == 0
-        print(f'[{device}] time={elapsed * 1000:.3f}ms')
+        print(f'[{device}] time={elapsed.seconds * 1000:.3f}ms')
 
     print('Test passed.')
 

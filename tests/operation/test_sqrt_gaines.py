@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation.sqrt_gaines import sqrt_gaines
 from napl.sim.metric import accuracy
@@ -46,11 +45,8 @@ def run_sqrt_gaines(polarity, device):
 
     sqrt_gaines_inst = napl_sqrt_gaines(codec_config, sqrt_gaines_config).to(device)
 
-    sync(device)
-    start_time = time.perf_counter()
-    sqrt_gaines_inst(input, timesteps=codec_config['timestep'])
-    sync(device)
-    elapsed = time.perf_counter() - start_time
+    with timer(device) as elapsed:
+        sqrt_gaines_inst(input, timesteps=codec_config['timestep'])
 
     r_value = torch.sqrt(input)
 
@@ -65,7 +61,7 @@ def run_sqrt_gaines(polarity, device):
     sqrt_gaines_inst.reset()
     assert sqrt_gaines_inst.sqrt_gaines.timestep_cur == 0
 
-    print(f'{polarity} on {device}: RMSE {rmse:.4f}, {elapsed:.2f} s')
+    print(f'{polarity} on {device}: RMSE {rmse:.4f}, {elapsed.seconds:.2f} s')
 
 
 def _kernel_specific_checks():
@@ -89,7 +85,12 @@ def make_operation(polarity, _timestep, _device):
 
 
 def make_values(_polarity):
-    return (torch.linspace(0.05, 1.0, 128),)
+    # The Gaines counter floor is near one third, so fidelity inputs start at 0.15.
+    return (torch.linspace(0.15, 1.0, 128),)
+
+
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
 
 
 def analytic_reference(values, _polarity):
@@ -106,6 +107,7 @@ CONFIG = {
     'tolerance_scale': 2.4,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -114,7 +116,7 @@ CONFIG = {
 
 
 def test_sqrt_gaines():
-    """Verify sqrt_gaines against analytic and known-answer streams, including reset and timing."""
+    """Verify sqrt_gaines for both polarities on the non-negative square-root domain."""
     streaming_suite(CONFIG)
 
 

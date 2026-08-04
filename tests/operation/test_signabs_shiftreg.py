@@ -16,6 +16,10 @@ def make_values(_polarity):
     return (torch.linspace(-1.0, 1.0, 1024),)
 
 
+def make_performance_values(_polarity):
+    return (torch.linspace(-1.0, 1.0, 131072),)
+
+
 def analytic_reference(values, _polarity):
     return values[0].abs()
 
@@ -52,6 +56,7 @@ CONFIG = {
     'tolerance_scale': 4.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'apply_operation': lambda operation, spikes: operation(*spikes)[1],

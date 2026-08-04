@@ -30,6 +30,10 @@ def make_inputs():
     return (torch.linspace(-10.0, 10.0, 10001),)
 
 
+def make_performance_values():
+    return (make_inputs()[0].repeat(11),)
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     input = torch.tensor([0.1, 0.5, -0.3, 1.0, -100.0, 100.0])
@@ -54,6 +58,7 @@ CONFIG = {
     'gradient_rtol': 0.0,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,

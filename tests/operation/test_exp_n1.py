@@ -1,10 +1,9 @@
 import torch
 import math
-import time
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation.exp_n1 import exp_n1
 from napl.sim.metric import accuracy
@@ -57,11 +56,8 @@ def _kernel_specific_checks():
         input = input_cpu.to(device)
 
         exp_n1_inst = napl_exp_n1(codec_config, exp_n1_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        exp_n1_inst(input, timesteps=timestep)
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            exp_n1_inst(input, timesteps=timestep)
 
         r_value = torch.exp(-input)
 
@@ -81,14 +77,11 @@ def _kernel_specific_checks():
         assert exp_n1_inst.exp_n1.timestep_cur == 0
 
         # Compare the streaming kernel with the single-shot float reference.
-        sync(device)
-        start_ref = time.perf_counter()
-        torch.exp(-input)
-        sync(device)
-        elapsed_ref = time.perf_counter() - start_ref
+        with timer(device) as elapsed_ref:
+            torch.exp(-input)
         print(f'[{device}] rmse={rmse:.4f} (bound {bound:.4f}), '
-              f'kernel {elapsed*1e3:.1f} ms for {timestep} timesteps, '
-              f'torch.exp {elapsed_ref*1e3:.3f} ms (ratio {elapsed/max(elapsed_ref, 1e-9):.0f}x)')
+              f'kernel {elapsed.seconds*1e3:.1f} ms for {timestep} timesteps, '
+              f'torch.exp {elapsed_ref.seconds*1e3:.3f} ms (ratio {elapsed.seconds/max(elapsed_ref.seconds, 1e-9):.0f}x)')
 
     print('Test passed.')
 
@@ -106,6 +99,10 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
+def make_performance_values(_polarity):
+    return (torch.linspace(0.0, 1.0, 131072),)
+
+
 def analytic_reference(values, _polarity):
     return torch.exp(-values[0])
 
@@ -120,6 +117,7 @@ CONFIG = {
     'tolerance_scale': 1.5,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [5],

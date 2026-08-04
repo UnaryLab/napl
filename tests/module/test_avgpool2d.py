@@ -31,6 +31,11 @@ def make_values(polarity):
     )
 
 
+def make_performance_values(polarity):
+    values = make_values(polarity)[0]
+    return (values.repeat(256, 1, 1, 1),)
+
+
 def analytic_reference(values, polarity):
     return F.avg_pool2d(values[0], _KERNEL_SIZE)
 
@@ -45,6 +50,7 @@ CONFIG = {
     'tolerance_scale': 4.0,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
 }

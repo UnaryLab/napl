@@ -1,7 +1,7 @@
 import torch
 import math
 
-from napl.utils import *
+from napl.utils import rshift_offset
 from napl.sim.base import napl_base
 from loguru import logger
 from napl.sim.module._shared import _init_linear_params, _linear_fxp_fn

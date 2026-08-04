@@ -1,11 +1,10 @@
 import math
-import time
 
 import torch
 
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
-from napl.utils._shared_test import devices, streaming_suite, sync
+from napl.utils._shared_test import devices, streaming_suite, timer
 from napl.sim.module import encoder, decoder
 from napl.sim.operation import relu_sat
 from napl.sim.metric import accuracy
@@ -46,18 +45,15 @@ def _kernel_specific_checks():
     for device in devices():
         input = input_cpu.to(device)
         relu_sat_inst = napl_relu_sat(codec_config, relu_sat_config).to(device)
-        sync(device)
-        start = time.perf_counter()
-        relu_sat_inst(input, timesteps=codec_config['timestep'])
-        sync(device)
-        elapsed = time.perf_counter() - start
+        with timer(device) as elapsed:
+            relu_sat_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.nn.ReLU()(input)
         relu_sat_inst.accuracy.analyze(r_value, verbose=True)
         assert relu_sat_inst.relu_sat.timestep_cur == codec_config['timestep']
         relu_sat_inst.reset()
         assert relu_sat_inst.relu_sat.timestep_cur == 0
-        print(f'[{device}] time: {elapsed * 1000:.1f} ms')
+        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -68,6 +64,10 @@ def make_operation(_polarity, _timestep, _device):
 
 def make_values(_polarity):
     return (torch.linspace(-1.0, 1.0, 128),)
+
+
+def make_performance_values(_polarity):
+    return (torch.linspace(-1.0, 1.0, 131072),)
 
 
 def analytic_reference(values, _polarity):
@@ -84,6 +84,7 @@ CONFIG = {
     'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
+    'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

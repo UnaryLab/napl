@@ -12,6 +12,7 @@ Prepare = Optional[Callable[[], None]]
 Device = str
 
 
+# List available compute devices.
 def devices():
     dev = ['cpu']
     if torch.cuda.is_available():
@@ -21,6 +22,7 @@ def devices():
     return dev
 
 
+# Synchronize pending device work.
 def sync(device):
     if device == 'cuda':
         torch.cuda.synchronize()
@@ -28,23 +30,28 @@ def sync(device):
         torch.mps.synchronize()
 
 
+# Measure elapsed time for device operations.
 class timer:
+    # Prepare timing for the selected device.
     def __init__(self, device):
         self.device = device
         self.seconds = None
 
 
+    # Start device-aware timing.
     def __enter__(self):
         sync(self.device)
         self._start = perf_counter()
         return self
 
 
+    # Stop timing and store elapsed seconds.
     def __exit__(self, exc_type, exc_value, traceback):
         sync(self.device)
         self.seconds = perf_counter() - self._start
 
 
+# Clone inputs, optionally moving them to a device.
 def clone_inputs(
     inputs: Sequence[torch.Tensor], device: Optional[Device] = None
 ) -> InputTuple:
@@ -53,6 +60,7 @@ def clone_inputs(
     return tuple(value.clone().to(device) for value in inputs)
 
 
+# Normalize inputs to at least two dimensions.
 def _multirank_inputs(inputs: Sequence[torch.Tensor]) -> InputTuple:
     return tuple(
         value.reshape((1,) * (2 - value.ndim) + tuple(value.shape))
@@ -61,6 +69,7 @@ def _multirank_inputs(inputs: Sequence[torch.Tensor]) -> InputTuple:
     )
 
 
+# Verify that two input sequences match exactly.
 def assert_inputs_equal(
     candidate_inputs: Sequence[torch.Tensor],
     baseline_inputs: Sequence[torch.Tensor],
@@ -89,6 +98,7 @@ def assert_inputs_equal(
         )
 
 
+# Measure median runner runtime.
 def benchmark(
     runner: Runner,
     shared_inputs: Sequence[torch.Tensor],
@@ -116,6 +126,7 @@ def benchmark(
     return runtime
 
 
+# Validate and merge suite configuration.
 def _check_config(cfg, required, defaults, suite):
     unknown = set(cfg) - set(required) - set(defaults)
     if unknown:
@@ -146,6 +157,7 @@ _STREAMING_DEFAULTS = {
     'encoder_dims': None,
     'encoder_generators': None,
     'make_readout': None,
+    'make_performance_values': None,
     'extra_checks': None,
     'timesteps': 256,
     'warmup_runs': 2,
@@ -153,6 +165,7 @@ _STREAMING_DEFAULTS = {
 }
 
 
+# Build codec settings for a pipeline.
 def _codec_config(polarity, timestep, dim):
     return {
         'polarity': polarity,
@@ -162,12 +175,14 @@ def _codec_config(polarity, timestep, dim):
     }
 
 
+# Resolve a polarity-dependent option.
 def _resolve_streaming_option(option, polarity):
     if callable(option):
         return option(polarity)
     return option
 
 
+# Construct the encoder, operation, and decoder pipeline.
 def _make_pipeline(polarity, timestep, device, input_count, cfg):
     input_polarities = _resolve_streaming_option(
         cfg['input_polarities'], polarity
@@ -215,6 +230,7 @@ def _make_pipeline(polarity, timestep, device, input_count, cfg):
     return encoders, operation, dec
 
 
+# Run a streaming pipeline for a fixed number of timesteps.
 def _run_pipeline(cfg, pipeline, values, timestep, check_progress,
                   capture_trace):
     encoders, operation, dec = pipeline
@@ -232,6 +248,7 @@ def _run_pipeline(cfg, pipeline, values, timestep, check_progress,
     return result, trace
 
 
+# Return pipeline modules to their initial timestep state.
 def _reset_pipeline(pipeline):
     encoders, operation, dec = pipeline
     for module in (*encoders, operation, dec):
@@ -239,6 +256,7 @@ def _reset_pipeline(pipeline):
         assert module.timestep_cur == 0
 
 
+# Check streaming outputs against known answers.
 def _streaming_known_answer(cfg):
     torch.manual_seed(_SEED)
     for polarity in cfg['polarities']:
@@ -257,6 +275,7 @@ def _streaming_known_answer(cfg):
             )
 
 
+# Check streaming fidelity against an analytic reference.
 def _streaming_fidelity(cfg):
     torch.manual_seed(_SEED)
     timesteps = cfg['timesteps']
@@ -288,6 +307,7 @@ def _streaming_fidelity(cfg):
             )
 
 
+# Check streaming reset and replay determinism.
 def _streaming_reset_replay(cfg):
     torch.manual_seed(_SEED)
     timesteps = _STATE_TIMESTEPS
@@ -320,17 +340,23 @@ def _streaming_reset_replay(cfg):
             )
 
 
+# Benchmark streaming pipeline performance.
 def _streaming_performance(cfg):
     torch.manual_seed(_SEED)
     timesteps = cfg['timesteps']
     for polarity in cfg['polarities']:
-        values_cpu = cfg['make_values'](polarity)
+        # Select optional large inputs for the performance check.
+        if cfg['make_performance_values'] is None:
+            values_cpu = cfg['make_values'](polarity)
+        else:
+            values_cpu = cfg['make_performance_values'](polarity)
         cpu_runtime = None
         for device in devices():
             pipeline = _make_pipeline(
                 polarity, timesteps, device, len(values_cpu), cfg,
             )
 
+            # Run the configured pipeline for benchmark inputs.
             def run(inputs):
                 _run_pipeline(
                     cfg, pipeline, inputs, timesteps,
@@ -390,17 +416,20 @@ _SINGLE_SHOT_REQUIRED = (
     'expected_ste_gradients',
 )
 _SINGLE_SHOT_DEFAULTS = {
+    'make_performance_values': None,
     'extra_checks': None,
     'warmup_runs': 2,
     'trials': 7,
 }
 
 
+# Assert single-shot module state.
 def _assert_single_shot(module):
     assert module.streaming is False
     assert module.timestep_cur == 0
 
 
+# Build the default gradient output.
 def _default_gradient_output(output):
     ramp = torch.arange(
         1, output.numel() + 1, dtype=output.dtype, device=output.device
@@ -408,6 +437,7 @@ def _default_gradient_output(output):
     return (ramp / output.numel()).reshape(output.shape)
 
 
+# Check single-shot outputs against known answers.
 def _single_shot_known_answer(cfg):
     torch.manual_seed(_SEED)
     candidate_cpu, inputs_cpu, expected = cfg['known_answer_case']()
@@ -422,6 +452,7 @@ def _single_shot_known_answer(cfg):
         )
 
 
+# Check single-shot fidelity against a reference module.
 def _single_shot_fidelity(cfg):
     torch.manual_seed(_SEED)
     tolerance = cfg['quantization_atol']
@@ -446,6 +477,7 @@ def _single_shot_fidelity(cfg):
         )
 
 
+# Check straight-through estimator gradients.
 def _single_shot_gradients(cfg):
     torch.manual_seed(_SEED)
     atol = cfg['gradient_atol']
@@ -499,10 +531,15 @@ def _single_shot_gradients(cfg):
             )
 
 
+# Benchmark single-shot module performance.
 def _single_shot_performance(cfg):
     torch.manual_seed(_SEED)
     candidate_cpu, _ = cfg['make_module_pair']()
-    shared_inputs_cpu = cfg['make_inputs']()
+    # Select optional large inputs for the performance check.
+    if cfg['make_performance_values'] is None:
+        shared_inputs_cpu = cfg['make_inputs']()
+    else:
+        shared_inputs_cpu = cfg['make_performance_values']()
     cpu_runtime = None
     for device in devices():
         candidate = copy.deepcopy(candidate_cpu).to(device)

@@ -1,7 +1,6 @@
 import torch
 import math
 
-from napl.utils import *
 from napl.sim.base import napl_base
 from loguru import logger
 from napl.sim.module._shared import (

@@ -4,7 +4,7 @@ import torch
 
 from loguru import logger
 from dataclasses import dataclass, field
-from napl.utils import *
+from napl.utils import check_config, check_name, check_polarity, read_yaml
 from functools import wraps
 
 

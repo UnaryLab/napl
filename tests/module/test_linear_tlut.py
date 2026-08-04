@@ -1,10 +1,8 @@
-import time
-
 import torch
 import torch.nn.functional as F
 
 from napl.sim.module import linear_tlut
-from napl.utils._shared_test import devices, single_shot_suite, sync
+from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _kernel_specific_checks():
@@ -29,11 +27,8 @@ def _kernel_specific_checks():
         weight = weight_cpu.to(device)
         bias = bias_cpu.to(device)
         x = x_cpu.to(device)
-        sync(device)
-        start = time.perf_counter()
-        ref = F.linear(x, weight, bias)
-        sync(device)
-        ref_elapsed = time.perf_counter() - start
+        with timer(device) as ref_elapsed:
+            ref = F.linear(x, weight, bias)
         for cfg, expect_mode, bound in cases:
             lin = linear_tlut(
                 in_features,
@@ -44,16 +39,13 @@ def _kernel_specific_checks():
                 config=cfg,
             ).to(device)
             assert lin.mode == expect_mode, (lin.mode, expect_mode)
-            sync(device)
-            start = time.perf_counter()
-            y = lin(x)
-            sync(device)
-            elapsed = time.perf_counter() - start
+            with timer(device) as elapsed:
+                y = lin(x)
             rmse = (y - ref).pow(2).mean().sqrt().item()
             print(
                 f'[{device}] {expect_mode} temporal={cfg["temporal"]}: '
                 f'rmse={rmse:.5f}, '
-                f'ratio={ref_elapsed / max(elapsed, 1e-12):.2f}x'
+                f'ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
             )
             assert y.shape == ref.shape
             assert rmse < bound, (device, expect_mode, rmse)
@@ -113,6 +105,10 @@ def make_inputs():
     return (torch.linspace(-0.75, 0.75, 32).reshape(8, 4),)
 
 
+def make_performance_values():
+    return (make_inputs()[0].repeat(4096, 1),)
+
+
 def known_answer_case():
     candidate, reference = make_module_pair()
     values = torch.tensor([[0.5, 0.25, -0.25, -0.5]])
@@ -134,6 +130,7 @@ CONFIG = {
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
+    'make_performance_values': make_performance_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,
