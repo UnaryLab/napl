@@ -1,7 +1,6 @@
 import torch
 
-from napl.sim.operation import decode, encode
-from napl.sim.operation import signabs_interleave
+from napl.sim.operation import decode, encode, signabs_interleave
 from napl.utils._shared_test import devices, streaming_suite
 
 
@@ -9,7 +8,7 @@ TIMESTEPS = 256
 
 
 def make_operation(_polarity, _timestep, _device):
-    return signabs_interleave({'width': 5})
+    return signabs_interleave({'width': 3})
 
 
 def make_values(_polarity):

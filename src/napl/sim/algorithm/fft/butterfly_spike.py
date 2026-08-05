@@ -1,9 +1,8 @@
 import torch
 
 from napl.sim.base import napl_base, napl_sim_timesteps
-from napl.sim.operation import encode, decode
+from napl.sim.operation import add_any, decode, encode, mul_ugemm
 from napl.sim.metric import accuracy
-from napl.sim.operation import mul_ugemm, add_any
 
 
 class butterfly_spike(napl_base):

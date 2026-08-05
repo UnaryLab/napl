@@ -5,8 +5,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.operation import encode, decode
-from napl.sim.operation import uni2bi
+from napl.sim.operation import decode, encode, uni2bi
 from napl.sim.metric import accuracy
 
 

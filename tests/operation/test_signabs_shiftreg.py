@@ -1,7 +1,6 @@
 import torch
 
-from napl.sim.operation import decode, encode
-from napl.sim.operation import signabs_shiftreg
+from napl.sim.operation import decode, encode, signabs_shiftreg
 from napl.utils._shared_test import devices, streaming_suite
 
 

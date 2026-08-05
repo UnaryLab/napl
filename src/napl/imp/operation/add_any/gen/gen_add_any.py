@@ -2,8 +2,7 @@ from pathlib import Path
 
 import torch
 
-from napl.sim.operation import encode
-from napl.sim.operation import add_any
+from napl.sim.operation import add_any, encode
 
 
 ROOT = Path(__file__).resolve().parent.parent

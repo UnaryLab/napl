@@ -8,8 +8,7 @@ from napl.sim.base import global_config
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, timer
 from napl.sim.module import mgu, mgu_hard, mgu_hub
-from napl.sim.operation import encode
-from napl.sim.operation import mul_ugemm_sr
+from napl.sim.operation import encode, mul_ugemm_sr
 from UnarySim.kernel.rnn import FSUMGUCell
 
 

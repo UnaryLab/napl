@@ -3,8 +3,7 @@ from pathlib import Path
 
 import torch
 
-from napl.sim.operation import encode
-from napl.sim.operation import add_ugemm
+from napl.sim.operation import add_ugemm, encode
 
 
 ROOT = Path(__file__).resolve().parent.parent

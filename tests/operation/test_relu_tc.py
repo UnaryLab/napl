@@ -1,8 +1,7 @@
 import torch
 
 from napl.sim.base import global_config
-from napl.sim.operation import encode
-from napl.sim.operation import relu_tc
+from napl.sim.operation import encode, relu_tc
 from napl.utils._shared_test import devices, streaming_suite
 
 
@@ -40,7 +39,7 @@ def check_zero_reference():
         'dim': 1,
     }
     shape = (2, 3)
-    never_rising = torch.full(shape, -1.0, dtype=global_config.ntype)
+    already_fallen = torch.full(shape, -1.0, dtype=global_config.ntype)
     zero = torch.zeros(shape, dtype=global_config.ntype)
 
     for device in devices():
@@ -48,8 +47,8 @@ def check_zero_reference():
         stream = encode(codec_config).to(device)
         reference = encode(codec_config).to(device)
         for _ in range(TIMESTEPS):
-            # A never-rising input leaves the internal reference as the output.
-            output = operation(stream(never_rising.to(device)))
+            # An input already fallen at cycle 0 leaves the internal reference as the output.
+            output = operation(stream(already_fallen.to(device)))
             expected = reference(zero.to(device))
             assert output.shape == shape
             assert torch.equal(output.cpu(), expected.cpu())

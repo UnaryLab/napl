@@ -98,8 +98,8 @@ class linear_hub(napl_base):
                 * **widthi**, **widthw** - Equal sign-magnitude widths. Both
                   default to ``8``.
                 * **rngi**, **rngw** - Input and weight RNG names. Both default
-                  to ``"sobol"``; ``"rc"``, ``"race"``, ``"tc"``,
-                  ``"race10"``, and ``"tc10"`` follow the implemented map rules.
+                  to ``"sobol"``; ``"rc"`` and ``"tc"`` follow the implemented
+                  map rules.
                 * **quantilei**, **quantilew** - Dynamic-scaling quantiles. Both
                   default to ``1``.
                 * **cycle** - Active unary cycles, capped at ``2 ** (widthi - 1)``.

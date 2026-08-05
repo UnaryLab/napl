@@ -99,8 +99,9 @@ def gen_num_seq(config={
         dim = config.get('dim', 1)
         num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
     elif (generator == 'tc') or (generator == 'temporal'):
-        # Descending thresholds make temporal streams emit ones before zeros.
-        num_seq = torch.tensor([x/seq_len for x in range(seq_len-1, -1, -1)])
+        # Ascending thresholds make temporal streams emit ones then zeros, with the
+        # falling edge later for larger values.
+        num_seq = torch.tensor([x/seq_len for x in range(seq_len)])
     elif generator == 'lfsr':
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
     elif generator == 'sys':

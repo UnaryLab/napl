@@ -8,33 +8,43 @@ class inhibit(napl_base):
     Gate a temporal-coded data stream with an inhibiting stream (race-logic
     INHIBIT).
 
-    Race logic encodes a value as the arrival time of a rising edge. INHIBIT
-    passes the data signal unchanged when it arrives before or at the same
-    time as the inhibiting signal, and never fires (:math:`\infty` arrival)
-    when the inhibiting signal arrives strictly earlier. napl temporal streams
-    rise earlier for larger values, so the inhibiting value blocks the data
-    value exactly when it is strictly larger, and the never-firing all-zeros
-    output decodes to the minimum representable value. For data value
+    Race logic encodes a value as the arrival time of an edge. INHIBIT passes
+    the data signal unchanged when it arrives before or at the same time as the
+    inhibiting signal, and never falls when the inhibiting signal arrives
+    strictly earlier. napl temporal streams carry the value on a falling edge
+    that comes later for larger values, so the inhibiting value blocks the data
+    value exactly when it is strictly smaller, and the never-falling all-ones
+    output decodes to the maximum representable value. For data value
     :math:`x_0` and inhibiting value :math:`x_1`
 
     .. math::
 
        y =
        \begin{cases}
-       x_0, & x_0 \ge x_1,\\
-       y_{\min}, & x_0 < x_1,
+       x_0, & x_0 \le x_1,\\
+       y_{\max}, & x_0 > x_1,
        \end{cases}
 
-    with :math:`y_{\min}=0` for unipolar and :math:`y_{\min}=-1` for bipolar
-    streams. Per timestep, a latch records that the inhibiting stream spiked
-    while the data stream had not, with :math:`s_{-1}=0`:
+    with :math:`y_{\max}=1` for unipolar and :math:`y_{\max}=+1` for bipolar
+    streams. Per timestep, a latch records that the data stream was still high
+    while the inhibiting stream had fallen, with :math:`s_{-1}=0`:
 
     .. math::
 
        \begin{aligned}
-       s_t &= s_{t-1}\mathbin{\lor}(x_{1,t}\mathbin{\land}\lnot x_{0,t}),\\
-       y_t &= x_{0,t}\mathbin{\land}\lnot s_t.
+       s_t &= s_{t-1}\mathbin{\lor}(x_{0,t}\mathbin{\land}\lnot x_{1,t}),\\
+       y_t &= x_{0,t}\mathbin{\lor}s_t.
        \end{aligned}
+
+    Relative to Tzimpragos et al. (2019): napl shares that paper's value-to-time
+    direction, value = arrival time with a larger value arriving later, and
+    carries it on a falling rather than a rising edge. Complementing both inputs
+    and the output recovers the paper's rising-edge gate exactly, so the pass
+    condition :math:`x_0 \le x_1` above is the paper's :math:`j \le i` with no
+    mirroring, ``input_0`` being the data signal :math:`j` and ``input_1`` the
+    inhibiting signal :math:`i`. This is the paper's Fig. 3(c) synchronous form,
+    in which a simultaneous arrival passes, rather than the Fig. 3(d)
+    asynchronous latch realizing strict :math:`j < i`.
 
     .. rubric:: Example
 
@@ -127,7 +137,7 @@ class inhibit(napl_base):
         """
         in_0 = input_0.type(torch.int8)
         in_1 = input_1.type(torch.int8)
-        blocked = in_1 & (in_0 ^ 1)
+        blocked = in_0 & (in_1 ^ 1)
 
         if self.latch.shape == blocked.shape:
             self.latch.bitwise_or_(blocked)
@@ -135,5 +145,5 @@ class inhibit(napl_base):
             updated = self.latch | blocked
             self.latch.resize_as_(updated).copy_(updated.detach())
 
-        output = in_0 & (self.latch ^ 1)
+        output = in_0 | self.latch
         return output.type(self.stype)

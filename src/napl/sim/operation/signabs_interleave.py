@@ -44,12 +44,12 @@ class signabs_interleave(napl_base):
         import torch
         from napl import signabs_interleave
 
-        operation = signabs_interleave({'width': 5})
+        operation = signabs_interleave({'width': 3})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
     """
 
 
-    def __init__(self, config={'width': 5}):
+    def __init__(self, config={'width': 3}):
         """
         Configure the interleaving counter.
 
@@ -59,7 +59,7 @@ class signabs_interleave(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Positive saturating-counter bit width; the default is ``5``.
+              - **width**: Positive saturating-counter bit width; the default is ``3``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], polarity_required=False)
@@ -114,13 +114,9 @@ class signabs_interleave(napl_base):
             sign, magnitude = operation(torch.tensor([0.0, 1.0]))
         """
         if self.acc.shape == input.shape:
-            self.acc.add_(input, alpha=2).sub_(1).clamp_(
-                0, self.acc_max
-            )
+            self.acc.add_(input, alpha=2).sub_(1).clamp_(0, self.acc_max)
         else:
-            updated = self.acc.add(input, alpha=2).sub_(1).clamp_(
-                0, self.acc_max
-            )
+            updated = self.acc.add(input, alpha=2).sub_(1).clamp_(0, self.acc_max)
             self.acc.resize_as_(updated).copy_(updated.detach())
 
         sign = torch.lt(self.acc, self.acc_half).type(torch.int8)

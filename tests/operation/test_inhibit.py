@@ -5,17 +5,16 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.operation import encode, decode
-from napl.sim.operation import inhibit
+from napl.sim.operation import decode, encode, inhibit
 from napl.sim.metric import accuracy
 
 
 def _inhibit_reference(data, inhibiting, polarity):
-    # An inhibited stream never fires; its all-zeros output decodes to the
-    # minimum representable value (race-logic infinity under napl's
-    # larger-value-fires-earlier temporal code).
-    floor = 0.0 if polarity == 'unipolar' else -1.0
-    return torch.where(data >= inhibiting, data, torch.full_like(data, floor))
+    # An inhibited stream never falls; its all-ones output decodes to the
+    # maximum representable value (race-logic infinity under napl's
+    # larger-value-falls-later temporal code).
+    ceiling = 1.0
+    return torch.where(data <= inhibiting, data, torch.full_like(data, ceiling))
 
 
 class napl_inhibit(napl_base):
@@ -106,13 +105,13 @@ def analytic_reference(values, polarity):
 def known_answer_case(polarity):
     if polarity == 'unipolar':
         # Data passes when its edge arrives no later than the inhibitor's
-        # (0.75 >= 0.25 and the 0.5 tie); a strictly earlier inhibitor
-        # (0.75 > 0.25) forces the output to never fire.
-        values = (torch.tensor([0.75, 0.25, 0.5]), torch.tensor([0.25, 0.75, 0.5]))
-        expected = torch.tensor([0.75, 0.0, 0.5])
+        # (0.25 <= 0.75 and the 0.5 tie); a strictly earlier inhibitor
+        # (0.25 < 0.75) forces the output to never fall.
+        values = (torch.tensor([0.25, 0.75, 0.5]), torch.tensor([0.75, 0.25, 0.5]))
+        expected = torch.tensor([0.25, 1.0, 0.5])
     else:
-        values = (torch.tensor([0.5, -0.5, 0.0]), torch.tensor([-0.5, 0.5, 0.0]))
-        expected = torch.tensor([0.5, -1.0, 0.0])
+        values = (torch.tensor([-0.5, 0.5, 0.0]), torch.tensor([0.5, -0.5, 0.0]))
+        expected = torch.tensor([-0.5, 1.0, 0.0])
     return values, expected, 0.0
 
 

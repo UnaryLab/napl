@@ -122,10 +122,10 @@ standalone UnarySim class** to diff against. For these, validate against the *ma
   `sync_skewed` (= `SkewedSync`) then a gate; temporal versions are elementwise. UnarySim's
   `FSUCompare` is unusable dead code because it ignores both forward inputs and references the builtin `input`.
 - `inhibit` - race-logic INHIBIT gate from *Boosted Race Trees for Low Energy Classification*
-  (ASPLOS 2019, Fig 3): the data stream passes when its rising edge arrives no later than the
-  inhibiting stream's; a strictly earlier inhibitor latches the output to never fire (all zeros,
-  the minimum value under napl's larger-value-fires-earlier temporal code). Validate against
-  `where(x0 >= x1, x0, min)` on temporal streams, not an UnarySim class.
+  (ASPLOS 2019, Fig 3): the data stream passes when its falling edge arrives no later than the
+  inhibiting stream's; a strictly earlier inhibitor latches the output to never fall (all ones,
+  the maximum value under napl's larger-value-falls-later temporal code). Validate against
+  `where(x0 <= x1, x0, max)` on temporal streams, not an UnarySim class.
 
 ## Neural layers (`napl.sim.module`  ->  UnarySim `kernel/{linear,conv,rnn}.py`)
 

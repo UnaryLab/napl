@@ -151,13 +151,9 @@ def test_number_sequences():
     gen_num_seq({'width': width, 'generator': 'sys', 'seed': 42})
     assert torch.equal(before, torch.randn(3))
 
+    # Ascending thresholds put the falling edge later for larger values.
     temporal = gen_num_seq({'width': width, 'generator': 'temporal'})
-    expected = torch.arange(
-        length - 1,
-        -1,
-        -1,
-        dtype=global_config.ntype,
-    )
+    expected = torch.arange(length, dtype=global_config.ntype)
     expected.div_(length)
     assert torch.equal(temporal, expected)
 

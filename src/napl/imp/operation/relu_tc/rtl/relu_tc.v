@@ -5,9 +5,9 @@
 //
 // relu(x) is the temporal maximum of the input against a stream carrying zero,
 // so the module generates that zero reference internally and ORs it with the
-// input. A bipolar zero rises at the midpoint of the codeword, so the reference
-// bit is the MSB of a WIDTH-bit cycle counter: 0 for the first 2**(WIDTH-1)
-// cycles and 1 for the rest, wrapping with the codeword. The output is
+// input. A bipolar zero falls at the midpoint of the codeword, so the reference
+// bit is the inverted MSB of a WIDTH-bit cycle counter: 1 for the first
+// 2**(WIDTH-1) cycles and 0 for the rest, wrapping with the codeword. The output is
 // combinational in the arrival cycle and the counter commits on the clock edge,
 // so one vector row is one timestep.
 //==============================================================================
@@ -27,7 +27,7 @@ module relu_tc #(
     // Current bit of the internal stream encoding zero.
     wire reference;
 
-    assign reference = cycle[WIDTH-1];
+    assign reference = ~cycle[WIDTH-1];
     assign o_out = i_input | reference;
 
     always @(posedge i_clk or negedge i_rst_n) begin

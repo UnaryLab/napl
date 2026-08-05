@@ -52,14 +52,13 @@ def _hub_rng_seq(width, rng='sobol'):
     Integer RNG sequence of length 2**width in [0, 2**width).
     Used to build the HUB unary-multiplication value map.
     """
+    legal_rngs = ('sobol', 'rc', 'tc')
     seq_len = 2 ** width
     rng = rng.lower()
-    if rng in ('sobol', 'rc'):
-        seq = torch.quasirandom.SobolEngine(1).draw(seq_len)[:, 0].view(seq_len) * seq_len
-    elif rng in ('race', 'tc'):
+    assert rng in legal_rngs, \
+        logger.error(f'Invalid rng: <{rng}>; legal values: <{list(legal_rngs)}>.')
+    if rng == 'tc':
         seq = torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len
-    elif rng in ('race10', 'tc10'):
-        seq = torch.flip(torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len, [0])
     else:
         seq = torch.quasirandom.SobolEngine(1).draw(seq_len)[:, 0].view(seq_len) * seq_len
     return seq.floor()

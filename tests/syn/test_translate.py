@@ -5,6 +5,7 @@ import pytest
 
 from napl.syn import (
     TranslationError,
+    load_mapping,
     translate_graph,
     translate_node,
 )
@@ -44,8 +45,15 @@ def test_graph_translation_preserves_order():
 
 def test_missing_rtl_mapping_names_class():
     """Reject a simulation class that has no RTL mapping entry."""
-    with pytest.raises(TranslationError, match="inhibit"):
-        translate_node({"class": "inhibit", "config": {}})
+    # A synthetic name keeps the check about the error message rather than about
+    # which real classes happen to lack an RTL module today.
+    absent = "operation_with_no_rtl_module"
+    for entry in load_mapping():
+        assert entry.get("rtl_module") != absent, f"{absent} must stay out of the RTL mapping"
+        assert absent not in str(entry.get("sim_module", "")), \
+            f"{absent} must stay out of the RTL mapping"
+    with pytest.raises(TranslationError, match=absent):
+        translate_node({"class": absent, "config": {}})
 
 
 def test_bindings_match_rtl_module_headers():

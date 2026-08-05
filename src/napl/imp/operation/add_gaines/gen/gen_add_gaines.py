@@ -4,8 +4,7 @@ from pathlib import Path
 
 import torch
 
-from napl.sim.operation import add_gaines
-from napl.sim.operation import encode
+from napl.sim.operation import add_gaines, encode
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

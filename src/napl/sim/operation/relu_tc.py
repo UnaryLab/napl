@@ -32,9 +32,9 @@ class relu_tc(napl_base):
        y_t &= x_t \mathbin{\lor} r_t.
        \end{aligned}
 
-    The descending temporal sequence makes the reference rise at the midpoint
-    cycle, so an input rising earlier than the midpoint passes through
-    unchanged and an input rising later is replaced by zero.
+    The ascending temporal sequence makes the reference fall at the midpoint
+    cycle, so an input falling later than the midpoint passes through
+    unchanged and an input falling earlier is replaced by zero.
 
     .. rubric:: Example
 
