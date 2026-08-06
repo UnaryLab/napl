@@ -10,10 +10,12 @@
 // than rebuilt. Generated parameters mirror Python.
 // The im2col patch is wiring: tap (ic, kh, kw) of lane (b, oc, oh, ow) reads input
 // row oh*STRIDE + kh*DILATION - PADDING and column ow*STRIDE + kw*DILATION -
-// PADDING. A tap outside the input reads i_pad_bits, which is 0 for unipolar
-// streams: a unipolar zero pad is a zero spike.
-// Weight, bias, and pad spikes arrive on ports: the model re-encodes all three
-// every timestep from externally held tensors.
+// PADDING. A tap outside the input reads a constant zero spike, the unipolar zero
+// pad, so this variant carries no pad port: the Python model builds a pad stream
+// only for a bipolar stream with nonzero padding, and mapping.yaml maps
+// `pad_bits` to no port here.
+// Weight and bias spikes arrive on ports: the model re-encodes both every
+// timestep from externally held tensors.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every accumulator to match reset().
 // WIDTH must satisfy 2**(WIDTH-1) > ENTRY (= K + HAS_BIAS), so the signed
@@ -43,7 +45,6 @@ module conv_unipolar #(
     input  wire [BATCH*IN_CHANNELS*IN_H*IN_W-1:0]                 i_input_spike,  // (b, ic, ih, iw) row-major
     input  wire [OUT_CHANNELS*IN_CHANNELS*KERNEL_H*KERNEL_W-1:0]  i_weight,       // out channel oc, tap t at [oc*K + t]
     input  wire [OUT_CHANNELS-1:0]                                i_bias,         // out channel oc at [oc]
-    input  wire                                                   i_pad_bits,     // one pad spike per timestep, all lanes
     output wire [LANES-1:0]                                       o_out           // (b, oc, oh, ow) row-major
 );
 
@@ -100,7 +101,7 @@ module conv_unipolar #(
                 if (IH >= 0 && IH < IN_H && IW >= 0 && IW < IN_W) begin : g_input
                     assign x_bit = i_input_spike[((b*IN_CHANNELS + ic)*IN_H + IH)*IN_W + IW];
                 end else begin : g_pad
-                    assign x_bit = i_pad_bits;
+                    assign x_bit = 1'b0;
                 end
 
                 mul_gaines_unipolar u_mul (

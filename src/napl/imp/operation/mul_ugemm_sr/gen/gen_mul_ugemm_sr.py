@@ -31,7 +31,12 @@ def build_streams(polarity):
         "dim": 1,
     }
     codec_1 = dict(codec_0, dim=2)
-    return pair_streams(codec_0, codec_1, rep_pairs(polarity, polarity))
+    # p = (x + 1) / 2 over [-1, 1] is the unipolar [0, 1] grid, so the bipolar
+    # operands are drawn from a narrower range and the two streams stay distinct.
+    value_range = (-1.0, 0.5) if polarity == "bipolar" else None
+    return pair_streams(codec_0, codec_1,
+                        rep_pairs(polarity, polarity,
+                                  range0=value_range, range1=value_range))
 
 
 def drive(model, input_0, input_1):
@@ -49,6 +54,8 @@ def main():
     }
     assert len(streams["unipolar"][0]) == len(streams["bipolar"][0])
     assert len(streams["unipolar"][1]) == len(streams["bipolar"][1])
+    assert streams["unipolar"] != streams["bipolar"], \
+        "bipolar stimulus is identical to unipolar"
 
     models = {
         polarity: mul_ugemm_sr(dict(OP_CONFIG, polarity=polarity))

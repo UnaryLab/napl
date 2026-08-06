@@ -3,7 +3,7 @@
 // Generated sizing mirrors the Python model configuration.
 `include "linear/vec/linear_params.vh"
 // Python golden rows are <rst> <in_u> <in_b> <w_u> <w_b> <b_u> <b_b>
-// <out_u> <out_u_nb> <out_b> <out_b_nb> <out_u_s>, one per timestep. Polarity
+// <out_u> <out_u_nb> <out_b> <out_b_nb> <out_u_s> <out_b_s>, one per timestep. Polarity
 // selects the circuit, so each row drives the unipolar and the bipolar DUT with
 // its own encoded streams, in the with-bias and the no-bias configuration; the
 // unipolar and the bipolar grids hold different values, so the two polarities
@@ -34,6 +34,7 @@ module linear_tb;
     wire [`GEN_LANES-1:0]       o_out_b;
     wire [`GEN_LANES-1:0]       o_out_b_nb;
     wire [`GEN_LANES-1:0]       o_out_u_s;
+    wire [`GEN_LANES-1:0]       o_out_b_s;
 
     linear_unipolar #(
         .IN_FEATURES (`GEN_IN_FEATURES),
@@ -113,6 +114,24 @@ module linear_tb;
         .o_out         (o_out_u_s)
     );
 
+    // The bipolar arm at the same explicit SCALE. Its accumulator is the only one
+    // that moves down, by the offset a scale below ENTRY creates, so it is what
+    // pins the negative clamp; it also pins WIDTH from the bipolar side.
+    linear_bipolar #(
+        .IN_FEATURES (`GEN_IN_FEATURES),
+        .LANES       (`GEN_LANES),
+        .WIDTH       (`GEN_WIDTH),
+        .SCALE       (`GEN_SCALE_S),
+        .HAS_BIAS    (1)
+    ) dut_b_s (
+        .i_clk         (i_clk),
+        .i_rst_n       (i_rst_n),
+        .i_input_spike (i_input_spike_b),
+        .i_weight      (i_weight_b),
+        .i_bias        (i_bias_b),
+        .o_out         (o_out_b_s)
+    );
+
     // One character wider than the widest golden column: $fscanf("%s") truncates
     // to the token width, so a column read into a reg exactly as wide as it should
     // be saturates at the expected length and an over-long column would pass the
@@ -132,6 +151,7 @@ module linear_tb;
     reg  [`GEN_LANES-1:0]       exp_b;
     reg  [`GEN_LANES-1:0]       exp_b_nb;
     reg  [`GEN_LANES-1:0]       exp_u_s;
+    reg  [`GEN_LANES-1:0]       exp_b_s;
     reg  [1023:0]               hdr_line;
     reg  [MAX_CHARS*8-1:0]      tok_in_u;
     reg  [MAX_CHARS*8-1:0]      tok_in_b;
@@ -144,6 +164,7 @@ module linear_tb;
     reg  [MAX_CHARS*8-1:0]      tok_b;
     reg  [MAX_CHARS*8-1:0]      tok_b_nb;
     reg  [MAX_CHARS*8-1:0]      tok_u_s;
+    reg  [MAX_CHARS*8-1:0]      tok_b_s;
 
 
     // Characters $fscanf("%s") stored: the bit width the golden row carries.
@@ -214,12 +235,12 @@ module linear_tb;
             fails = fails + 1;
         end
 
-        // The loop ends on the first row that does not yield all 12 columns, so a
+        // The loop ends on the first row that does not yield all 13 columns, so a
         // scan that stops consuming ends the run instead of spinning on $feof.
-        code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s\n", rst,
+        code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
                        tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_b_u, tok_b_b,
-                       tok_u, tok_u_nb, tok_b, tok_b_nb, tok_u_s);
-        while (code == 12) begin
+                       tok_u, tok_u_nb, tok_b, tok_b_nb, tok_u_s, tok_b_s);
+        while (code == 13) begin
             begin : g_row
                 check_width(tok_in_u, `GEN_IN_FEATURES, "in_u");
                 check_width(tok_in_b, `GEN_IN_FEATURES, "in_b");
@@ -232,6 +253,7 @@ module linear_tb;
                 check_width(tok_b, `GEN_LANES, "out_b");
                 check_width(tok_b_nb, `GEN_LANES, "out_b_nb");
                 check_width(tok_u_s, `GEN_LANES, "out_u_s");
+                check_width(tok_b_s, `GEN_LANES, "out_b_s");
                 in_u     = token_bits(tok_in_u);
                 in_b     = token_bits(tok_in_b);
                 w_u      = token_bits(tok_w_u);
@@ -243,6 +265,7 @@ module linear_tb;
                 exp_b    = token_bits(tok_b);
                 exp_b_nb = token_bits(tok_b_nb);
                 exp_u_s  = token_bits(tok_u_s);
+                exp_b_s  = token_bits(tok_b_s);
 
                 // reset boundary: clear every lane accumulator
                 if (rst == 1) begin
@@ -282,15 +305,20 @@ module linear_tb;
                              n, `GEN_SCALE_S, o_out_u_s, exp_u_s);
                     fails = fails + 1;
                 end
+                if (o_out_b_s !== exp_b_s) begin
+                    $display("FAIL n=%0d bipolar scale=%0d : got %b exp %b",
+                             n, `GEN_SCALE_S, o_out_b_s, exp_b_s);
+                    fails = fails + 1;
+                end
 
                 // clock edge advances the lane accumulators for the next timestep
                 i_clk = 1'b1; #1;
                 i_clk = 1'b0; #1;
             end
 
-            code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s\n", rst,
+            code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
                            tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_b_u, tok_b_b,
-                           tok_u, tok_u_nb, tok_b, tok_b_nb, tok_u_s);
+                           tok_u, tok_u_nb, tok_b, tok_b_nb, tok_u_s, tok_b_s);
         end
         $fclose(fd);
 

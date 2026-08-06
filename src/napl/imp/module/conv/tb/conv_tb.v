@@ -3,13 +3,14 @@
 // Generated sizing mirrors the Python model configuration.
 `include "conv/vec/conv_params.vh"
 // Python golden rows are <rst> <in_u> <in_b> <w_u> <w_b> <bias_u> <bias_b>
-// <pad_u> <pad_b> <out_u_a> <out_u_b> <out_u_c> <out_b_a> <out_b_b> <out_b_c>,
-// one per timestep. Polarity selects the circuit, so each row drives the unipolar
-// and the bipolar DUT with its own encoded streams, in each of the three
-// geometries: a (padding 1, bias), b (padding 0, no bias), c (padding 2, stride 2,
-// dilation 2, bias). Outputs are combinational in the arrival cycle, so each row
-// is checked before the posedge that advances the accumulators. rst=1 pulses
-// i_rst_n low first.
+// <pad_b> <out_u_a> <out_u_b> <out_u_c> <out_u_d> <out_b_a> <out_b_b> <out_b_c>
+// <out_b_d>, one per timestep. Polarity selects the circuit, so each row drives
+// the unipolar and the bipolar DUT with its own encoded streams, in each of the
+// four geometries: a (padding 1, bias), b (padding 0, no bias), c (padding 2,
+// stride 2, dilation 2, bias), d (c's geometry at an explicit scale below its
+// fan-in, the arm the saturation rows charge onto its clamp). Outputs are
+// combinational in the arrival cycle, so each row is checked before the posedge
+// that advances the accumulators. rst=1 pulses i_rst_n low first.
 // Each vector column is scanned as text and its character count is checked
 // against the port width before it is converted to bits, so a row that is not
 // exactly as wide as its port fails here instead of being zero-extended
@@ -30,14 +31,15 @@ module conv_tb;
     reg  [W_WIDTH-1:0]     i_weight_b;
     reg  [`GEN_OUT_CHANNELS-1:0] i_bias_u;
     reg  [`GEN_OUT_CHANNELS-1:0] i_bias_b;
-    reg                    i_pad_bits_u;
     reg                    i_pad_bits_b;
     wire [`GEN_LANES_A-1:0] o_out_u_a;
     wire [`GEN_LANES_B-1:0] o_out_u_b;
     wire [`GEN_LANES_C-1:0] o_out_u_c;
+    wire [`GEN_LANES_D-1:0] o_out_u_d;
     wire [`GEN_LANES_A-1:0] o_out_b_a;
     wire [`GEN_LANES_B-1:0] o_out_b_b;
     wire [`GEN_LANES_C-1:0] o_out_b_c;
+    wire [`GEN_LANES_D-1:0] o_out_b_d;
 
     conv_unipolar #(
         .BATCH        (`GEN_BATCH),
@@ -60,7 +62,6 @@ module conv_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_a)
     );
 
@@ -87,7 +88,6 @@ module conv_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_b)
     );
 
@@ -112,8 +112,33 @@ module conv_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_c)
+    );
+
+    // c's geometry at an explicit scale below its fan-in: the accumulators the
+    // saturation rows drive onto the clamp WIDTH sets.
+    conv_unipolar #(
+        .BATCH        (`GEN_BATCH),
+        .IN_CHANNELS  (`GEN_IN_CHANNELS),
+        .IN_H         (`GEN_IN_H),
+        .IN_W         (`GEN_IN_W),
+        .OUT_CHANNELS (`GEN_OUT_CHANNELS),
+        .KERNEL_H     (`GEN_KERNEL_H),
+        .KERNEL_W     (`GEN_KERNEL_W),
+        .STRIDE       (`GEN_STRIDE_D),
+        .PADDING      (`GEN_PADDING_D),
+        .DILATION     (`GEN_DILATION_D),
+        .WIDTH        (`GEN_WIDTH),
+        .SCALE        (`GEN_SCALE_D),
+        .HAS_BIAS     (`GEN_HAS_BIAS_D),
+        .LANES        (`GEN_LANES_D)
+    ) dut_u_d (
+        .i_clk         (i_clk),
+        .i_rst_n       (i_rst_n),
+        .i_input_spike (i_input_spike_u),
+        .i_weight      (i_weight_u),
+        .i_bias        (i_bias_u),
+        .o_out         (o_out_u_d)
     );
 
     conv_bipolar #(
@@ -191,11 +216,41 @@ module conv_tb;
         .o_out         (o_out_b_c)
     );
 
+    conv_bipolar #(
+        .BATCH        (`GEN_BATCH),
+        .IN_CHANNELS  (`GEN_IN_CHANNELS),
+        .IN_H         (`GEN_IN_H),
+        .IN_W         (`GEN_IN_W),
+        .OUT_CHANNELS (`GEN_OUT_CHANNELS),
+        .KERNEL_H     (`GEN_KERNEL_H),
+        .KERNEL_W     (`GEN_KERNEL_W),
+        .STRIDE       (`GEN_STRIDE_D),
+        .PADDING      (`GEN_PADDING_D),
+        .DILATION     (`GEN_DILATION_D),
+        .WIDTH        (`GEN_WIDTH),
+        .SCALE        (`GEN_SCALE_D),
+        .HAS_BIAS     (`GEN_HAS_BIAS_D),
+        .LANES        (`GEN_LANES_D)
+    ) dut_b_d (
+        .i_clk         (i_clk),
+        .i_rst_n       (i_rst_n),
+        .i_input_spike (i_input_spike_b),
+        .i_weight      (i_weight_b),
+        .i_bias        (i_bias_b),
+        .i_pad_bits    (i_pad_bits_b),
+        .o_out         (o_out_b_d)
+    );
+
     // One character wider than the widest golden column: $fscanf("%s") truncates
     // to the token width, so a column read into a reg exactly as wide as it should
     // be saturates at the expected length and an over-long column would pass the
     // width check. The spare character makes an over-long column read back long.
-    localparam integer MAX_CHARS = `GEN_LANES_A + 1;
+    // The widest of every column is taken here instead of assumed.
+    localparam integer WIDEST_AB   = (`GEN_LANES_A > `GEN_LANES_B) ? `GEN_LANES_A : `GEN_LANES_B;
+    localparam integer WIDEST_CD   = (`GEN_LANES_C > `GEN_LANES_D) ? `GEN_LANES_C : `GEN_LANES_D;
+    localparam integer WIDEST_LANE = (WIDEST_AB > WIDEST_CD) ? WIDEST_AB : WIDEST_CD;
+    localparam integer WIDEST_IN   = (IN_WIDTH > W_WIDTH) ? IN_WIDTH : W_WIDTH;
+    localparam integer MAX_CHARS   = ((WIDEST_IN > WIDEST_LANE) ? WIDEST_IN : WIDEST_LANE) + 1;
 
     integer fd, code, n, fails;
     reg                     rst;
@@ -206,20 +261,23 @@ module conv_tb;
     reg  [MAX_CHARS*8-1:0]  tok_w_b;
     reg  [MAX_CHARS*8-1:0]  tok_bias_u;
     reg  [MAX_CHARS*8-1:0]  tok_bias_b;
-    reg  [MAX_CHARS*8-1:0]  tok_pad_u;
     reg  [MAX_CHARS*8-1:0]  tok_pad_b;
     reg  [MAX_CHARS*8-1:0]  tok_u_a;
     reg  [MAX_CHARS*8-1:0]  tok_u_b;
     reg  [MAX_CHARS*8-1:0]  tok_u_c;
+    reg  [MAX_CHARS*8-1:0]  tok_u_d;
     reg  [MAX_CHARS*8-1:0]  tok_b_a;
     reg  [MAX_CHARS*8-1:0]  tok_b_b;
     reg  [MAX_CHARS*8-1:0]  tok_b_c;
+    reg  [MAX_CHARS*8-1:0]  tok_b_d;
     reg  [`GEN_LANES_A-1:0] exp_u_a;
     reg  [`GEN_LANES_B-1:0] exp_u_b;
     reg  [`GEN_LANES_C-1:0] exp_u_c;
+    reg  [`GEN_LANES_D-1:0] exp_u_d;
     reg  [`GEN_LANES_A-1:0] exp_b_a;
     reg  [`GEN_LANES_B-1:0] exp_b_b;
     reg  [`GEN_LANES_C-1:0] exp_b_c;
+    reg  [`GEN_LANES_D-1:0] exp_b_d;
 
 
     // Characters $fscanf("%s") stored: the bit width the golden row carries.
@@ -270,7 +328,6 @@ module conv_tb;
         i_weight_b      = {W_WIDTH{1'b0}};
         i_bias_u        = {`GEN_OUT_CHANNELS{1'b0}};
         i_bias_b        = {`GEN_OUT_CHANNELS{1'b0}};
-        i_pad_bits_u    = 1'b0;
         i_pad_bits_b    = 1'b0;
 
         fd = $fopen("vec/conv.vec", "r");
@@ -292,13 +349,14 @@ module conv_tb;
             fails = fails + 1;
         end
 
-        // The loop ends on the first row that does not yield all 15 columns, so a
+        // The loop ends on the first row that does not yield all 16 columns, so a
         // scan that stops consuming ends the run instead of spinning on $feof.
-        code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
+        code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
                        tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_bias_u, tok_bias_b,
-                       tok_pad_u, tok_pad_b,
-                       tok_u_a, tok_u_b, tok_u_c, tok_b_a, tok_b_b, tok_b_c);
-        while (code == 15) begin
+                       tok_pad_b,
+                       tok_u_a, tok_u_b, tok_u_c, tok_u_d,
+                       tok_b_a, tok_b_b, tok_b_c, tok_b_d);
+        while (code == 16) begin
             begin : g_row
                 check_width(tok_in_u, IN_WIDTH, "in_u");
                 check_width(tok_in_b, IN_WIDTH, "in_b");
@@ -306,14 +364,15 @@ module conv_tb;
                 check_width(tok_w_b, W_WIDTH, "w_b");
                 check_width(tok_bias_u, `GEN_OUT_CHANNELS, "bias_u");
                 check_width(tok_bias_b, `GEN_OUT_CHANNELS, "bias_b");
-                check_width(tok_pad_u, 1, "pad_u");
                 check_width(tok_pad_b, 1, "pad_b");
                 check_width(tok_u_a, `GEN_LANES_A, "out_u_a");
                 check_width(tok_u_b, `GEN_LANES_B, "out_u_b");
                 check_width(tok_u_c, `GEN_LANES_C, "out_u_c");
+                check_width(tok_u_d, `GEN_LANES_D, "out_u_d");
                 check_width(tok_b_a, `GEN_LANES_A, "out_b_a");
                 check_width(tok_b_b, `GEN_LANES_B, "out_b_b");
                 check_width(tok_b_c, `GEN_LANES_C, "out_b_c");
+                check_width(tok_b_d, `GEN_LANES_D, "out_b_d");
 
                 // reset boundary: clear every lane accumulator
                 if (rst == 1) begin
@@ -329,14 +388,15 @@ module conv_tb;
                 i_weight_b      = token_bits(tok_w_b);
                 i_bias_u        = token_bits(tok_bias_u);
                 i_bias_b        = token_bits(tok_bias_b);
-                i_pad_bits_u    = token_bits(tok_pad_u);
                 i_pad_bits_b    = token_bits(tok_pad_b);
                 exp_u_a         = token_bits(tok_u_a);
                 exp_u_b         = token_bits(tok_u_b);
                 exp_u_c         = token_bits(tok_u_c);
+                exp_u_d         = token_bits(tok_u_d);
                 exp_b_a         = token_bits(tok_b_a);
                 exp_b_b         = token_bits(tok_b_b);
                 exp_b_c         = token_bits(tok_b_c);
+                exp_b_d         = token_bits(tok_b_d);
                 #1;
 
                 n = n + 1;
@@ -352,6 +412,10 @@ module conv_tb;
                     $display("FAIL n=%0d unipolar strided : got %b exp %b", n, o_out_u_c, exp_u_c);
                     fails = fails + 1;
                 end
+                if (o_out_u_d !== exp_u_d) begin
+                    $display("FAIL n=%0d unipolar scaled : got %b exp %b", n, o_out_u_d, exp_u_d);
+                    fails = fails + 1;
+                end
                 if (o_out_b_a !== exp_b_a) begin
                     $display("FAIL n=%0d bipolar pad1 bias : got %b exp %b", n, o_out_b_a, exp_b_a);
                     fails = fails + 1;
@@ -364,16 +428,21 @@ module conv_tb;
                     $display("FAIL n=%0d bipolar strided : got %b exp %b", n, o_out_b_c, exp_b_c);
                     fails = fails + 1;
                 end
+                if (o_out_b_d !== exp_b_d) begin
+                    $display("FAIL n=%0d bipolar scaled : got %b exp %b", n, o_out_b_d, exp_b_d);
+                    fails = fails + 1;
+                end
 
                 // clock edge advances the lane accumulators for the next timestep
                 i_clk = 1'b1; #1;
                 i_clk = 1'b0; #1;
             end
 
-            code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
+            code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", rst,
                            tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_bias_u, tok_bias_b,
-                           tok_pad_u, tok_pad_b,
-                           tok_u_a, tok_u_b, tok_u_c, tok_b_a, tok_b_b, tok_b_c);
+                           tok_pad_b,
+                           tok_u_a, tok_u_b, tok_u_c, tok_u_d,
+                           tok_b_a, tok_b_b, tok_b_c, tok_b_d);
         end
         $fclose(fd);
 
@@ -385,10 +454,10 @@ module conv_tb;
         end
 
         if (fails == 0)
-            $display("PASS conv: %0d/%0d vectors (%0d, %0d and %0d lanes x %0d taps, scale %0d, %0d and %0d)",
-                     n, n, `GEN_LANES_A, `GEN_LANES_B, `GEN_LANES_C,
+            $display("PASS conv: %0d/%0d vectors (%0d, %0d, %0d and %0d lanes x %0d taps, scale %0d, %0d, %0d and %0d)",
+                     n, n, `GEN_LANES_A, `GEN_LANES_B, `GEN_LANES_C, `GEN_LANES_D,
                      `GEN_IN_CHANNELS * `GEN_KERNEL_H * `GEN_KERNEL_W,
-                     `GEN_SCALE_A, `GEN_SCALE_B, `GEN_SCALE_C);
+                     `GEN_SCALE_A, `GEN_SCALE_B, `GEN_SCALE_C, `GEN_SCALE_D);
         else
             $display("FAIL conv: %0d mismatch(es) over %0d vectors", fails, n);
         $finish;

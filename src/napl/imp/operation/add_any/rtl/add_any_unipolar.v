@@ -1,8 +1,14 @@
 `timescale 1ns/1ps
 `default_nettype none
 // Unipolar napl.sim.operation.add_any with an ENTRY-lane spike input.
-// A adds 2*partial, clamps to [-2^WIDTH, 2^WIDTH-2], fires at or above 2*SCALE, and
+// A adds 2*partial, clamps to at most 2^WIDTH-2, fires at or above 2*SCALE, and
 // subtracts 2*SCALE on a fire. Generated parameters mirror Python.
+// There is no negative clamp: acc >= 0 always holds here. By induction, acc is 0
+// after reset; given acc >= 0, the unipolar offset is 0 and every addend is
+// non-negative, so the sum is >= acc >= 0, and a fire needs sum >= 2*SCALE and
+// subtracts exactly 2*SCALE, leaving the state >= 0 again. Only the bipolar
+// variant, whose nonzero offset is subtracted every cycle, can drive a low clamp,
+// and it carries one.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears the accumulator to match reset().
 // The accumulator bounds and the pre-clamp sum are 32-bit signed elaboration
@@ -40,7 +46,6 @@ module add_any_unipolar #(
     localparam integer TWO_OFS = 0;                  // 2*offset = 0 (unipolar)
     localparam integer TWO_SCL = 2 * SCALE;          // 2*scale
     localparam integer ACC_HI  = (2 ** WIDTH) - 2;   // 2*(2^(WIDTH-1)-1)
-    localparam integer ACC_LO  = -(2 ** WIDTH);      // 2*(-2^(WIDTH-1))
 
     localparam integer COUNT_W = clog2(ENTRY + 1);
     // A = 2*acc; signed reg of width WIDTH+1 covers [-2^WIDTH, 2^WIDTH-1] ⊇ state.
@@ -79,7 +84,6 @@ module add_any_unipolar #(
     // Signed constants sized to the datapath so every compare/add is signed-vs-signed
     // (slice the 32-bit integer localparam down to SUM_W, sign preserved).
     wire signed [SUM_W-1:0] s_hi  = ACC_HI[SUM_W-1:0];
-    wire signed [SUM_W-1:0] s_lo  = ACC_LO[SUM_W-1:0];
     wire signed [SUM_W-1:0] s_scl = TWO_SCL[SUM_W-1:0];
     wire signed [SUM_W-1:0] s_ofs = TWO_OFS[SUM_W-1:0];
 
@@ -89,11 +93,10 @@ module add_any_unipolar #(
         $signed({{(SUM_W-COUNT_W){1'b0}}, partial_count[ENTRY]});
     wire signed [SUM_W-1:0] two_p  = in_ext <<< 1;
     wire signed [SUM_W-1:0] sum   = $signed(acc) + two_p - s_ofs;   // + 2*partial - 2*offset
-    wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi :
-                                    (sum < s_lo) ? s_lo : sum;
+    wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi : sum;
     wire                    fire  = (clmp >= s_scl);
-    // clmp is in [ACC_LO,ACC_HI] so it fits ACC_W signed; nxt = fired? clmp-TWO_SCL : clmp
-    // stays within [ACC_LO, ACC_HI], also ACC_W signed.
+    // clmp is in [0,ACC_HI] so it fits ACC_W signed; nxt = fired? clmp-TWO_SCL : clmp
+    // stays within [0, ACC_HI], also ACC_W signed.
     wire signed [ACC_W-1:0] nxt   = fire ? (clmp[ACC_W-1:0] - s_scl[ACC_W-1:0])
                                          : clmp[ACC_W-1:0];
 

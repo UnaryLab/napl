@@ -80,20 +80,18 @@ def rep_values(polarity, n_draw=4, seed=0, value_range=None):
 
     corners (known-answer rails + midpoint) + an in-range sweep + a few
     deterministic distribution draws. Range follows the encoder polarity by
-    default (unipolar -> [0,1], bipolar -> [-1,1]); pass `value_range=(lo,hi)`
-    to override when the test draws a different operand range than its encoder
-    polarity (e.g. sqrt feeds unipolar-range [0,1] values to a bipolar encoder).
+    default: unipolar -> [0,1], bipolar -> [-1,0.5], whose probabilities
+    [0,0.75] land off the unipolar grid, so a generator that builds both
+    polarity streams from this helper gets distinct stimulus per polarity.
+    Pass `value_range=(lo,hi)` to override when the test draws a different
+    operand range than its encoder polarity (e.g. sqrt feeds unipolar-range
+    [0,1] values to a bipolar encoder).
     """
-    if value_range is not None:
-        lo, hi = value_range
-        mid = (lo + hi) / 2
-        corners = [lo, (lo + mid) / 2, mid, (mid + hi) / 2, hi]
-    elif polarity == "bipolar":
-        corners = [-1.0, -0.5, 0.0, 0.5, 1.0]
-        lo, hi = -1.0, 1.0
-    else:
-        corners = [0.0, 0.25, 0.5, 0.75, 1.0]
-        lo, hi = 0.0, 1.0
+    if value_range is None:
+        value_range = (-1.0, 0.5) if polarity == "bipolar" else (0.0, 1.0)
+    lo, hi = value_range
+    mid = (lo + hi) / 2
+    corners = [lo, (lo + mid) / 2, mid, (mid + hi) / 2, hi]
     sweep = [lo + (hi - lo) * k / 6 for k in range(1, 6)]
     g = torch.Generator().manual_seed(seed)
     draws = (lo + (hi - lo) * torch.rand(n_draw, generator=g)).tolist()

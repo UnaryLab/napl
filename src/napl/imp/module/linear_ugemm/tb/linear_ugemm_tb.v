@@ -2,8 +2,8 @@
 `default_nettype none
 // Generated sizing mirrors the Python model configuration.
 `include "linear_ugemm/vec/linear_ugemm_params.vh"
-// Python golden rows are <rst> <in_u> <in_b> <out_u> <out_u_nb> <out_b> <out_b_nb>,
-// one per timestep. Polarity selects the circuit, so each row drives the unipolar
+// Python golden rows are <rst> <in_u> <in_b> <out_u> <out_u_nb> <out_u_s> <out_b>
+// <out_b_nb> <out_b_s>, one per timestep. Polarity selects the circuit, so each row drives the unipolar
 // and the bipolar DUT with its own encoded input stream, in the with-bias and the
 // no-bias configuration. Outputs are combinational in the arrival cycle, so each
 // row is checked before the posedge that advances the sequence indices and the
@@ -29,18 +29,28 @@ module linear_ugemm_tb;
     wire [`GEN_LANES-1:0]       o_out_u_nb;
     wire [`GEN_LANES-1:0]       o_out_b;
     wire [`GEN_LANES-1:0]       o_out_b_nb;
+    wire [`GEN_LANES-1:0]       o_out_u_s;
+    wire [`GEN_LANES-1:0]       o_out_b_s;
 
     // Held fixed-point operands: per lane, GEN_IN_FEATURES weight codes then the
     // bias code. Generated from the model, so the DUT sees its exact parameters.
     reg [OPW-1:0] operand_u [0:OP_COUNT-1];
     reg [OPW-1:0] operand_b [0:OP_COUNT-1];
+    // The scaled arms' railed operands: weights at the top code and the bias at
+    // 0, which is what lets their accumulators reach the clamps WIDTH sets. An
+    // operand code is the probability code either polarity compares against, so
+    // one file serves both.
+    reg [OPW-1:0] operand_s [0:OP_COUNT-1];
     initial $readmemb("vec/linear_ugemm_operand_u.hex", operand_u);
     initial $readmemb("vec/linear_ugemm_operand_b.hex", operand_b);
+    initial $readmemb("vec/linear_ugemm_operand_s.hex", operand_s);
 
     wire [W_WIDTH-1:0] i_weight_u;
     wire [W_WIDTH-1:0] i_weight_b;
+    wire [W_WIDTH-1:0] i_weight_s;
     wire [B_WIDTH-1:0] i_bias_u;
     wire [B_WIDTH-1:0] i_bias_b;
+    wire [B_WIDTH-1:0] i_bias_s;
 
     genvar lane, feature;
     generate
@@ -50,11 +60,15 @@ module linear_ugemm_tb;
                     operand_u[lane*(`GEN_IN_FEATURES + 1) + feature];
                 assign i_weight_b[(lane*`GEN_IN_FEATURES + feature)*OPW +: OPW] =
                     operand_b[lane*(`GEN_IN_FEATURES + 1) + feature];
+                assign i_weight_s[(lane*`GEN_IN_FEATURES + feature)*OPW +: OPW] =
+                    operand_s[lane*(`GEN_IN_FEATURES + 1) + feature];
             end
             assign i_bias_u[lane*OPW +: OPW] =
                 operand_u[lane*(`GEN_IN_FEATURES + 1) + `GEN_IN_FEATURES];
             assign i_bias_b[lane*OPW +: OPW] =
                 operand_b[lane*(`GEN_IN_FEATURES + 1) + `GEN_IN_FEATURES];
+            assign i_bias_s[lane*OPW +: OPW] =
+                operand_s[lane*(`GEN_IN_FEATURES + 1) + `GEN_IN_FEATURES];
         end
     endgenerate
 
@@ -123,11 +137,49 @@ module linear_ugemm_tb;
         .o_out         (o_out_b_nb)
     );
 
+    // SCALE differs from ENTRY here, so the divisor is exercised independently of
+    // the fan-in it defaults to, and the lane accumulator drifts instead of being
+    // confined to [0, ENTRY - 1]. These are the arms the saturation blocks drive
+    // onto the clamps WIDTH sets.
+    linear_ugemm_unipolar #(
+        .IN_FEATURES (`GEN_IN_FEATURES),
+        .LANES       (`GEN_LANES),
+        .SEQ_WIDTH   (`GEN_SEQ_WIDTH),
+        .WIDTH       (`GEN_WIDTH),
+        .SCALE       (`GEN_SCALE_S),
+        .HAS_BIAS    (1)
+    ) dut_u_s (
+        .i_clk         (i_clk),
+        .i_rst_n       (i_rst_n),
+        .i_input_spike (i_input_spike_u),
+        .i_weight      (i_weight_s),
+        .i_bias        (i_bias_s),
+        .o_out         (o_out_u_s)
+    );
+
+    linear_ugemm_bipolar #(
+        .IN_FEATURES (`GEN_IN_FEATURES),
+        .LANES       (`GEN_LANES),
+        .SEQ_WIDTH   (`GEN_SEQ_WIDTH),
+        .WIDTH       (`GEN_WIDTH),
+        .SCALE       (`GEN_SCALE_S),
+        .HAS_BIAS    (1)
+    ) dut_b_s (
+        .i_clk         (i_clk),
+        .i_rst_n       (i_rst_n),
+        .i_input_spike (i_input_spike_b),
+        .i_weight      (i_weight_s),
+        .i_bias        (i_bias_s),
+        .o_out         (o_out_b_s)
+    );
+
     // One character wider than the widest golden column: $fscanf("%s") truncates
     // to the token width, so a column read into a reg exactly as wide as it should
     // be saturates at the expected length and an over-long column would pass the
     // width check. The spare character makes an over-long column read back long.
-    localparam integer MAX_CHARS = `GEN_IN_FEATURES + 1;
+    // The widest of every column is taken here instead of assumed.
+    localparam integer MAX_CHARS = ((`GEN_IN_FEATURES > `GEN_LANES)
+                                    ? `GEN_IN_FEATURES : `GEN_LANES) + 1;
 
     integer fd, code, n, fails;
     reg                         rst;
@@ -137,6 +189,8 @@ module linear_ugemm_tb;
     reg  [`GEN_LANES-1:0]       exp_u_nb;
     reg  [`GEN_LANES-1:0]       exp_b;
     reg  [`GEN_LANES-1:0]       exp_b_nb;
+    reg  [`GEN_LANES-1:0]       exp_u_s;
+    reg  [`GEN_LANES-1:0]       exp_b_s;
     reg  [1023:0]               hdr_line;
     reg  [MAX_CHARS*8-1:0]      tok_in_u;
     reg  [MAX_CHARS*8-1:0]      tok_in_b;
@@ -144,6 +198,8 @@ module linear_ugemm_tb;
     reg  [MAX_CHARS*8-1:0]      tok_u_nb;
     reg  [MAX_CHARS*8-1:0]      tok_b;
     reg  [MAX_CHARS*8-1:0]      tok_b_nb;
+    reg  [MAX_CHARS*8-1:0]      tok_u_s;
+    reg  [MAX_CHARS*8-1:0]      tok_b_s;
 
 
     // Characters $fscanf("%s") stored: the bit width the golden row carries.
@@ -210,11 +266,11 @@ module linear_ugemm_tb;
             fails = fails + 1;
         end
 
-        // The loop ends on the first row that does not yield all 7 columns, so a
+        // The loop ends on the first row that does not yield all 9 columns, so a
         // scan that stops consuming ends the run instead of spinning on $feof.
-        code = $fscanf(fd, "%d %s %s %s %s %s %s\n", rst, tok_in_u, tok_in_b,
-                       tok_u, tok_u_nb, tok_b, tok_b_nb);
-        while (code == 7) begin
+        code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s\n", rst, tok_in_u, tok_in_b,
+                       tok_u, tok_u_nb, tok_u_s, tok_b, tok_b_nb, tok_b_s);
+        while (code == 9) begin
             begin : g_row
                 check_width(tok_in_u, `GEN_IN_FEATURES, "in_u_bits");
                 check_width(tok_in_b, `GEN_IN_FEATURES, "in_b_bits");
@@ -222,12 +278,16 @@ module linear_ugemm_tb;
                 check_width(tok_u_nb, `GEN_LANES, "out_u_nb");
                 check_width(tok_b, `GEN_LANES, "out_b");
                 check_width(tok_b_nb, `GEN_LANES, "out_b_nb");
+                check_width(tok_u_s, `GEN_LANES, "out_u_s");
+                check_width(tok_b_s, `GEN_LANES, "out_b_s");
                 in_u     = token_bits(tok_in_u);
                 in_b     = token_bits(tok_in_b);
                 exp_u    = token_bits(tok_u);
                 exp_u_nb = token_bits(tok_u_nb);
                 exp_b    = token_bits(tok_b);
                 exp_b_nb = token_bits(tok_b_nb);
+                exp_u_s  = token_bits(tok_u_s);
+                exp_b_s  = token_bits(tok_b_s);
 
                 // reset boundary: clear every sequence index and accumulator
                 if (rst == 1) begin
@@ -258,31 +318,38 @@ module linear_ugemm_tb;
                     $display("FAIL n=%0d bipolar nobias : got %b exp %b", n, o_out_b_nb, exp_b_nb);
                     fails = fails + 1;
                 end
+                if (o_out_u_s !== exp_u_s) begin
+                    $display("FAIL n=%0d unipolar scale=%0d : got %b exp %b",
+                             n, `GEN_SCALE_S, o_out_u_s, exp_u_s);
+                    fails = fails + 1;
+                end
+                if (o_out_b_s !== exp_b_s) begin
+                    $display("FAIL n=%0d bipolar scale=%0d : got %b exp %b",
+                             n, `GEN_SCALE_S, o_out_b_s, exp_b_s);
+                    fails = fails + 1;
+                end
 
                 // clock edge advances the sequence indices and the accumulators
                 i_clk = 1'b1; #1;
                 i_clk = 1'b0; #1;
             end
 
-            code = $fscanf(fd, "%d %s %s %s %s %s %s\n", rst, tok_in_u, tok_in_b,
-                           tok_u, tok_u_nb, tok_b, tok_b_nb);
+            code = $fscanf(fd, "%d %s %s %s %s %s %s %s %s\n", rst, tok_in_u, tok_in_b,
+                           tok_u, tok_u_nb, tok_u_s, tok_b, tok_b_nb, tok_b_s);
         end
         $fclose(fd);
 
         // A vec file that lost or gained rows would otherwise pass on the rows it
-        // still holds, so the row count is checked against the generator's. The
-        // check waits on gen_linear_ugemm.py emitting GEN_VECTORS.
-`ifdef GEN_VECTORS
+        // still holds, so the row count is checked against the generator's.
         if (n != `GEN_VECTORS) begin
             $display("FAIL linear_ugemm: consumed %0d vectors, generator wrote %0d",
                      n, `GEN_VECTORS);
             fails = fails + 1;
         end
-`endif
 
         if (fails == 0)
-            $display("PASS linear_ugemm: %0d/%0d vectors (%0d lanes x %0d in_features, scale %0d and %0d)",
-                     n, n, `GEN_LANES, `GEN_IN_FEATURES, `GEN_SCALE, `GEN_SCALE_NB);
+            $display("PASS linear_ugemm: %0d/%0d vectors (%0d lanes x %0d in_features, scale %0d, %0d and %0d)",
+                     n, n, `GEN_LANES, `GEN_IN_FEATURES, `GEN_SCALE, `GEN_SCALE_NB, `GEN_SCALE_S);
         else
             $display("FAIL linear_ugemm: %0d mismatch(es) over %0d vectors", fails, n);
         $finish;

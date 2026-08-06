@@ -13,17 +13,19 @@
 // scaled accumulator this module does not have.
 // The im2col patch is wiring: tap (ic, kh, kw) of lane (b, oc, oh, ow) reads input
 // row oh*STRIDE + kh*DILATION - PADDING and column ow*STRIDE + kw*DILATION -
-// PADDING. A tap outside the input reads i_pad_bits, which is 0 for unipolar
-// streams: a unipolar zero pad is a zero spike.
-// Weight, bias, and pad spikes arrive on ports: the model re-encodes all three
-// every timestep from externally held tensors.
+// PADDING. A tap outside the input reads a constant zero spike, the unipolar zero
+// pad, so this variant carries no pad port: the Python model builds a pad stream
+// only for a bipolar stream with nonzero padding, and mapping.yaml maps
+// `pad_bits` to no port here.
+// Weight and bias spikes arrive on ports: the model re-encodes both every
+// timestep from externally held tensors.
 // The lane holds no state, so the module is combinational (pp_delay=0) and carries
 // no clock or reset. o_out packs LANES counts of COUNT_W bits, lane l at
 // [l*COUNT_W +: COUNT_W].
 // COUNT_W must equal clog2(ENTRY + 1) so a lane count is neither truncated nor
 // padded, and LANES must equal the output positions the geometry produces. The
-// generate guards below enforce both at elaboration and mapping.yaml carries the
-// same restrictions.
+// generate guards below enforce both at elaboration. mapping.yaml derives COUNT_W
+// from ENTRY and mirrors the LANES restriction as a requires condition.
 
 
 module conv_pc_unipolar #(
@@ -44,7 +46,6 @@ module conv_pc_unipolar #(
     input  wire [BATCH*IN_CHANNELS*IN_H*IN_W-1:0]                 i_input_spike,  // (b, ic, ih, iw) row-major
     input  wire [OUT_CHANNELS*IN_CHANNELS*KERNEL_H*KERNEL_W-1:0]  i_weight,       // out channel oc, tap t at [oc*K + t]
     input  wire [OUT_CHANNELS-1:0]                                i_bias,         // out channel oc at [oc]
-    input  wire                                                   i_pad_bits,     // one pad spike per timestep, all lanes
     output wire [LANES*COUNT_W-1:0]                               o_out           // (b, oc, oh, ow) row-major counts
 );
 
@@ -100,7 +101,7 @@ module conv_pc_unipolar #(
                 if (IH >= 0 && IH < IN_H && IW >= 0 && IW < IN_W) begin : g_input
                     assign x_bit = i_input_spike[((b*IN_CHANNELS + ic)*IN_H + IH)*IN_W + IW];
                 end else begin : g_pad
-                    assign x_bit = i_pad_bits;
+                    assign x_bit = 1'b0;
                 end
 
                 mul_gaines_unipolar u_mul (

@@ -625,14 +625,9 @@
     output: o_out
   parameters:
     KERNEL_AREA: "area(config['kernel_size'])"
-    DIVISOR: "get(config, 'divisor_override') if get(config, 'divisor_override') is not None else KERNEL_AREA"
     LANES: "config['lanes']"
   requires:
-    - "get(config, 'padding', 0) in (0, (0, 0))"
     - "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']"
-    - "get(config, 'ceil_mode', False) == False"
-    - "get(config, 'count_include_pad', True) == True"
-    - "DIVISOR >= KERNEL_AREA"
 
 - rtl_module: conv_bipolar
   layer: module
@@ -672,7 +667,9 @@
     input_spike: i_input_spike
     weight: i_weight
     bias: i_bias
-    pad_bits: i_pad_bits
+    # A unipolar zero pad is a constant zero spike, so this variant has no
+    # pad port and the model builds no pad stream to drive one.
+    pad_bits: null
   outputs:
     output: o_out
   parameters:
@@ -733,7 +730,9 @@
     input_spike: i_input_spike
     weight: i_weight
     bias: i_bias
-    pad_bits: i_pad_bits
+    # A unipolar zero pad is a constant zero spike, so this variant has no
+    # pad port and the model builds no pad stream to drive one.
+    pad_bits: null
   outputs:
     output: o_out
   parameters:
@@ -860,6 +859,100 @@
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
 
+- rtl_module: linear_gaines_bipolar
+  layer: module
+  sim_module: sim/module/linear_gaines1.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
+    DEPTH: "get(config['config'], 'depth', 8)"
+    SCALED: "int(get(config['config'], 'scaled', True))"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+
+- rtl_module: linear_gaines_unipolar
+  layer: module
+  sim_module: sim/module/linear_gaines1.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
+    SCALED: "int(get(config['config'], 'scaled', True))"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+
+- rtl_module: linear_gaines_bipolar
+  layer: module
+  sim_module: sim/module/linear_gaines2.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
+    DEPTH: "get(config['config'], 'depth', 8)"
+    SCALED: "int(get(config['config'], 'scaled', True))"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    # The scaled adder builds its threshold sequence over 2**SCALE_WIDTH entries,
+    # and an lfsr image of width 1 has no feedback polynomial, so an lfsr-driven
+    # scaled arm needs entry >= 3.
+    - "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3"
+
+- rtl_module: linear_gaines_unipolar
+  layer: module
+  sim_module: sim/module/linear_gaines2.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
+    SCALED: "int(get(config['config'], 'scaled', True))"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    # The scaled adder builds its threshold sequence over 2**SCALE_WIDTH entries,
+    # and an lfsr image of width 1 has no feedback polynomial, so an lfsr-driven
+    # scaled arm needs entry >= 3.
+    - "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3"
+
 - rtl_module: linear_pc_bipolar
   layer: module
   sim_module: sim/module/linear_pc.py
@@ -939,3 +1032,37 @@
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
     # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
+
+- rtl_module: mgu_bipolar
+  layer: module
+  sim_module: sim/module/mgu.py
+  inputs:
+    input_spike: i_input_spike
+    hx_spike: i_hx_spike
+    weight_f: i_weight_f
+    bias_f: i_bias_f
+    weight_n: i_weight_n
+    bias_n: i_bias_n
+    hx_value: i_hx_value
+  outputs:
+    output: o_out
+  parameters:
+    LANES: "config['lanes']"
+    # Both gate layers read cat(hidden, input), so the gate width minus the
+    # hidden lanes is the input feature count.
+    IN_SIZE: "shape(config['weight_f'])[1] - config['lanes']"
+    WIDTH: "get(config['config'], 'width', 10)"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    SR_WIDTH: "get(config['config'], 'depth_ismul', 6)"
+    HAS_BIAS_F: "int(get(config, 'bias_f') is not None)"
+    HAS_BIAS_N: "int(get(config, 'bias_n') is not None)"
+  requires:
+    - "shape(config['weight_f'])[0] == config['lanes']"
+    - "shape(config['weight_n'])[0] == config['lanes']"
+    - "shape(config['weight_n'])[1] == shape(config['weight_f'])[1]"
+    - "IN_SIZE >= 1"
+    - "2 ** (WIDTH - 1) > LANES + IN_SIZE + (1 if HAS_BIAS_F or HAS_BIAS_N else 0)"
+    # The lane accumulators are add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    - "WIDTH <= 30"
+    # timestep > 2 ** depth_ismul, restated on the parameters the RTL carries.
+    - "SEQ_WIDTH > SR_WIDTH"

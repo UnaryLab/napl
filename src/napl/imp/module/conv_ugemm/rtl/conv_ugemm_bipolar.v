@@ -29,10 +29,18 @@
 // paths) per (spatial output position, patch tap), shared by every output
 // channel, because the patch spike broadcasts over the output channels. Each
 // lane here holds its own pair per tap, so the OUT_CHANNELS lanes of one spatial
-// position hold OUT_CHANNELS copies of the model's one pair. Every copy is
-// advanced by the same patch spike -- the index update reads only i_input_0, not
-// the comparator -- so all copies carry the same value and the outputs are
-// bit-exact with the shared-index model.
+// position hold OUT_CHANNELS copies of the model's one pair. Both premises of
+// that equality have exact sites. The index update reads only the patch spike
+// and never the comparator: sim/operation/mul_ugemm.py:171 in the model,
+// operation/mul_ugemm/rtl/mul_ugemm_bipolar.v:49 in the RTL. And every copy of
+// one tap is driven by the same x_bit, assigned once per (spatial position, tap)
+// in the g_input / g_pad branch below and fanned out to the OUT_CHANNELS lanes.
+// So all copies carry the same value and the outputs are bit-exact with the
+// shared-index model.
+// The per-lane bias encoder replicates on a shorter argument: its counter
+// advances by one unconditionally every timestep (operation/encode/rtl/encode.v
+// lines 37-42), so it is data-independent and every lane's copy holds the same
+// index whatever that lane's inputs are.
 
 
 module conv_ugemm_bipolar #(

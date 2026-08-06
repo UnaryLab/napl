@@ -29,9 +29,7 @@ class avgpool2d(napl_base):
     """
 
 
-    def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
-                 count_include_pad=True, divisor_override=None,
-                 config={'polarity': 'bipolar'}):
+    def __init__(self, kernel_size, stride=None, config={'polarity': 'bipolar'}):
         """Configure the pooling geometry and unary representation.
 
         .. container:: api-parameter-list
@@ -40,10 +38,6 @@ class avgpool2d(napl_base):
 
             - **kernel_size** – Pooling window size accepted by ``torch.nn.AvgPool2d``.
             - **stride** – Pooling stride, where ``None`` uses ``kernel_size``; the default is ``None``.
-            - **padding** – Implicit zero padding; the default is ``0``. A unipolar zero pad is a constant-0 spike, while a bipolar zero pad is a rate-0.5 spike toggle.
-            - **ceil_mode** – Use ceiling instead of floor for output shapes when ``True``; the default is ``False``.
-            - **count_include_pad** – Include padded zeros in the mean when ``True``; the default is ``True``.
-            - **divisor_override** – Optional divisor used instead of the window size; the default is ``None``.
             - **config** – Configuration mapping.
 
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
@@ -54,22 +48,10 @@ class avgpool2d(napl_base):
         """
         super().__init__(config, ['polarity'], polarity_required=True)
         #: PyTorch pooling operator that computes each per-timestep window mean.
-        self.avgpool2d = torch.nn.AvgPool2d(kernel_size, stride=stride, padding=padding,
-                                            ceil_mode=ceil_mode,
-                                            count_include_pad=count_include_pad,
-                                            divisor_override=divisor_override)
+        self.avgpool2d = torch.nn.AvgPool2d(kernel_size, stride=stride)
         #: Residual pooled value carried forward until it emits an output spike.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
-
-        pad_sizes = padding if isinstance(padding, (tuple, list)) else (padding,)
-        #: Whether each pooling window mixes in a bipolar zero pad.
-        self.pad_bipolar = self.polarity == 'bipolar' and max(pad_sizes) > 0
-        #: Padded share of each pooling window's divisor, cached per input shape.
-        self.pad_share: torch.Tensor
-        self.register_buffer('pad_share', torch.zeros(1, dtype=self.ntype))
-        #: Input shape the cached ``pad_share`` was computed for.
-        self.pad_shape = None
 
         # Pooling and the accumulator threshold are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming pool.
@@ -104,17 +86,6 @@ class avgpool2d(napl_base):
         """
         pooled_input = input_spike if input_spike.dtype == self.ntype else input_spike.type(self.ntype)
         delta = self.avgpool2d(pooled_input)
-        if self.pad_bipolar:
-            if self.pad_shape != pooled_input.shape:
-                # Pooling ones leaves the padded share of each window divisor.
-                share = 1 - self.avgpool2d(torch.ones_like(pooled_input))
-                self.pad_share.resize_as_(share).copy_(share)
-                self.pad_shape = pooled_input.shape
-            # Bipolar zero pads as a deterministic 0/1 toggle of rate 0.5.
-            # The toggle fires on odd timesteps, so an odd-length run of N
-            # timesteps over-adds the pad contribution by ``pad_share / (2 * N)``.
-            if self.timestep_cur % 2:
-                delta = delta + self.pad_share
         if self.accumulator.shape == delta.shape:
             self.accumulator.add_(delta)
         else:

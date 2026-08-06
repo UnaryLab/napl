@@ -24,7 +24,7 @@ CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 2
 
 
 def main():
-    model = max_rc({"polarity": "bipolar", "timestep": 256})
+    model = max_rc({"polarity": "bipolar"})
     model.reset()
 
     s0, s1 = pair_streams(CODEC0, CODEC1, rep_pairs("bipolar", "bipolar"))

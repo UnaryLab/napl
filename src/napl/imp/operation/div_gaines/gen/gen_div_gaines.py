@@ -28,6 +28,9 @@ CODEC_UNI_0 = {
 }
 CODEC_UNI_1 = {**CODEC_UNI_0, "dim": 2}
 CODEC_BI_0 = {**CODEC_UNI_0, "polarity": "bipolar"}
+# p = (x + 1) / 2 over [-1, 1] is the unipolar [0, 1] grid, so the bipolar
+# operands are drawn from a narrower range.
+BI_RANGE = (-1.0, 0.5)
 CODEC_BI_1 = {**CODEC_BI_0, "dim": 2}
 
 
@@ -55,10 +58,14 @@ def write_rom(model):
 
 def main():
     pairs_uni = rep_pairs("unipolar", "unipolar")
-    pairs_bi = rep_pairs("bipolar", "bipolar")
+    # rep_values maps the full bipolar range onto the same probability grid the
+    # unipolar range gives, so a narrower bipolar range is what keeps the two
+    # stimulus streams distinct.
+    pairs_bi = rep_pairs("bipolar", "bipolar", range0=BI_RANGE, range1=BI_RANGE)
     uni_0, uni_1 = pair_streams(CODEC_UNI_0, CODEC_UNI_1, pairs_uni)
     bi_0, bi_1 = pair_streams(CODEC_BI_0, CODEC_BI_1, pairs_bi)
     assert len(uni_0) == len(bi_0)
+    assert (uni_0, uni_1) != (bi_0, bi_1), "bipolar stimulus is identical to unipolar"
     reset_at = len(uni_0) // 2
 
     model_uni = div_gaines({"polarity": "unipolar", **BASE_CONFIG})

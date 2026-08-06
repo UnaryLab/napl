@@ -221,6 +221,14 @@ def _select_entry(mapping, class_name, config, requested_rtl=None):
         matches = [entry for entry in entries if entry.get("rtl_module") == expected]
         if matches:
             return matches[0]
+        # One RTL module may serve several simulation classes, in which case its
+        # base name is not the class name: linear_gaines1 and linear_gaines2 both
+        # map to linear_gaines_<polarity>. The polarity suffix still selects the
+        # variant whenever exactly one entry carries it.
+        matches = [entry for entry in entries
+                   if str(entry.get("rtl_module", "")).endswith(f"_{polarity}")]
+        if len(matches) == 1:
+            return matches[0]
 
     exact = [entry for entry in entries if entry.get("rtl_module") == class_name]
     if len(exact) == 1:
@@ -545,6 +553,19 @@ def _resolve_rtl_file(mapping_path, entry):
     )
 
 
+def _reject_sources_for_null_ports(entry, node, port_map):
+    """Reject a node that drives an input the RTL variant has no port for."""
+    inputs = node.get("inputs")
+    if not isinstance(inputs, Mapping):
+        return
+    for name, port in port_map["inputs"].items():
+        if port is None and inputs.get(name) is not None:
+            raise TranslationError(
+                f"RTL module {entry.get('rtl_module')!r} has no port for input "
+                f"{name!r}, so the source this node supplies for it cannot be wired"
+            )
+
+
 def _translate_node(node, mapping, mapping_path):
     if not isinstance(node, Mapping):
         raise TranslationError("Each graph node must be a mapping")
@@ -559,6 +580,7 @@ def _translate_node(node, mapping, mapping_path):
     file_path = _resolve_rtl_file(mapping_path, entry)
     parameters = _resolve_parameters(entry, node, config)
     port_map = PortMap(entry.get("inputs"), entry.get("outputs"))
+    _reject_sources_for_null_ports(entry, node, port_map)
     return RtlBinding(
         rtl_module=entry["rtl_module"],
         file_path=file_path,

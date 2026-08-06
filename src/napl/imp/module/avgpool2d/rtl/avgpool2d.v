@@ -2,23 +2,19 @@
 `default_nettype none
 // napl.sim.module.avgpool2d over LANES pooled output positions.
 // Each lane is one scalar window circuit: accumulate the KERNEL_AREA window
-// popcount in units of 1/DIVISOR, emit a spike at or above DIVISOR, and subtract
-// DIVISOR on the emit. That is add_any_unipolar with SCALE = DIVISOR and
-// ENTRY = KERNEL_AREA, so the operation-layer circuit is instantiated rather than
-// rebuilt. Generated parameters mirror Python.
+// popcount in units of 1/KERNEL_AREA, emit a spike at or above KERNEL_AREA, and
+// subtract KERNEL_AREA on the emit. That is add_any_unipolar with
+// SCALE = ENTRY = KERNEL_AREA, so the operation-layer circuit is instantiated
+// rather than rebuilt. Generated parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every lane accumulator to match reset().
 //
 // Unpadded windows only: the module drives whole KERNEL_AREA windows of real
-// input spikes. The bipolar zero pad of the Python model is a lane-level input
-// source and is not part of this circuit.
-// DIVISOR >= KERNEL_AREA only, which the generate guard below enforces at
-// elaboration; mapping.yaml carries the same restriction.
+// input spikes.
 
 
 module avgpool2d #(
     parameter integer KERNEL_AREA = 4,   // pooling window elements;  tb overrides via `GEN_KERNEL_AREA
-    parameter integer DIVISOR     = 4,   // window mean divisor;      tb overrides via `GEN_DIVISOR
     parameter integer LANES       = 1    // pooled output positions;  tb overrides via `GEN_LANES
 ) (
     input  wire                          i_clk,
@@ -38,24 +34,17 @@ module avgpool2d #(
         end
     endfunction
 
-    // The lane accumulator stays below DIVISOR + KERNEL_AREA, which holds while
-    // DIVISOR >= KERNEL_AREA (a window mean of at most one spike per timestep).
-    // add_any_unipolar keeps 2*acc, so size its WIDTH for twice that bound.
-    localparam integer ACC_WIDTH = clog2(2 * (DIVISOR + KERNEL_AREA) + 2);
+    // add_any_unipolar holds A = 2*acc and fires at 2*SCALE, so A stays below
+    // 2 * KERNEL_AREA before a fire; one timestep adds at most 2*ENTRY, another
+    // 2 * KERNEL_AREA. WIDTH must let ACC_HI = 2**WIDTH - 2 cover that peak.
+    localparam integer ACC_WIDTH = clog2(4 * KERNEL_AREA + 2);
 
     genvar lane;
-    // Elaboration-time guard: an unresolvable module reference makes iverilog
-    // fail the build when the ACC_WIDTH bound above does not hold.
-    generate
-        if (DIVISOR < KERNEL_AREA) begin : g_bad_divisor
-            ERROR_avgpool2d_DIVISOR_must_be_at_least_KERNEL_AREA u_bad ();
-        end
-    endgenerate
 
     generate
         for (lane = 0; lane < LANES; lane = lane + 1) begin : g_lane
             add_any_unipolar #(
-                .SCALE (DIVISOR),
+                .SCALE (KERNEL_AREA),
                 .WIDTH (ACC_WIDTH),
                 .ENTRY (KERNEL_AREA)
             ) u_window (

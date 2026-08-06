@@ -5,18 +5,12 @@ Verilog against the *actual* simulator, not a hand-derived truth table.
 
 avgpool2d is stateful: each pooled output position keeps a residual accumulator
 that adds the window mean every timestep and emits a spike once the residual
-reaches one. The RTL keeps the same residual as an integer in units of 1/DIVISOR,
-which is bit-exact with the model while 1/DIVISOR is representable in the model
-dtype (the verified configurations use power-of-two divisors).
+reaches one. The RTL keeps the same residual as an integer in units of
+1/KERNEL_AREA, which is bit-exact with the model while 1/KERNEL_AREA is
+representable in the model dtype (the verified configurations use power-of-two
+window areas).
 
-The vectors cover unpadded windows only. Padding is a lane-level input source in
-the Python model (a bipolar zero pad is a rate-0.5 toggle mixed into the window
-mean), not part of the pooled window circuit, so the RTL and these vectors use
-padding=0.
-
-Two DUT configurations share one input stream:
-  out      -- avgpool2d(2), divisor = window area = 4
-  out_d8   -- avgpool2d(2, divisor_override=8), divisor 8 != window area
+The vectors cover unpadded windows only.
 
 Three sequences follow each other: a unipolar stream, a bipolar stream, and the
 unipolar stream replayed after half a stream of bipolar spikes has dirtied the
@@ -25,13 +19,13 @@ sequence bit for bit.
 
 Output: ../vec/avgpool2d.vec, one line per timestep:
 
-    <rst> <in_bits> <out_bits> <out_d8_bits>
+    <rst> <in_bits> <out_bits>
 
 `in_bits` is LANES*KERNEL_AREA binary digits, MSB first, so lane l occupies
 i_input_spike[l*KERNEL_AREA +: KERNEL_AREA] with the window flattened row-major.
-`out_bits` and `out_d8_bits` are LANES binary digits, MSB first, in the same lane
-order (the pooled output flattened row-major). `rst` is 1 on the first timestep of
-each independent sequence, where the testbench pulses i_rst_n low.
+`out_bits` is LANES binary digits, MSB first, in the same lane order (the pooled
+output flattened row-major). `rst` is 1 on the first timestep of each independent
+sequence, where the testbench pulses i_rst_n low.
 
 Sizing values come from this file only and are emitted into
 ../vec/avgpool2d_params.vh, so the testbench elaborates the RTL at the model's
@@ -65,7 +59,6 @@ PARAMS = Path(__file__).resolve().parent.parent / "vec" / "avgpool2d_params.vh"
 KERNEL_SIZE = 2
 SHAPE = (4, 3, 8, 8)
 TIMESTEPS = 256
-DIVISOR_OVERRIDE = 8
 
 KERNEL_AREA = KERNEL_SIZE * KERNEL_SIZE
 LANES = math.prod(SHAPE) // KERNEL_AREA
@@ -76,19 +69,11 @@ def check_mapping():
 
     The vectors above are built straight from the Python model, so without this
     the mapping entry could drift from the hardware the co-simulation verifies.
-    Both elaborated configurations are translated: the default divisor and the
-    divisor_override one.
     """
     node = {"class": "avgpool2d", "config": {"kernel_size": KERNEL_SIZE, "lanes": LANES}}
     assert translate_node(node).parameters == {
-        "KERNEL_AREA": KERNEL_AREA, "DIVISOR": KERNEL_AREA, "LANES": LANES}, \
+        "KERNEL_AREA": KERNEL_AREA, "LANES": LANES}, \
         f"mapping.yaml avgpool2d resolves {translate_node(node).parameters}"
-    node_d8 = {"class": "avgpool2d",
-               "config": {"kernel_size": KERNEL_SIZE, "divisor_override": DIVISOR_OVERRIDE,
-                          "lanes": LANES}}
-    assert translate_node(node_d8).parameters == {
-        "KERNEL_AREA": KERNEL_AREA, "DIVISOR": DIVISOR_OVERRIDE, "LANES": LANES}, \
-        f"mapping.yaml avgpool2d resolves {translate_node(node_d8).parameters}"
 
 
 def window_bits(spike):
@@ -104,10 +89,15 @@ def as_binary(bits):
     return "".join(str(int(bit)) for bit in reversed(bits))
 
 
+# Bipolar values run over a narrower range than unipolar ones, so the encoded
+# bipolar rate (x + 1) / 2 differs from the unipolar rate x.
+RANGE = {'unipolar': (0.0, 1.0), 'bipolar': (-1.0, 0.75)}
+
+
 def values(polarity):
     """The test's fidelity-scale input tensor for one polarity."""
-    low = 0.0 if polarity == 'unipolar' else -1.0
-    return torch.linspace(low, 1.0, math.prod(SHAPE),
+    low, high = RANGE[polarity]
+    return torch.linspace(low, high, math.prod(SHAPE),
                           dtype=global_config.ntype).reshape(SHAPE)
 
 
@@ -125,9 +115,6 @@ def run_sequence(polarity, rows, dirty=0):
     enc.reset()
     pool = avgpool2d(KERNEL_SIZE, config={'polarity': polarity})
     pool.reset()
-    pool_d8 = avgpool2d(KERNEL_SIZE, divisor_override=DIVISOR_OVERRIDE,
-                        config={'polarity': polarity})
-    pool_d8.reset()
 
     if dirty:
         dirty_codec = {'polarity': 'bipolar', 'timestep': TIMESTEPS,
@@ -137,29 +124,24 @@ def run_sequence(polarity, rows, dirty=0):
         dirty_enc.reset()
         dirty_value = values('bipolar')
         for _ in range(dirty):
-            spike = dirty_enc(dirty_value)
-            pool(spike)
-            pool_d8(spike)
+            pool(dirty_enc(dirty_value))
         pool.reset()
-        pool_d8.reset()
 
     value = values(polarity)
     for timestep in range(TIMESTEPS):
         spike = enc(value)
         out = pool(spike)
-        out_d8 = pool_d8(spike)
         rows.append(
             f"{1 if timestep == 0 else 0} "
             f"{as_binary(window_bits(spike))} "
-            f"{as_binary(out.reshape(-1).to(torch.int64).tolist())} "
-            f"{as_binary(out_d8.reshape(-1).to(torch.int64).tolist())}"
+            f"{as_binary(out.reshape(-1).to(torch.int64).tolist())}"
         )
     return pool.hw.pp_delay
 
 
 def main():
     check_mapping()
-    rows = ["rst in_bits out_bits out_d8_bits"]
+    rows = ["rst in_bits out_bits"]
     # Both polarities drive the same circuit: without padding the pooled window is
     # polarity-independent, so the two sequences differ only in their spike stream.
     pp_delay = 0
@@ -169,12 +151,14 @@ def main():
     run_sequence('unipolar', rows, dirty=TIMESTEPS // 2)
     assert rows[1:1 + TIMESTEPS] == rows[1 + 2 * TIMESTEPS:], \
         'reset() did not restore the opening accumulator state'
+    # Bipolar p = (x + 1) / 2 over the unipolar grid would reproduce the unipolar
+    # block exactly, leaving the bipolar block no distinct stimulus.
+    assert rows[1:1 + TIMESTEPS] != rows[1 + TIMESTEPS:1 + 2 * TIMESTEPS], \
+        'bipolar stimulus is identical to unipolar'
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     PARAMS.write_text(
         f"`define GEN_KERNEL_AREA {KERNEL_AREA}\n"
-        f"`define GEN_DIVISOR {KERNEL_AREA}\n"
-        f"`define GEN_DIVISOR_D8 {DIVISOR_OVERRIDE}\n"
         f"`define GEN_LANES {LANES}\n"
         f"`define GEN_PP_DELAY {pp_delay}\n"
         f"`define GEN_VECTORS {len(rows) - 1}\n"
@@ -182,8 +166,7 @@ def main():
     VEC.write_text("\n".join(rows) + "\n")
     print(
         f"wrote {VEC} ({len(rows) - 1} vectors) and {PARAMS} "
-        f"(GEN_KERNEL_AREA={KERNEL_AREA}, GEN_DIVISOR={KERNEL_AREA}, "
-        f"GEN_DIVISOR_D8={DIVISOR_OVERRIDE}, GEN_LANES={LANES}, "
+        f"(GEN_KERNEL_AREA={KERNEL_AREA}, GEN_LANES={LANES}, "
         f"GEN_PP_DELAY={pp_delay})"
     )
 

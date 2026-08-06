@@ -19,9 +19,16 @@ cycle both models are reset() and a reset-marker row is emitted, so the testbenc
 re-pulses i_rst_n there and the co-sim proves the RTL returns to the model's
 post-reset() state from a *dirtied* state, not just at t=0.
 
+The bi2uni helper is also driven standalone, on its own stimulus column, because
+its low clamp is unreachable through div_iscb_bipolar: signabs never holds its
+magnitude output low for more than three cycles in a row, so the composed
+helper's accumulator bottoms out at -3 and the clamp at -4 is never taken. Fed
+directly, five consecutive silent cycles walk the accumulator from 0 to -4 and
+take the clamp on the fifth, which is what makes the arm observable.
+
 Output: ../vec/div_iscb.vec, one line per cycle:
 
-    <reset> <dividend> <divisor> <quotient_unipolar> <quotient_bipolar>
+    <reset> <dividend> <divisor> <quotient_unipolar> <quotient_bipolar> <b2u_in> <b2u_out>
 
 `reset` is 1 on the marker row (the testbench pulses i_rst_n low for that cycle
 and the model's pre-reset outputs on that row are don't-care / not checked), 0
@@ -35,12 +42,18 @@ import sys
 from pathlib import Path
 
 import torch
-from napl.sim.operation import div_iscb
+from napl.sim.operation import bi2uni, div_iscb
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "div_iscb.vec"
+
+# Width of the bi2uni helper baked into div_iscb_bi2uni.v.
+B2U_WIDTH = 3
+# Six silent cycles then two spiking ones, appended after the main stream: the
+# sixth silent cycle presents -5 to a clamp at -4.
+B2U_TAIL = [0, 0, 0, 0, 0, 0, 1, 1]
 
 # Inputs mirror test_div_iscb.py: distinct Sobol dimensions and
 # |dividend| <= |divisor| with a nonzero divisor.
@@ -60,30 +73,48 @@ def build_streams():
 def main():
     uni = div_iscb(config={"polarity": "unipolar"})
     bi = div_iscb(config={"polarity": "bipolar"})
+    b2u = bi2uni(config={"width": B2U_WIDTH})
     uni.reset()
     bi.reset()
+    b2u.reset()
 
     dividend_stream, divisor_stream = build_streams()
+    # The standalone helper reuses the dividend stream, then takes the tail.
+    b2u_stream = list(dividend_stream) + B2U_TAIL
+    dividend_stream = list(dividend_stream) + [0] * len(B2U_TAIL)
+    divisor_stream = list(divisor_stream) + [1] * len(B2U_TAIL)
     total = len(dividend_stream)
     reset_at = total // 2
+    clamped = 0
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
     with VEC.open("w") as f:
-        for i, (dd, ds) in enumerate(zip(dividend_stream, divisor_stream)):
+        for i, (dd, ds, bx) in enumerate(zip(dividend_stream, divisor_stream, b2u_stream)):
             if i == reset_at:
-                # Reset rows carry don't-care outputs and reset both models before replay.
-                f.write(f"1 {dd} {ds} x x\n")
+                # Reset rows carry don't-care outputs and reset every model before replay.
+                f.write(f"1 {dd} {ds} x x {bx} x\n")
                 rows += 1
                 uni.reset()
                 bi.reset()
+                b2u.reset()
             t_dd = torch.tensor(dd, dtype=uni.stype)
             t_ds = torch.tensor(ds, dtype=uni.stype)
             out_uni = int(uni(t_dd, t_ds).item())
             out_bi = int(bi(t_dd, t_ds).item())
-            f.write(f"0 {dd} {ds} {out_uni} {out_bi}\n")
+            # Count the cycles whose pre-clamp sum falls below the low bound.
+            if int(b2u.accumulator.item()) + 2 * bx - 1 < b2u.acc_min:
+                clamped += 1
+            # bi2uni carries state across timesteps only while the input shape
+            # matches its accumulator, so the helper is driven with a 1-element
+            # tensor rather than a scalar one.
+            out_b2u = int(b2u(torch.tensor([bx], dtype=b2u.stype)).item())
+            f.write(f"0 {dd} {ds} {out_uni} {out_bi} {bx} {out_b2u}\n")
             rows += 1
-    print(f"wrote {VEC} ({rows} vectors, mid-stream reset at row {reset_at})")
+    # Stimulus check: without a taken low clamp the arm is unobservable.
+    assert clamped > 0, 'bi2uni low clamp was never taken'
+    print(f"wrote {VEC} ({rows} vectors, mid-stream reset at row {reset_at}, "
+          f"bi2uni low clamp taken on {clamped} cycle(s))")
 
 
 if __name__ == "__main__":

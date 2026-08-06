@@ -32,7 +32,6 @@ module conv_pc_tb;
     reg  [W_WIDTH-1:0]     i_weight_b;
     reg  [`GEN_OUT_CHANNELS-1:0] i_bias_u;
     reg  [`GEN_OUT_CHANNELS-1:0] i_bias_b;
-    reg                    i_pad_bits_u;
     reg                    i_pad_bits_b;
     wire [OUT_WIDTH_A-1:0] o_out_u_a;
     wire [OUT_WIDTH_B-1:0] o_out_u_b;
@@ -59,7 +58,6 @@ module conv_pc_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_a)
     );
 
@@ -83,7 +81,6 @@ module conv_pc_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_b)
     );
 
@@ -105,7 +102,6 @@ module conv_pc_tb;
         .i_input_spike (i_input_spike_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .i_pad_bits    (i_pad_bits_u),
         .o_out         (o_out_u_c)
     );
 
@@ -194,7 +190,6 @@ module conv_pc_tb;
     reg  [MAX_CHARS*8-1:0]  tok_w_b;
     reg  [MAX_CHARS*8-1:0]  tok_bias_u;
     reg  [MAX_CHARS*8-1:0]  tok_bias_b;
-    reg  [MAX_CHARS*8-1:0]  tok_pad_u;
     reg  [MAX_CHARS*8-1:0]  tok_pad_b;
     reg  [MAX_CHARS*8-1:0]  tok_u_a;
     reg  [MAX_CHARS*8-1:0]  tok_u_b;
@@ -256,7 +251,6 @@ module conv_pc_tb;
         i_weight_b      = {W_WIDTH{1'b0}};
         i_bias_u        = {`GEN_OUT_CHANNELS{1'b0}};
         i_bias_b        = {`GEN_OUT_CHANNELS{1'b0}};
-        i_pad_bits_u    = 1'b0;
         i_pad_bits_b    = 1'b0;
 
         fd = $fopen("vec/conv_pc.vec", "r");
@@ -278,13 +272,13 @@ module conv_pc_tb;
             fails = fails + 1;
         end
 
-        // The loop ends on the first row that does not yield all 14 columns, so a
+        // The loop ends on the first row that does not yield all 13 columns, so a
         // scan that stops consuming ends the run instead of spinning on $feof.
-        code = $fscanf(fd, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+        code = $fscanf(fd, "%s %s %s %s %s %s %s %s %s %s %s %s %s\n",
                        tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_bias_u, tok_bias_b,
-                       tok_pad_u, tok_pad_b,
+                       tok_pad_b,
                        tok_u_a, tok_u_b, tok_u_c, tok_b_a, tok_b_b, tok_b_c);
-        while (code == 14) begin
+        while (code == 13) begin
             begin : g_row
                 check_width(tok_in_u, IN_WIDTH, "in_u");
                 check_width(tok_in_b, IN_WIDTH, "in_b");
@@ -292,7 +286,6 @@ module conv_pc_tb;
                 check_width(tok_w_b, W_WIDTH, "w_b");
                 check_width(tok_bias_u, `GEN_OUT_CHANNELS, "bias_u");
                 check_width(tok_bias_b, `GEN_OUT_CHANNELS, "bias_b");
-                check_width(tok_pad_u, 1, "pad_u");
                 check_width(tok_pad_b, 1, "pad_b");
                 check_width(tok_u_a, OUT_WIDTH_A, "out_u_a");
                 check_width(tok_u_b, OUT_WIDTH_B, "out_u_b");
@@ -307,7 +300,6 @@ module conv_pc_tb;
                 i_weight_b      = token_bits(tok_w_b);
                 i_bias_u        = token_bits(tok_bias_u);
                 i_bias_b        = token_bits(tok_bias_b);
-                i_pad_bits_u    = token_bits(tok_pad_u);
                 i_pad_bits_b    = token_bits(tok_pad_b);
                 exp_u_a         = token_bits(tok_u_a);
                 exp_u_b         = token_bits(tok_u_b);
@@ -344,9 +336,9 @@ module conv_pc_tb;
                 end
             end
 
-            code = $fscanf(fd, "%s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+            code = $fscanf(fd, "%s %s %s %s %s %s %s %s %s %s %s %s %s\n",
                            tok_in_u, tok_in_b, tok_w_u, tok_w_b, tok_bias_u, tok_bias_b,
-                           tok_pad_u, tok_pad_b,
+                           tok_pad_b,
                            tok_u_a, tok_u_b, tok_u_c, tok_b_a, tok_b_b, tok_b_c);
         end
         $fclose(fd);

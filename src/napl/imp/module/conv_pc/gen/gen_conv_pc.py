@@ -23,10 +23,11 @@ standalone popcount circuit: add_any bundles it with the scaled accumulator
 conv_pc does not have.
 
 The im2col patch is wiring in the RTL, so the input port carries the NCHW spike
-tensor itself. A tap that falls outside the input reads the pad port. For a
-bipolar stream with padding the model draws that bit from a separate rate-0.5
-encoder on its own sobol dimension (a deterministic toggle would correlate with
-the weight stream); for a unipolar stream the pad is a zero spike.
+tensor itself. A tap that falls outside the input reads the pad port on the
+bipolar variant, whose bit the model draws from a separate rate-0.5 encoder on
+its own sobol dimension (a deterministic toggle would correlate with the weight
+stream). The unipolar variant has no pad port: its zero pad is a constant zero
+spike, so only `pad_b` is a column.
 
 The model re-encodes the weight, the bias, and the pad stream from externally
 held tensors every timestep, so all three arrive on RTL ports rather than being
@@ -54,20 +55,23 @@ the Python encoders the vectors are drawn from, not RTL reset behavior.
 
 Output: ../vec/conv_pc.vec, one line per timestep:
 
-    <in_u> <in_b> <w_u> <w_b> <bias_u> <bias_b> <pad_u> <pad_b>
+    <in_u> <in_b> <w_u> <w_b> <bias_u> <bias_b> <pad_b>
     <out_u_a> <out_u_b> <out_u_c> <out_b_a> <out_b_b> <out_b_c>
 
 `in_*` is BATCH*IN_CHANNELS*IN_H*IN_W binary digits, MSB first, so input element
 (b, ic, ih, iw) occupies i_input_spike[((b*IN_CHANNELS + ic)*IN_H + ih)*IN_W + iw].
 `w_*` is OUT_CHANNELS*K digits with out channel oc, tap t at i_weight[oc*K + t],
 the tap order being (in_channel, kernel_row, kernel_col) row-major. `bias_*` is
-OUT_CHANNELS digits and `pad_*` one digit.
+OUT_CHANNELS digits and `pad_b` one digit.
 
 Each `out_*` column is a *count bus*, not one bit per lane: lane (b, oc, oh, ow)
 in row-major order holds a COUNT_W-bit unsigned count at
 o_out[lane*COUNT_W +: COUNT_W], so the column is LANES*COUNT_W digits, highest bit
-index first like every other column. The testbench checks that character count
-against LANES*COUNT_W, which is what ties COUNT_W to the hardware.
+index first like every other column. The testbench checks that character count against LANES*COUNT_W. That check is an
+echo of COUNT_W rather than a check on it, since count_width() below sizes both
+the column and the elaborated parameter; COUNT_W is pinned by the RTL's
+elaboration guard against clog2(ENTRY + 1) and by check_mapping() against the
+mapping.yaml expression.
 
 Sizing values come from this file only and are emitted into
 ../vec/conv_pc_params.vh, so the testbench elaborates the RTL at the model's
@@ -132,6 +136,11 @@ def count_width(has_bias):
     return clog2(K + int(has_bias) + 1)
 
 
+# Neither entry here is a power of two, so clog2(entry) and clog2(entry + 1) give
+# the same width and these vectors cannot tell the + 1 apart. linear_pc's no-bias
+# arm carries the power-of-two entry that pins it.
+
+
 def out_hw(padding, stride, dilation):
     """Output height and width of one geometry, as the RTL derives them."""
     height = (IN_H + 2 * padding - dilation * (KERNEL[0] - 1) - 1) // stride + 1
@@ -145,10 +154,15 @@ def lanes_of(padding, stride, dilation):
     return BATCH * OUT_CHANNELS * height * width
 
 
+# Bipolar values run over a narrower range than unipolar ones, so the encoded
+# bipolar rate (x + 1) / 2 differs from the unipolar rate x.
+RANGE = {'unipolar': (0.0, 1.0), 'bipolar': (-1.0, 0.75)}
+
+
 def grid(count, shape, polarity, offset):
     """A deterministic operand tensor spanning the polarity's value range."""
-    low = 0.0 if polarity == 'unipolar' else -1.0
-    steps = torch.linspace(low, 1.0, count, dtype=global_config.ntype)
+    low, high = RANGE[polarity]
+    steps = torch.linspace(low, high, count, dtype=global_config.ntype)
     return steps.roll(offset).reshape(shape)
 
 
@@ -301,7 +315,8 @@ def run_sequence(rows, index, dirty=0):
             inputs.append(as_binary(in_bits))
             weights.append(as_binary(weight_bits))
             biases.append(as_binary(bias_bits))
-            pads.append(as_binary(pad_bits))
+            if one.polarity == 'bipolar':
+                pads.append(as_binary(pad_bits))
             outputs.append([as_binary(bits) for bits in out_bits])
         rows.append(" ".join(inputs + weights + biases + pads + outputs[0] + outputs[1]))
     return arms[0].layers[0].hw.pp_delay
@@ -309,7 +324,7 @@ def run_sequence(rows, index, dirty=0):
 
 def main():
     VEC_DIR.mkdir(parents=True, exist_ok=True)
-    header = ["in_u", "in_b", "w_u", "w_b", "bias_u", "bias_b", "pad_u", "pad_b"]
+    header = ["in_u", "in_b", "w_u", "w_b", "bias_u", "bias_b", "pad_b"]
     header += [f"out_{polarity}_{label}" for polarity in "ub" for label, *_ in GEOMETRY]
     rows = [" ".join(header)]
     pp_delay = run_sequence(rows, 0)
@@ -317,6 +332,13 @@ def main():
     run_sequence(rows, 0, dirty=TIMESTEPS // 2)
     assert rows[1:1 + TIMESTEPS] == rows[1 + 2 * TIMESTEPS:], \
         'reset() did not restart the encoders at their opening state'
+    # Bipolar p = (x + 1) / 2 over the unipolar grid would reproduce the unipolar
+    # columns exactly, leaving the bipolar arm no distinct stimulus.
+    columns = [row.split() for row in rows[1:]]
+    assert [row[0] for row in columns] != [row[1] for row in columns], \
+        'bipolar input stimulus is identical to unipolar'
+    assert [row[2] for row in columns] != [row[3] for row in columns], \
+        'bipolar weight stimulus is identical to unipolar'
 
     defines = [("BATCH", BATCH), ("IN_CHANNELS", IN_CHANNELS), ("IN_H", IN_H), ("IN_W", IN_W),
                ("OUT_CHANNELS", OUT_CHANNELS), ("KERNEL_H", KERNEL[0]), ("KERNEL_W", KERNEL[1]),

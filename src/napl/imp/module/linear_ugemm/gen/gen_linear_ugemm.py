@@ -19,15 +19,24 @@ Both tables are the same sequence, which is why the bias comparator can be the
 encode circuit: linear_ugemm indexes self.mul.num_seq with the free-running
 timestep for the bias bit.
 
-Sequence-index bound: mul_ugemm advances seq_idx without a modulo, so a run stays
-valid for at most 2**ceil(log2(timestep)) timesteps. TIMESTEPS is pinned to that
-bound (LEN), and every driven block is TIMESTEPS long or shorter.
+Sequence-index bound: mul_ugemm advances seq_idx without a modulo and the ROM
+holds LEN = 2**ceil(log2(timestep)) entries, so a reset-to-reset run holds at
+most LEN - 1 spiking timesteps and, in bipolar, LEN - 1 silent ones. Every driven
+block respects both.
 
-Four DUT configurations share each row, one column of expected output each:
+Six DUT configurations share each row, one column of expected output each:
   out_u     -- unipolar, with bias   (entry = scale = in_features + 1)
   out_u_nb  -- unipolar, no bias     (entry = scale = in_features)
+  out_u_s   -- unipolar, with bias, scale SCALE_S != entry, railed operands
   out_b     -- bipolar,  with bias
   out_b_nb  -- bipolar,  no bias
+  out_b_s   -- bipolar,  with bias, scale SCALE_S != entry, railed operands
+
+The two SCALE_S arms are the only accumulators that move: with scale == entry
+the bipolar offset (entry - scale) / 2 is 0 and a carry subtracts the whole
+entry, so the accumulator stays inside [0, entry - 1]. They carry the positive
+and the negative saturation blocks, which is what makes WIDTH and the negative
+clamp observable.
 
 Polarity selects the circuit here (separate `_unipolar` / `_bipolar` modules), so
 the two polarities run as parallel columns rather than sequential blocks: each row
@@ -38,7 +47,8 @@ cleared them, which must reproduce the first sequence bit for bit.
 
 Output: ../vec/linear_ugemm.vec, one line per timestep:
 
-    <rst> <in_u_bits> <in_b_bits> <out_u> <out_u_nb> <out_b> <out_b_nb>
+    <rst> <in_u_bits> <in_b_bits> <out_u> <out_u_nb> <out_u_s> <out_b> <out_b_nb>
+    <out_b_s>
 
 `in_*_bits` is IN_FEATURES binary digits, MSB first, so input feature f occupies
 i_input_spike[f]. `out_*` is LANES binary digits, MSB first, with lane l the
@@ -47,6 +57,9 @@ output feature l.
 Weight and bias operands are held fixed-point codes, so they go to
 ../vec/linear_ugemm_operand_u.hex and _b.hex (LANES*(IN_FEATURES+1) lines each:
 IN_FEATURES weight codes then the bias code, per lane) instead of a vector column.
+The scaled arms' railed operands go to ../vec/linear_ugemm_operand_s.hex in the
+same layout; an operand code is the probability code either polarity compares
+against, so one file serves both.
 
 Sizing values come from this file only and are emitted into
 ../vec/linear_ugemm_params.vh, so the testbench elaborates the RTL at the model's
@@ -96,7 +109,37 @@ def operand_codes(count, stride, offset):
 
 WEIGHT_CODES = operand_codes(LANES * IN_FEATURES, 29, 5)
 BIAS_CODES = operand_codes(LANES, 53, 7)
-INPUT_CODES = operand_codes(IN_FEATURES, 71, 13)
+# One code list per polarity: a shared list would put the same probability grid
+# through both encoders, so the bipolar input column would copy the unipolar one.
+INPUT_CODES = {'unipolar': operand_codes(IN_FEATURES, 71, 13),
+               'bipolar': operand_codes(IN_FEATURES, 43, 97)}
+
+# A divisor below the fan-in, which is what lets the lane accumulator drift at
+# all: with scale == entry the bipolar offset (entry - scale) / 2 is zero, every
+# addend is non-negative and the accumulator never leaves [0, entry - 1]. The
+# scaled arms hold their weights at the top code and their bias at 0, so a
+# spiking input gives a partial sum of IN_FEATURES and a silent one gives 0.
+SCALE_S = 5
+RAIL_WEIGHT = LEN
+RAIL_BIAS = 0
+# An emitted carry subtracts SCALE_S again, so a charging accumulator climbs at
+# the partial sum less the offset less SCALE_S: 16 - 0 - 5 = 11 per cycle in
+# unipolar, which reaches the 2047 clamp of a 12-bit accumulator in 186 cycles,
+# and 16 - 6 - 5 = 5 per cycle in bipolar, which reaches 1275 over the whole
+# block. Every cycle advances a sequence index and the ROM is indexed without a
+# modulo, so a run holds at most LEN - 1 spiking cycles and, in bipolar, LEN - 1
+# silent ones; 1275 is what that budget allows, and it is past the 1023 clamp of
+# the next narrower width. The silent block then drains both arms.
+SAT_CHARGE = LEN - 1
+SAT_DRAIN = LEN - 1
+# Negative-clamp block: only the bipolar accumulator moves down, by the offset 6
+# per silent cycle, so the same LEN - 1 budget reaches -1530: past the -1024 a
+# clamp one bit narrower would hold, short of the -2048 of the elaborated width.
+# The charge back up runs at 16 - 6 = 10 per cycle while the arm stays silent.
+NEG_DRAIN = LEN - 1
+NEG_CHARGE = 200
+# Rails as model values: probability 1 and 0 in the polarity's own domain.
+RAIL_VALUE = {'unipolar': (1.0, 0.0), 'bipolar': (1.0, -1.0)}
 
 
 def to_value(code, polarity):
@@ -133,10 +176,23 @@ class arm:
         require_seeded_sys(codec, config)
         weight = tensor(WEIGHT_CODES, (LANES, IN_FEATURES), polarity)
         bias = tensor(BIAS_CODES, (LANES,), polarity)
-        self.value = tensor(INPUT_CODES, (IN_FEATURES,), polarity)
+        self.value = tensor(INPUT_CODES[polarity], (IN_FEATURES,), polarity)
+        self.config_s = dict(config, scale=SCALE_S)
+        require_seeded_sys(self.config_s)
+        rail_weight = tensor([RAIL_WEIGHT] * (LANES * IN_FEATURES),
+                             (LANES, IN_FEATURES), polarity)
+        rail_bias = tensor([RAIL_BIAS] * LANES, (LANES,), polarity)
         self.enc = encode(codec)
         self.layer = linear_ugemm(weight, bias, config)
         self.layer_nb = linear_ugemm(weight, None, config)
+        self.layer_s = linear_ugemm(rail_weight, rail_bias, self.config_s)
+        # A shadow of the scaled arm one bit narrower. It is never emitted: the
+        # saturation blocks require its output to part from the scaled arm's,
+        # which is what makes the elaborated WIDTH observable in a vector row.
+        self.layer_narrow = linear_ugemm(rail_weight, rail_bias,
+                                         dict(self.config_s, width=ACC_WIDTH - 1))
+        self.rail_weight = rail_weight
+        self.rail_bias = rail_bias
         self.config = config
         self.weight = weight
         self.bias = bias
@@ -167,20 +223,55 @@ class arm:
         assert binding_nb.parameters == expected_nb, \
             f"mapping.yaml {binding_nb.rtl_module} resolves {binding_nb.parameters}"
 
+        node_s = dict(node, config=dict(node["config"], weight=self.rail_weight,
+                                        bias=self.rail_bias, config=self.config_s))
+        expected_s = dict(expected, SCALE=SCALE_S)
+        binding_s = translate_node(node_s)
+        assert binding_s.parameters == expected_s, \
+            f"mapping.yaml {binding_s.rtl_module} resolves {binding_s.parameters}"
+
 
     def reset(self):
         """Restart the encoder and both layers."""
         self.enc.reset()
         self.layer.reset()
         self.layer_nb.reset()
+        self.layer_s.reset()
+        self.layer_narrow.reset()
 
 
-    def step(self):
-        """Advance one timestep; return (input bits, out bits, no-bias out bits)."""
-        spike = self.enc(self.value)
+    def step(self, value=None):
+        """Advance one timestep, over `value` when given; return the row columns."""
+        spike = self.enc(self.value if value is None else value)
         out = self.layer(spike)
         out_nb = self.layer_nb(spike)
-        return bits_of(spike), bits_of(out), bits_of(out_nb)
+        out_s = self.layer_s(spike)
+        self.narrow_bits = bits_of(self.layer_narrow(spike))
+        return bits_of(spike), bits_of(out), bits_of(out_nb), bits_of(out_s)
+
+
+def emit_row(rows, arms, rail, first):
+    """Step both arms, at the given rail when driven, and append their golden row.
+
+    Returns whether either arm's scaled output parted from its one-bit-narrower
+    shadow on this cycle, which is the row a corrupted WIDTH would fail on.
+    """
+    columns = [f"{1 if first else 0}"]
+    parted = False
+    outputs = []
+    for one in arms:
+        value = None
+        if rail is not None:
+            level = RAIL_VALUE[one.polarity][0 if rail else 1]
+            value = torch.full((IN_FEATURES,), level, dtype=global_config.ntype)
+        in_bits, out_bits, out_nb_bits, out_s_bits = one.step(value)
+        parted = parted or out_s_bits != one.narrow_bits
+        columns.append(as_binary(in_bits))
+        outputs.append(as_binary(out_bits))
+        outputs.append(as_binary(out_nb_bits))
+        outputs.append(as_binary(out_s_bits))
+    rows.append(" ".join(columns + outputs))
+    return parted
 
 
 def run_sequence(rows, dirty=0):
@@ -202,15 +293,78 @@ def run_sequence(rows, dirty=0):
             one.reset()
 
     for timestep in range(TIMESTEPS):
-        columns = [f"{1 if timestep == 0 else 0}"]
-        outputs = []
-        for one in arms:
-            in_bits, out_bits, out_nb_bits = one.step()
-            columns.append(as_binary(in_bits))
-            outputs.append(as_binary(out_bits))
-            outputs.append(as_binary(out_nb_bits))
-        rows.append(" ".join(columns + outputs))
+        emit_row(rows, arms, None, timestep == 0)
     return arms[0].layer
+
+
+def run_saturation(rows):
+    """Append the positive-clamp block, which is what makes WIDTH observable.
+
+    The scaled arms hold their weights at the top code and their bias at 0, so a
+    spiking input gives every lane a partial sum of IN_FEATURES and a silent one
+    gives 0. With SCALE_S below ENTRY the spiking block charges both scaled
+    accumulators onto their positive clamp at 2**(WIDTH-1) - 1 and the silent
+    block drains them: the stored charge is how many further cycles an arm keeps
+    emitting, so a narrower WIDTH stops emitting sooner and its column differs.
+
+    A silent cycle advances no unipolar sequence index and the bipolar inverse
+    index only, so the drain costs the charge no index budget.
+    """
+    arms = [arm('unipolar'), arm('bipolar')]
+    rails = [True] * SAT_CHARGE + [False] * SAT_DRAIN
+    peak = [0, 0]
+    parted = False
+    for step, rail in enumerate(rails):
+        parted = emit_row(rows, arms, rail, step == 0) or parted
+        for slot, one in enumerate(arms):
+            peak[slot] = max(peak[slot], int(one.layer_s.acc.accumulator.reshape(-1).max()))
+    assert parted, 'the positive block never parted from a one-bit-narrower accumulator'
+    # One carry is subtracted after the clamp, so a clamped accumulator is
+    # retained at acc_max - SCALE_S. The bipolar arm climbs at the offset rather
+    # than at the fan-in, which the sequence-index budget stops short of the
+    # clamp, so it is required only to pass the clamp of the next narrower width,
+    # which is the corruption the block is here to catch.
+    acc_max = arms[0].layer_s.acc.acc_max
+    assert peak[0] == acc_max - SCALE_S, \
+        f'the unipolar scaled accumulator peaked at {peak[0]}, short of {acc_max}'
+    assert peak[1] > acc_max // 2, \
+        f'the bipolar scaled accumulator peaked at {peak[1]}, below {acc_max // 2}'
+    return peak[1]
+
+
+def run_negative(rows):
+    """Append the negative-clamp block, which is what makes ACC_LO observable.
+
+    Only a bipolar accumulator moves down, by the offset (ENTRY - SCALE_S) / 2
+    that a scale below the fan-in creates, and only while its partial sum is 0,
+    which is what the silent input block gives. The spiking block then recharges
+    it: how long the arm stays silent on the way back up is what the clamp sets,
+    so a shallower ACC_LO starts emitting sooner and its column differs.
+
+    Each silent cycle advances the bipolar inverse sequence index, so the drain
+    is capped at LEN - 1 cycles and stops short of -2**(WIDTH-1). The reached
+    depth is asserted to pass the clamp of the next narrower width, which is the
+    corruption the block is here to catch; the elaborated clamp itself is out of
+    reach at this ENTRY and SEQ_WIDTH.
+
+    The unipolar accumulator has no offset and its carry only ever subtracts down
+    to zero, so its negative clamp is unreachable by construction.
+    """
+    arms = [arm('unipolar'), arm('bipolar')]
+    rails = [False] * NEG_DRAIN + [True] * NEG_CHARGE
+    bottom = [0, 0]
+    parted = False
+    for step, rail in enumerate(rails):
+        parted = emit_row(rows, arms, rail, step == 0) or parted
+        for slot, one in enumerate(arms):
+            bottom[slot] = min(bottom[slot], int(one.layer_s.acc.accumulator.reshape(-1).min()))
+    assert parted, 'the negative block never parted from a one-bit-narrower accumulator'
+    acc_min = arms[1].layer_s.acc.acc_min
+    assert bottom[1] <= acc_min // 2, \
+        f'the bipolar scaled accumulator bottomed at {bottom[1]}, above {acc_min // 2}'
+    assert bottom[0] == 0, \
+        f'the unipolar scaled accumulator went negative, to {bottom[0]}'
+    return bottom[1]
 
 
 def write_rom(layer):
@@ -244,15 +398,30 @@ def write_operands():
         (VEC_DIR / f"linear_ugemm_operand_{suffix}.hex").write_text(
             "\n".join(f"{code:0{SEQ_WIDTH + 1}b}" for code in lines) + "\n"
         )
+    # The scaled arms' railed operands. An operand code is the probability code
+    # either polarity compares against, so one file serves both.
+    rail = []
+    for _ in range(LANES):
+        rail += [RAIL_WEIGHT] * IN_FEATURES + [RAIL_BIAS]
+    (VEC_DIR / "linear_ugemm_operand_s.hex").write_text(
+        "\n".join(f"{code:0{SEQ_WIDTH + 1}b}" for code in rail) + "\n"
+    )
 
 
 def main():
     VEC_DIR.mkdir(parents=True, exist_ok=True)
-    rows = ["rst in_u_bits in_b_bits out_u out_u_nb out_b out_b_nb"]
+    rows = ["rst in_u_bits in_b_bits out_u out_u_nb out_u_s out_b out_b_nb out_b_s"]
     layer = run_sequence(rows)
     run_sequence(rows, dirty=TIMESTEPS // 2)
-    assert rows[1:1 + TIMESTEPS] == rows[1 + TIMESTEPS:], \
+    assert rows[1:1 + TIMESTEPS] == rows[1 + TIMESTEPS:1 + 2 * TIMESTEPS], \
         'reset() did not restore the opening sequence-index and accumulator state'
+    peak = run_saturation(rows)
+    depth = run_negative(rows)
+    # A shared input code list would put the same probability grid through both
+    # encoders, leaving the bipolar arm no distinct stimulus.
+    columns = [row.split() for row in rows[1:1 + 2 * TIMESTEPS]]
+    assert [row[1] for row in columns] != [row[2] for row in columns], \
+        'bipolar input stimulus is identical to unipolar'
 
     write_rom(layer)
     write_operands()
@@ -264,6 +433,7 @@ def main():
         f"`define GEN_WIDTH {ACC_WIDTH}\n"
         f"`define GEN_SCALE {IN_FEATURES + 1}\n"
         f"`define GEN_SCALE_NB {IN_FEATURES}\n"
+        f"`define GEN_SCALE_S {SCALE_S}\n"
         f"`define GEN_PP_DELAY {pp_delay}\n"
         f"`define GEN_VECTORS {len(rows) - 1}\n"
     )
@@ -273,6 +443,7 @@ def main():
         f"(GEN_IN_FEATURES={IN_FEATURES}, GEN_LANES={LANES}, "
         f"GEN_SEQ_WIDTH={SEQ_WIDTH}, GEN_WIDTH={ACC_WIDTH}, "
         f"GEN_SCALE={IN_FEATURES + 1}, GEN_SCALE_NB={IN_FEATURES}, "
+        f"GEN_SCALE_S={SCALE_S}, excursion {peak} / {depth}, "
         f"GEN_PP_DELAY={pp_delay})"
     )
 

@@ -73,8 +73,7 @@ def module_nodes():
     layer_config = LAYER_CONFIG
     return [
         {"class": "avgpool2d", "config": {"kernel_size": 2, "lanes": 48}},
-        {"class": "avgpool2d",
-         "config": {"kernel_size": (2, 3), "divisor_override": 8, "lanes": 48}},
+        {"class": "avgpool2d", "config": {"kernel_size": (2, 3), "lanes": 48}},
         {"class": "linear_ugemm",
          "config": {"weight": weight, "bias": torch.zeros(8),
                     "config": layer_config, "lanes": 8}},
@@ -104,14 +103,14 @@ def module_nodes():
 
 def test_module_layer_parameters():
     """Resolve every module entry from constructor-name node configs."""
-    (pool, pool_d8, ugemm, ugemm_nb, linear, linear_nb,
+    (pool, pool_rect, ugemm, ugemm_nb, linear, linear_nb,
      convolution, convolution_nb) = [translate_node(node) for node in module_nodes()]
 
     assert pool.rtl_module == "avgpool2d"
     assert Path(pool.file_path).parts[-3:] == ("avgpool2d", "rtl", "avgpool2d.v")
-    assert pool.parameters == {"KERNEL_AREA": 4, "DIVISOR": 4, "LANES": 48}
-    # A tuple kernel keeps the window area, and divisor_override wins over it.
-    assert pool_d8.parameters == {"KERNEL_AREA": 6, "DIVISOR": 8, "LANES": 48}
+    assert pool.parameters == {"KERNEL_AREA": 4, "LANES": 48}
+    # A tuple kernel resolves to the window area.
+    assert pool_rect.parameters == {"KERNEL_AREA": 6, "LANES": 48}
 
     assert ugemm.rtl_module == "linear_ugemm_unipolar"
     assert ugemm.parameters == {"IN_FEATURES": 16, "LANES": 8, "SEQ_WIDTH": 8,
@@ -139,23 +138,41 @@ def test_module_layer_parameters():
                                       "OUT_CHANNELS": 3, "KERNEL_H": 3, "KERNEL_W": 3,
                                       "STRIDE": 1, "PADDING": 1, "DILATION": 1,
                                       "WIDTH": 12, "HAS_BIAS": 1, "SCALE": 19, "LANES": 108}
-    assert convolution.port_map["inputs"]["pad_bits"] == "i_pad_bits"
+    # A unipolar zero pad is a constant inside the module, so the unipolar entry
+    # maps pad_bits to no port; the bipolar entry carries one.
+    assert convolution.port_map["inputs"]["pad_bits"] is None
     assert convolution.port_map["output"] == "o_out"
     # Stride and dilation shrink the output positions, and no bias shrinks the scale.
     assert convolution_nb.rtl_module == "conv_bipolar"
+    assert convolution_nb.port_map["inputs"]["pad_bits"] == "i_pad_bits"
     assert convolution_nb.parameters["HAS_BIAS"] == 0
     assert convolution_nb.parameters["SCALE"] == 18
     assert convolution_nb.parameters["LANES"] == 27
 
 
+def test_one_rtl_module_serves_both_gaines_classes():
+    """Resolve linear_gaines1 and linear_gaines2 to the same RTL module per polarity."""
+    for polarity in ("unipolar", "bipolar"):
+        expected = {"IN_FEATURES": 16, "LANES": 8, "SEQ_WIDTH": 8, "HAS_BIAS": 1,
+                    "SCALE_WIDTH": 4, "SCALED": 1}
+        if polarity == "bipolar":
+            # Only the bipolar non-scaled arm holds a counter, so only it carries DEPTH.
+            expected["DEPTH"] = 8
+        for class_name in ("linear_gaines1", "linear_gaines2"):
+            binding = translate_node(gaines_node(class_name, polarity))
+            assert binding.rtl_module == f"linear_gaines_{polarity}"
+            assert binding.parameters == expected, binding.parameters
+    # No bias drops an addend, so the threshold width follows the smaller entry.
+    no_bias = translate_node(gaines_node("linear_gaines1", "unipolar", has_bias=False))
+    assert no_bias.parameters["HAS_BIAS"] == 0
+    assert no_bias.parameters["SCALE_WIDTH"] == 4
+
+
 def test_module_rejects_unsupported_configuration():
     """Reject pooling geometry the RTL does not implement."""
-    with pytest.raises(TranslationError, match="padding"):
+    with pytest.raises(TranslationError, match="stride"):
         translate_node({"class": "avgpool2d",
-                        "config": {"kernel_size": 2, "padding": 1, "lanes": 48}})
-    with pytest.raises(TranslationError, match="DIVISOR >= KERNEL_AREA"):
-        translate_node({"class": "avgpool2d",
-                        "config": {"kernel_size": 2, "divisor_override": 2, "lanes": 48}})
+                        "config": {"kernel_size": 2, "stride": 3, "lanes": 48}})
     # A lane count the convolution geometry cannot fill is rejected before elaboration.
     conv_node = dict(module_nodes()[-1])
     conv_node["config"] = dict(conv_node["config"], lanes=28)
@@ -207,6 +224,16 @@ def linear_node(class_name, polarity, lanes=8, width=12):
                        "lanes": lanes}}
 
 
+def gaines_node(class_name, polarity, in_features=16, has_bias=True, lanes=8,
+                generator='sobol', scaled=True):
+    """One linear_gaines1 or linear_gaines2 node over a `lanes` x in_features weight."""
+    config = dict(LAYER_CONFIG, polarity=polarity, generator=generator, scaled=scaled)
+    return {"class": class_name,
+            "config": {"weight": torch.zeros(8, in_features),
+                       "bias": torch.zeros(8) if has_bias else None,
+                       "config": config, "lanes": lanes}}
+
+
 def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv"):
     """One conv or conv_pc node over a 3x2x3x3 weight and a 1x2x6x6 input."""
     return {"class": class_name,
@@ -217,23 +244,51 @@ def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv"):
             "inputs": {"input_spike": {"shape": (1, in_channels, 6, 6)}}}
 
 
+def mgu_node(lanes=3, hidden=3, in_size=4, width=10, depth_ismul=6, n_hidden=None,
+             n_features=None):
+    """One mgu node over gate weights shaped (hidden, hidden + in_size).
+
+    `n_hidden` and `n_features` override the new-gate weight shape on its own, so
+    a gate pair that disagrees can be built without touching the forget gate.
+    """
+    features = hidden + in_size
+    config = {'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
+              'width': width, 'depth_ismul': depth_ismul}
+    return {"class": "mgu",
+            "config": {"weight_f": torch.zeros(hidden, features),
+                       "bias_f": torch.zeros(hidden),
+                       "weight_n": torch.zeros(n_hidden or hidden,
+                                               n_features or features),
+                       "bias_n": torch.zeros(hidden),
+                       "hx_value": torch.zeros(1, hidden),
+                       "config": config, "lanes": lanes}}
+
+
 def rejection_cases():
     """One node per (rtl_module, requires clause), each violating that clause."""
     cases = [
         ("div_cordiv", "2 ** int(WIDTH) == DEPTH",
          {"class": "div_cordiv", "config": {"depth": 6}}),
-        ("avgpool2d", "get(config, 'padding', 0) in (0, (0, 0))",
-         {"class": "avgpool2d", "config": {"kernel_size": 2, "padding": 1, "lanes": 48}}),
         ("avgpool2d", "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']",
          {"class": "avgpool2d", "config": {"kernel_size": 2, "stride": 3, "lanes": 48}}),
-        ("avgpool2d", "get(config, 'ceil_mode', False) == False",
-         {"class": "avgpool2d", "config": {"kernel_size": 2, "ceil_mode": True, "lanes": 48}}),
-        ("avgpool2d", "get(config, 'count_include_pad', True) == True",
-         {"class": "avgpool2d",
-          "config": {"kernel_size": 2, "count_include_pad": False, "lanes": 48}}),
-        ("avgpool2d", "DIVISOR >= KERNEL_AREA",
-         {"class": "avgpool2d",
-          "config": {"kernel_size": 2, "divisor_override": 2, "lanes": 48}}),
+        # mgu is bipolar only, so its clauses are listed once rather than per
+        # polarity. Clauses resolve in order, so each case below breaks its own
+        # clause with every earlier one still satisfied.
+        ("mgu_bipolar", "shape(config['weight_f'])[0] == config['lanes']",
+         mgu_node(lanes=4)),
+        ("mgu_bipolar", "shape(config['weight_n'])[0] == config['lanes']",
+         mgu_node(n_hidden=4)),
+        ("mgu_bipolar", "shape(config['weight_n'])[1] == shape(config['weight_f'])[1]",
+         mgu_node(n_features=8)),
+        # A gate width equal to the hidden size leaves no input features.
+        ("mgu_bipolar", "IN_SIZE >= 1", mgu_node(in_size=0)),
+        ("mgu_bipolar",
+         "2 ** (WIDTH - 1) > LANES + IN_SIZE + (1 if HAS_BIAS_F or HAS_BIAS_N else 0)",
+         mgu_node(width=3)),
+        ("mgu_bipolar", "WIDTH <= 30", mgu_node(width=31)),
+        # timestep 256 gives SEQ_WIDTH 8, so depth_ismul 8 is a run that cannot
+        # outlast the multiplier shift register.
+        ("mgu_bipolar", "SEQ_WIDTH > SR_WIDTH", mgu_node(depth_ismul=8)),
     ]
     for polarity in ("unipolar", "bipolar"):
         # WIDTH 31 overflows the 32-bit constants on its own; WIDTH 30 with a
@@ -250,6 +305,17 @@ def rejection_cases():
             # no accumulator-width one.
             (f"linear_pc_{polarity}", "shape(config['weight'])[0] == config['lanes']",
              linear_node("linear_pc", polarity, lanes=4)),
+            # linear_gaines1 and linear_gaines2 share one RTL module per polarity,
+            # so one node per clause per polarity covers both entries. The scaled
+            # arm's threshold sequence is 2**round(log2(entry)) long, and an lfsr
+            # image of width 1 has no feedback polynomial, so entry 2 under lfsr
+            # is the configuration that clause rejects.
+            (f"linear_gaines_{polarity}", "shape(config['weight'])[0] == config['lanes']",
+             gaines_node("linear_gaines1", polarity, lanes=4)),
+            (f"linear_gaines_{polarity}",
+             "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3",
+             gaines_node("linear_gaines2", polarity, in_features=2, has_bias=False,
+                         generator='lfsr')),
             (f"linear_ugemm_{polarity}", "shape(config['weight'])[0] == config['lanes']",
              linear_node("linear_ugemm", polarity, lanes=4)),
             (f"linear_ugemm_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
@@ -339,6 +405,23 @@ def test_bindings_match_rtl_module_headers():
             "config": {"polarity": "unipolar", "scale": 2, "width": 8},
             "inputs": {"input": {"shape": (4, 16)}},
         },
+        # conv_pc's pad source exists only for a bipolar stream with nonzero
+        # padding, so the unipolar entry maps pad_bits to no port and the
+        # unipolar RTL header carries none. Both polarities are checked here so a
+        # mapping that named a pad port the module does not have fails.
+        {"class": "conv_pc",
+         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
+                    "stride": 1, "padding": 1, "dilation": 1,
+                    "config": LAYER_CONFIG, "lanes": 108},
+         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
+        {"class": "conv_pc",
+         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": None,
+                    "stride": 2, "padding": 2, "dilation": 2,
+                    "config": dict(LAYER_CONFIG, polarity='bipolar'), "lanes": 27},
+         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
+        # mgu composes two linear layers, so its header carries the gate widths
+        # and the multiplier sequence widths rather than a single SCALE.
+        mgu_node(),
         {"class": "shiftreg", "config": {"depth": 4}},
         {"class": "div_cordiv", "config": {"depth": 8}},
         {"class": "mul_gaines", "config": {"polarity": "unipolar"}},
@@ -375,6 +458,27 @@ def test_bindings_match_rtl_module_headers():
         for port in binding.port_map["outputs"].values():
             if port is not None:
                 assert port in ports["output"]
+        # A null-mapped argument must have no port at all: the RTL port name is
+        # the prefix plus the argument name, so a module that grew one the
+        # mapping nulls out fails here.
+        for name, port in binding.port_map["inputs"].items():
+            if port is None:
+                assert f"i_{name}" not in ports["input"], \
+                    f"{binding.rtl_module} has port i_{name} that the mapping nulls out"
+        for name, port in binding.port_map["outputs"].items():
+            if port is None:
+                assert f"o_{name}" not in ports["output"], \
+                    f"{binding.rtl_module} has port o_{name} that the mapping nulls out"
+
+
+def test_null_mapped_port_rejects_a_supplied_source():
+    """Reject a node that drives an input the RTL variant has no port for."""
+    unipolar_conv = dict(module_nodes()[-2])
+    assert translate_node(unipolar_conv).port_map["inputs"]["pad_bits"] is None
+    unipolar_conv["inputs"] = dict(unipolar_conv["inputs"],
+                                   pad_bits={"shape": (1,)})
+    with pytest.raises(TranslationError, match="pad_bits"):
+        translate_node(unipolar_conv)
 
 
 if __name__ == "__main__":
@@ -387,4 +491,5 @@ if __name__ == "__main__":
     test_every_requires_clause_rejects()
     test_reserved_name_shadows_a_config_key_of_the_same_name()
     test_bindings_match_rtl_module_headers()
+    test_null_mapped_port_rejects_a_supplied_source()
     print("Test passed.")

@@ -24,10 +24,6 @@ IMP = Path(__file__).resolve().parent
 
 # rtl_module, layer, unit folder, guard module name, violating params, legal params.
 GUARDS = [
-    ("avgpool2d", "module", "avgpool2d",
-     "ERROR_avgpool2d_DIVISOR_must_be_at_least_KERNEL_AREA",
-     {"KERNEL_AREA": 4, "DIVISOR": 2, "LANES": 1},
-     {"KERNEL_AREA": 4, "DIVISOR": 4, "LANES": 1}),
     # WIDTH 4 with ENTRY 8 (7 features + bias) violates 2**(WIDTH-1) > ENTRY;
     # ENTRY 7 (no bias) is the legal boundary right below it.
     ("linear_unipolar", "module", "linear",
@@ -156,6 +152,20 @@ GUARDS = [
      "ERROR_linear_pc_COUNT_W_must_equal_CLOG2_ENTRY",
      {"IN_FEATURES": 7, "LANES": 1, "HAS_BIAS": 1, "COUNT_W": 3},
      {"IN_FEATURES": 7, "LANES": 1, "HAS_BIAS": 1, "COUNT_W": 4}),
+    # linear_gaines compares its parallel count against the scaled adder's
+    # threshold, so SCALE_WIDTH + 1 has to hold ENTRY. SCALE_WIDTH 2 with ENTRY 8
+    # (7 features + bias) violates it; SCALE_WIDTH 3, the round(log2(8)) the model
+    # derives, is the legal boundary right above it.
+    ("linear_gaines_unipolar", "module", "linear_gaines",
+     "ERROR_linear_gaines_SCALE_WIDTH_too_small_for_ENTRY",
+     {"IN_FEATURES": 7, "LANES": 1, "SEQ_WIDTH": 8, "SCALE_WIDTH": 2, "HAS_BIAS": 1, "SCALED": 1},
+     {"IN_FEATURES": 7, "LANES": 1, "SEQ_WIDTH": 8, "SCALE_WIDTH": 3, "HAS_BIAS": 1, "SCALED": 1}),
+    ("linear_gaines_bipolar", "module", "linear_gaines",
+     "ERROR_linear_gaines_SCALE_WIDTH_too_small_for_ENTRY",
+     {"IN_FEATURES": 7, "LANES": 1, "SEQ_WIDTH": 8, "SCALE_WIDTH": 2, "DEPTH": 8,
+      "HAS_BIAS": 1, "SCALED": 1},
+     {"IN_FEATURES": 7, "LANES": 1, "SEQ_WIDTH": 8, "SCALE_WIDTH": 3, "DEPTH": 8,
+      "HAS_BIAS": 1, "SCALED": 1}),
     ("linear_ugemm_unipolar", "module", "linear_ugemm",
      "ERROR_linear_ugemm_WIDTH_too_small_for_ENTRY",
      {"IN_FEATURES": 7, "LANES": 1, "SEQ_WIDTH": 8, "WIDTH": 4, "SCALE": 8, "HAS_BIAS": 1},
@@ -175,6 +185,16 @@ GUARDS = [
      "ERROR_add_any_WIDTH_and_ENTRY_overflow_32_bit_constants",
      {"SCALE": 8, "WIDTH": 31, "ENTRY": 8},
      {"SCALE": 8, "WIDTH": 30, "ENTRY": 8}),
+    # mgu's run must outlast the decorrelation shift register, which on the
+    # elaborated parameters is SEQ_WIDTH > SR_WIDTH; equal widths violate it and
+    # one more SEQ_WIDTH bit is the legal boundary right above it. The gate
+    # accumulator width is guarded inside linear_bipolar, which mgu instantiates.
+    ("mgu_bipolar", "module", "mgu",
+     "ERROR_mgu_SEQ_WIDTH_must_exceed_SR_WIDTH",
+     {"LANES": 2, "IN_SIZE": 2, "WIDTH": 8, "SEQ_WIDTH": 4, "SR_WIDTH": 4,
+      "HAS_BIAS_F": 1, "HAS_BIAS_N": 1},
+     {"LANES": 2, "IN_SIZE": 2, "WIDTH": 8, "SEQ_WIDTH": 5, "SR_WIDTH": 4,
+      "HAS_BIAS_F": 1, "HAS_BIAS_N": 1}),
     # A non-power-of-two DEPTH, a DEPTH the index cannot span, and an empty
     # buffer are the three ways DEPTH != 2**WIDTH arises.
     ("div_cordiv", "operation", "div_cordiv",
@@ -204,7 +224,10 @@ def elaborate(rtl_module, layer, unit, parameters, work):
     )
     command = ["iverilog", "-g2001", "-Wall", f"-I{layer}"]
     if layer == "module":
-        for library in sorted(glob("operation/*/rtl")):
+        # Operation directories precede module ones, the same -y order the
+        # Makefile passes, so a name in both trees resolves to the same file
+        # whichever tool elaborated it.
+        for library in sorted(glob("operation/*/rtl")) + sorted(glob("module/*/rtl")):
             command += ["-y", library]
     command += ["-o", str(work / "sim")]
     command += sorted(glob(f"{layer}/{unit}/rtl/*.v")) + [str(top)]

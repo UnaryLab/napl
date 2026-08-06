@@ -24,8 +24,8 @@
 // [l*COUNT_W +: COUNT_W].
 // COUNT_W must equal clog2(ENTRY + 1) so a lane count is neither truncated nor
 // padded, and LANES must equal the output positions the geometry produces. The
-// generate guards below enforce both at elaboration and mapping.yaml carries the
-// same restrictions.
+// generate guards below enforce both at elaboration. mapping.yaml derives COUNT_W
+// from ENTRY and mirrors the LANES restriction as a requires condition.
 
 
 module conv_pc_bipolar #(

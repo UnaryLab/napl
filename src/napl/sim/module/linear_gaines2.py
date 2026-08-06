@@ -56,6 +56,10 @@ class linear_gaines2(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: One threshold sequence per input feature is held inside the layer, so the
+    #: RTL counterpart generates the weight and bias streams itself from held
+    #: numeric codes instead of taking them as spikes from a shared encoder.
+    internal_encode = True
 
 
     def __init__(

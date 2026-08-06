@@ -58,9 +58,11 @@ i_weight[l*IN_FEATURES + f]. `b_*` is LANES digits, lane l the output feature l.
 
 Each `out_*` column is a *count bus*, not one bit per lane: lane l holds a
 COUNT_W-bit unsigned count at o_out[l*COUNT_W +: COUNT_W], so the column is
-LANES*COUNT_W digits, highest bit index first like every other column. The
-testbench checks that character count against LANES*COUNT_W, which is what ties
-COUNT_W to the hardware.
+LANES*COUNT_W digits, highest bit index first like every other column. The testbench checks that character count against LANES*COUNT_W. That check is an
+echo of COUNT_W rather than a check on it, since count_width() below sizes both
+the column and the elaborated parameter; COUNT_W is pinned by the RTL's
+elaboration guard against clog2(ENTRY + 1) and by check_mapping() against the
+mapping.yaml expression.
 
 Sizing values come from this file only and are emitted into
 ../vec/linear_pc_params.vh, so the testbench elaborates the RTL at the model's
@@ -115,6 +117,14 @@ def clog2(value):
 def count_width(has_bias):
     """Bits per lane count: clog2(entry + 1) for entry = in_features + has_bias."""
     return clog2(IN_FEATURES + int(has_bias) + 1)
+
+
+# The no-bias arm's entry is IN_FEATURES, a power of two, so clog2(entry) is one
+# bit narrower than clog2(entry + 1): that arm is what pins the + 1, and the
+# with-bias arm's entry alone would not tell the two apart.
+assert IN_FEATURES & (IN_FEATURES - 1) == 0, 'IN_FEATURES must be a power of two'
+assert count_width(False) == clog2(IN_FEATURES) + 1, 'the count width lost its + 1'
+
 
 
 def grid(count, shape, polarity, offset):
