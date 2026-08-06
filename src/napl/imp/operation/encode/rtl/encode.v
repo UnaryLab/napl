@@ -12,17 +12,21 @@
 
 module encode #(
     parameter integer WIDTH = 8,  // sequence length is 2**WIDTH; tb overrides via `GEN_WIDTH
-    parameter integer FRAC  = 9   // fractional bits of i_input and the ROM; tb overrides via `GEN_FRAC
+    parameter integer FRAC  = 9,  // fractional bits of i_input and the ROM; tb overrides via `GEN_FRAC
+    parameter ROM_FILE = "vec/encode_rom.hex"  // sequence ROM path, relative to the simulation cwd
 ) (
     input  wire             i_clk,
     input  wire             i_rst_n,
     input  wire [FRAC:0]    i_input,   // encoded probability p in [0, 2**FRAC]
     output wire             o_spike
 );
-    // Sequence ROM generated from the model, value = num_seq[i] * 2**FRAC. The vvp
-    // cwd is imp/operation/encode/, so the path is relative to that directory.
+    // Sequence ROM generated from the model, value = num_seq[i] * 2**FRAC. ROM_FILE
+    // is relative to the simulation cwd, which is the unit folder under test, so an
+    // instantiating module overrides it to point at its own table. The parameter
+    // takes its width from the 18-character default, so an override is truncated
+    // to its last 18 characters: keep override paths at 18 characters or fewer.
     reg [FRAC-1:0] num_seq_rom [0:(1<<WIDTH)-1];
-    initial $readmemb("vec/encode_rom.hex", num_seq_rom);
+    initial $readmemb(ROM_FILE, num_seq_rom);
 
     reg  [WIDTH-1:0] seq_idx;
     wire [FRAC-1:0]  num_seq;

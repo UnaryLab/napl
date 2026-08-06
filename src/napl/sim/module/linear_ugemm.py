@@ -80,8 +80,17 @@ class linear_ugemm(napl_base):
               - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > in_features + has_bias``; the default is ``12``.
               - **name**: Optional instance label.
 
-        Weight and bias are trainable parameters. Each timestep reads their
-        current values, so an update between calls takes effect immediately.
+        Weight and bias are updatable only by an in-place write, such as
+        ``with torch.no_grad(): layer.weight.fill_(1.0)``. Each timestep reads
+        their current values, so the write takes effect on the next call,
+        without a ``reset()``.
+
+        .. warning::
+
+            Optimizers silently skip these ``Parameter`` objects. The spike
+            comparison is not differentiable, so no gradient ever reaches them,
+            ``.grad`` stays ``None``, and ``SGD.step()`` leaves the values
+            bit-identical.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
 
@@ -120,9 +129,9 @@ class linear_ugemm(napl_base):
             raise AssertionError(message)
 
         self._is_bipolar = (self.polarity == 'bipolar')
-        #: Trainable numeric weight matrix converted to spike probabilities on use.
+        #: Externally updatable numeric weight matrix converted to spike probabilities on use.
         self.weight = torch.nn.Parameter(weight)
-        #: Optional trainable numeric bias converted to spike probabilities on use.
+        #: Optional externally updatable numeric bias converted to spike probabilities on use.
         self.bias = torch.nn.Parameter(bias) if bias is not None else None
 
         # Weight and bias bits share one RNG; input-driven indices decorrelate products.

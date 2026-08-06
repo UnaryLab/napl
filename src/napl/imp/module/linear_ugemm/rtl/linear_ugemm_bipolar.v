@@ -8,6 +8,9 @@
 // rather than rebuilt. Generated parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every sequence index and accumulator to match reset().
+// WIDTH must satisfy 2**(WIDTH-1) > ENTRY (= IN_FEATURES + HAS_BIAS), so the
+// signed accumulator holds a partial sum; the generate guard below enforces it
+// at elaboration and mapping.yaml carries the same restriction.
 //
 // The Python model keeps one sequence index pair (the input-one and input-zero
 // paths) per input feature, shared by the whole weight column. Each lane here
@@ -36,11 +39,24 @@ module linear_ugemm_bipolar #(
     localparam integer OPW   = SEQ_WIDTH + 1;             // fixed-point operand width
     localparam integer ENTRY = IN_FEATURES + HAS_BIAS;    // addends per lane
 
+
+    function integer clog2;
+        input integer value;
+        integer v;
+        begin
+            v = value - 1;
+            for (clog2 = 0; v > 0; clog2 = clog2 + 1)
+                v = v >> 1;
+        end
+    endfunction
+
+
     // Elaboration-time guard: an unresolvable module reference makes iverilog
     // fail the build when the signed accumulator cannot hold a partial sum,
-    // which is the Python constructor's 2**(width-1) > entry check.
+    // which is the Python constructor's 2**(width-1) > entry check. The compare
+    // is on widths, so it stays exact past the 32-bit range of 2**(WIDTH-1).
     generate
-        if (2 ** (WIDTH - 1) <= ENTRY) begin : g_bad_width
+        if (WIDTH - 1 < clog2(ENTRY + 1)) begin : g_bad_width
             ERROR_linear_ugemm_WIDTH_too_small_for_ENTRY u_bad ();
         end
     endgenerate

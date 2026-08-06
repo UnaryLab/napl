@@ -30,9 +30,11 @@ UNIT  := $(MODULE)
 LIBS  := $(patsubst %,-y %,$(wildcard operation/*/rtl))
 endif
 
-.PHONY: test vectors compile run clean
+.PHONY: test vectors compile run guards clean
 
-test: run
+# Every unit test runs the elaboration guards first, so a deleted or reversed
+# guard turns a target red without anyone typing `make guards`.
+test: guards run
 
 vectors:
 	$(PYTHON) $(LAYER)/$(UNIT)/gen/gen_$(UNIT).py
@@ -45,6 +47,14 @@ compile: vectors
 run: compile
 	cd $(LAYER)/$(UNIT) && $(VVP) build/sim | tee build/sim.log
 	@grep -q "^PASS" $(LAYER)/$(UNIT)/build/sim.log || { echo "*** $(UNIT): TEST FAILED ***"; exit 1; }
+	@# vvp exits 0 after a runtime ERROR line, so an unreadable $$readmemb ROM
+	@# would otherwise reach the PASS grep with an all-x memory.
+	@! grep -q "^ERROR" $(LAYER)/$(UNIT)/build/sim.log || { echo "*** $(UNIT): SIMULATION ERROR ***"; exit 1; }
+
+# Elaborate every guarded module with a violating parameter set and require the
+# build to fail; unit-independent, so it takes no OP= or MODULE=.
+guards:
+	$(PYTHON) test_guards.py
 
 clean:
 	rm -rf $(LAYER)/$(UNIT)/build $(LAYER)/$(UNIT)/vec/*.vec $(LAYER)/$(UNIT)/vec/*_params.vh

@@ -14,6 +14,9 @@
     SCALE: "config['scale']"
     WIDTH: "config['width']"
     ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
 
 - rtl_module: add_any_unipolar
   layer: operation
@@ -28,6 +31,9 @@
     SCALE: "config['scale']"
     WIDTH: "config['width']"
     ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
 
 - rtl_module: add_gaines
   layer: operation
@@ -111,6 +117,8 @@
   parameters:
     DEPTH: "config['depth']"
     WIDTH: "log2(config['depth'])"
+  requires:
+    - "2 ** int(WIDTH) == DEPTH"
 
 - rtl_module: div_gaines_bipolar
   layer: operation
@@ -626,6 +634,106 @@
     - "get(config, 'count_include_pad', True) == True"
     - "DIVISOR >= KERNEL_AREA"
 
+- rtl_module: conv_bipolar
+  layer: module
+  sim_module: sim/module/conv.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+    pad_bits: i_pad_bits
+  outputs:
+    output: o_out
+  parameters:
+    BATCH: input.size(0)
+    IN_CHANNELS: "shape(config['weight'])[1]"
+    IN_H: input.size(2)
+    IN_W: input.size(3)
+    OUT_CHANNELS: "shape(config['weight'])[0]"
+    KERNEL_H: "shape(config['weight'])[2]"
+    KERNEL_W: "shape(config['weight'])[3]"
+    # int() rejects a per-axis tuple: the RTL geometry is symmetric.
+    STRIDE: "int(get(config, 'stride', 1))"
+    PADDING: "int(get(config, 'padding', 0))"
+    DILATION: "int(get(config, 'dilation', 1))"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    LANES: "config['lanes']"
+  requires:
+    - "shape(config['weight'])[1] == input.size(1)"
+    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+
+- rtl_module: conv_unipolar
+  layer: module
+  sim_module: sim/module/conv.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+    pad_bits: i_pad_bits
+  outputs:
+    output: o_out
+  parameters:
+    BATCH: input.size(0)
+    IN_CHANNELS: "shape(config['weight'])[1]"
+    IN_H: input.size(2)
+    IN_W: input.size(3)
+    OUT_CHANNELS: "shape(config['weight'])[0]"
+    KERNEL_H: "shape(config['weight'])[2]"
+    KERNEL_W: "shape(config['weight'])[3]"
+    # int() rejects a per-axis tuple: the RTL geometry is symmetric.
+    STRIDE: "int(get(config, 'stride', 1))"
+    PADDING: "int(get(config, 'padding', 0))"
+    DILATION: "int(get(config, 'dilation', 1))"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    LANES: "config['lanes']"
+  requires:
+    - "shape(config['weight'])[1] == input.size(1)"
+    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+
+- rtl_module: linear_bipolar
+  layer: module
+  sim_module: sim/module/linear.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+
+- rtl_module: linear_unipolar
+  layer: module
+  sim_module: sim/module/linear.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+
 - rtl_module: linear_ugemm_bipolar
   layer: module
   sim_module: sim/module/linear_ugemm.py
@@ -645,6 +753,8 @@
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    - "WIDTH <= 30"
 
 - rtl_module: linear_ugemm_unipolar
   layer: module
@@ -665,3 +775,5 @@
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    - "WIDTH <= 30"

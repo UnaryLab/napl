@@ -18,25 +18,10 @@ regime the test's `gen_rand_tensor` covers.
 import torch
 
 from napl.sim.operation import encode
-
-
-def require_seeded_sys(*configs):
-    """Reject a `sys`-generator config that carries no seed.
-
-    An unseeded `sys` sequence differs between instances, so the ROM emitted here
-    would not match the sequence a separately constructed model draws, and the
-    co-simulation cannot reveal it because it builds a single model. Call this on
-    every config a generator builds a model or encoder from.
-    """
-    for config in configs:
-        if config is None:
-            continue
-        if str(config.get("generator", "")).lower() == "sys" and config.get("seed") is None:
-            raise ValueError(
-                f"generator 'sys' needs a seed to be reproducible; config {config} has none. "
-                "An unseeded sys sequence differs per instance, so the emitted ROM would not "
-                "match the model the simulation builds."
-            )
+# `encode` applies this to its own configuration, so every encoder a generator
+# builds is covered whether or not the generator calls it. Generators call it
+# directly for a model configuration that never reaches an encoder.
+from napl.sim.operation.encode import require_seeded_sys  # noqa: F401
 
 
 def encode_value(codec_config, value):
@@ -44,12 +29,7 @@ def encode_value(codec_config, value):
 
     Drives a real napl encoder built from `codec_config` over `timestep` cycles
     from a fresh reset, so the stream is bit-identical to what test_<op>.py sends.
-
-    Every encoder-building path in the tree routes through here, so the seeded-sys
-    check applies structurally rather than depending on each generator remembering
-    a top-level call.
     """
-    require_seeded_sys(codec_config)
     enc = encode(dict(codec_config))
     enc.reset()
     v = torch.tensor(float(value)).type(enc.num_seq.dtype)

@@ -265,6 +265,7 @@ def main():
         f"`define GEN_SCALE {IN_FEATURES + 1}\n"
         f"`define GEN_SCALE_NB {IN_FEATURES}\n"
         f"`define GEN_PP_DELAY {pp_delay}\n"
+        f"`define GEN_VECTORS {len(rows) - 1}\n"
     )
     VEC.write_text("\n".join(rows) + "\n")
     print(

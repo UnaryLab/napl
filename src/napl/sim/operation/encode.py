@@ -115,6 +115,28 @@ def gen_num_seq(config={
     return num_seq.type(global_config.ntype)
 
 
+def require_seeded_sys(*configs):
+    """Reject a `sys`-generator config that carries no seed.
+
+    An unseeded ``sys`` sequence is drawn fresh per instance, so two objects built
+    from one configuration hold different sequences and cannot be compared against
+    each other or against a hardware counterpart. ``encode`` applies this to its
+    own configuration; a caller building a model from a configuration that never
+    reaches an encoder applies it directly.
+    """
+    for config in configs:
+        if config is None:
+            continue
+        if str(config.get('generator', '')).lower() == 'sys' and config.get('seed') is None:
+            message = (
+                f"generator 'sys' needs a seed to be reproducible; config {config} has none. "
+                'An unseeded sys sequence differs per instance, so a separately constructed '
+                'model or hardware counterpart draws a different sequence.'
+            )
+            logger.error(message)
+            raise ValueError(message)
+
+
 def input_scale(input, quantile=1):
     """
     Scale input data to [-1, 1] in a symmetric manner, which meets bipolar/unipolar requirements.
@@ -204,11 +226,10 @@ class encode(napl_base):
                   ``"rc"``, ``"tc"``, ``"rate"``, or ``"temporal"``.
                   Defaults to ``"sobol"``.
                 * **dim** - One-based Sobol dimension. Defaults to ``1``.
-                * **seed** - Optional integer seed for the ``lfsr`` and ``sys``
-                  generators. Defaults to ``None``. A ``sys`` sequence built
-                  without a seed differs between instances, so an instance whose
-                  sequence must match another one, such as an RTL counterpart,
-                  sets it.
+                * **seed** - Integer seed for the ``lfsr`` and ``sys``
+                  generators. Defaults to ``None``, and is required with the
+                  ``sys`` generator: an unseeded ``sys`` sequence differs between
+                  instances, so construction raises without it.
                 * **taps** - Optional non-empty LFSR feedback-tap list. Defaults
                   to ``None``.
                 * **name** - Optional instance label. Defaults to ``None``.
@@ -216,6 +237,8 @@ class encode(napl_base):
         Construction generates and stores the complete number sequence.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'dim', 'seed', 'taps'], polarity_required=True)
+
+        require_seeded_sys(config)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']

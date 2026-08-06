@@ -59,6 +59,10 @@ def test_missing_rtl_mapping_names_class():
         translate_node({"class": absent, "config": {}})
 
 
+LAYER_CONFIG = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol',
+                'dim': 1, 'scale': None, 'width': 12}
+
+
 def module_nodes():
     """Nodes for both module entries, built as RULE_IMP documents them.
 
@@ -66,8 +70,7 @@ def module_nodes():
     names, so a `config=` argument nests, plus the caller-supplied `lanes`.
     """
     weight = torch.zeros(8, 16)
-    layer_config = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol',
-                    'dim': 1, 'scale': None, 'width': 12}
+    layer_config = LAYER_CONFIG
     return [
         {"class": "avgpool2d", "config": {"kernel_size": 2, "lanes": 48}},
         {"class": "avgpool2d",
@@ -78,12 +81,31 @@ def module_nodes():
         {"class": "linear_ugemm",
          "config": {"weight": weight, "bias": None,
                     "config": dict(layer_config, polarity='bipolar'), "lanes": 8}},
+        {"class": "linear",
+         "config": {"weight": weight, "bias": torch.zeros(8),
+                    "config": layer_config, "lanes": 8}},
+        {"class": "linear",
+         "config": {"weight": weight, "bias": None,
+                    "config": dict(layer_config, polarity='bipolar'), "lanes": 8}},
+        # conv sizes itself from the weight and the input shape, so its node
+        # carries the NCHW input the geometry is derived from.
+        {"class": "conv",
+         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
+                    "stride": 1, "padding": 1, "dilation": 1,
+                    "config": layer_config, "lanes": 108},
+         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
+        {"class": "conv",
+         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": None,
+                    "stride": 2, "padding": 2, "dilation": 2,
+                    "config": dict(layer_config, polarity='bipolar'), "lanes": 27},
+         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
     ]
 
 
 def test_module_layer_parameters():
-    """Resolve both module entries from constructor-name node configs."""
-    pool, pool_d8, linear, linear_nb = [translate_node(node) for node in module_nodes()]
+    """Resolve every module entry from constructor-name node configs."""
+    (pool, pool_d8, ugemm, ugemm_nb, linear, linear_nb,
+     convolution, convolution_nb) = [translate_node(node) for node in module_nodes()]
 
     assert pool.rtl_module == "avgpool2d"
     assert Path(pool.file_path).parts[-3:] == ("avgpool2d", "rtl", "avgpool2d.v")
@@ -91,15 +113,39 @@ def test_module_layer_parameters():
     # A tuple kernel keeps the window area, and divisor_override wins over it.
     assert pool_d8.parameters == {"KERNEL_AREA": 6, "DIVISOR": 8, "LANES": 48}
 
-    assert linear.rtl_module == "linear_ugemm_unipolar"
-    assert linear.parameters == {"IN_FEATURES": 16, "LANES": 8, "SEQ_WIDTH": 8,
-                                 "WIDTH": 12, "HAS_BIAS": 1, "SCALE": 17}
-    assert linear.port_map["inputs"]["weight"] == "i_weight"
-    assert linear.port_map["output"] == "o_out"
+    assert ugemm.rtl_module == "linear_ugemm_unipolar"
+    assert ugemm.parameters == {"IN_FEATURES": 16, "LANES": 8, "SEQ_WIDTH": 8,
+                                "WIDTH": 12, "HAS_BIAS": 1, "SCALE": 17}
+    assert ugemm.port_map["inputs"]["weight"] == "i_weight"
+    assert ugemm.port_map["output"] == "o_out"
     # No bias drops an addend, so the default scale shrinks with it.
-    assert linear_nb.rtl_module == "linear_ugemm_bipolar"
+    assert ugemm_nb.rtl_module == "linear_ugemm_bipolar"
+    assert ugemm_nb.parameters["HAS_BIAS"] == 0
+    assert ugemm_nb.parameters["SCALE"] == 16
+
+    # linear encodes its weight outside the RTL, so it carries no SEQ_WIDTH.
+    assert linear.rtl_module == "linear_unipolar"
+    assert linear.parameters == {"IN_FEATURES": 16, "LANES": 8, "WIDTH": 12,
+                                 "HAS_BIAS": 1, "SCALE": 17}
+    assert linear.port_map["inputs"]["input_spike"] == "i_input_spike"
+    assert linear.port_map["output"] == "o_out"
+    assert linear_nb.rtl_module == "linear_bipolar"
     assert linear_nb.parameters["HAS_BIAS"] == 0
     assert linear_nb.parameters["SCALE"] == 16
+
+    # conv reads its lane geometry from the weight and the NCHW input shape.
+    assert convolution.rtl_module == "conv_unipolar"
+    assert convolution.parameters == {"BATCH": 1, "IN_CHANNELS": 2, "IN_H": 6, "IN_W": 6,
+                                      "OUT_CHANNELS": 3, "KERNEL_H": 3, "KERNEL_W": 3,
+                                      "STRIDE": 1, "PADDING": 1, "DILATION": 1,
+                                      "WIDTH": 12, "HAS_BIAS": 1, "SCALE": 19, "LANES": 108}
+    assert convolution.port_map["inputs"]["pad_bits"] == "i_pad_bits"
+    assert convolution.port_map["output"] == "o_out"
+    # Stride and dilation shrink the output positions, and no bias shrinks the scale.
+    assert convolution_nb.rtl_module == "conv_bipolar"
+    assert convolution_nb.parameters["HAS_BIAS"] == 0
+    assert convolution_nb.parameters["SCALE"] == 18
+    assert convolution_nb.parameters["LANES"] == 27
 
 
 def test_module_rejects_unsupported_configuration():
@@ -110,6 +156,11 @@ def test_module_rejects_unsupported_configuration():
     with pytest.raises(TranslationError, match="DIVISOR >= KERNEL_AREA"):
         translate_node({"class": "avgpool2d",
                         "config": {"kernel_size": 2, "divisor_override": 2, "lanes": 48}})
+    # A lane count the convolution geometry cannot fill is rejected before elaboration.
+    conv_node = dict(module_nodes()[-1])
+    conv_node["config"] = dict(conv_node["config"], lanes=28)
+    with pytest.raises(TranslationError, match="LANES =="):
+        translate_node(conv_node)
 
 
 def test_layer_key_default_and_validation():
@@ -129,6 +180,118 @@ def test_layer_key_default_and_validation():
         scratch.write_text(yaml.safe_dump([dict(entry, layer="metric")]), encoding="utf-8")
         with pytest.raises(TranslationError, match="layer"):
             translate_node(node, mapping_path=scratch)
+    finally:
+        scratch.unlink(missing_ok=True)
+
+
+
+def requires_clauses():
+    """Every (rtl_module, condition) pair the mapping declares under `requires`."""
+    return {(entry["rtl_module"], condition)
+            for entry in load_mapping()
+            for condition in (entry.get("requires") or [])}
+
+
+def add_any_node(polarity, width, entry):
+    """One add_any node with the given accumulator width and reduction size."""
+    return {"class": "add_any",
+            "config": {"polarity": polarity, "scale": 2, "width": width},
+            "inputs": {"input": {"shape": (4, entry)}}}
+
+
+def linear_node(class_name, polarity, lanes=8, width=12):
+    """One linear or linear_ugemm node over an 8x16 weight."""
+    return {"class": class_name,
+            "config": {"weight": torch.zeros(8, 16), "bias": torch.zeros(8),
+                       "config": dict(LAYER_CONFIG, polarity=polarity, width=width),
+                       "lanes": lanes}}
+
+
+def conv_node(polarity, in_channels=2, lanes=108, width=12):
+    """One conv node over a 3x2x3x3 weight and a 1x2x6x6 input."""
+    return {"class": "conv",
+            "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
+                       "stride": 1, "padding": 1, "dilation": 1,
+                       "config": dict(LAYER_CONFIG, polarity=polarity, width=width),
+                       "lanes": lanes},
+            "inputs": {"input_spike": {"shape": (1, in_channels, 6, 6)}}}
+
+
+def rejection_cases():
+    """One node per (rtl_module, requires clause), each violating that clause."""
+    cases = [
+        ("div_cordiv", "2 ** int(WIDTH) == DEPTH",
+         {"class": "div_cordiv", "config": {"depth": 6}}),
+        ("avgpool2d", "get(config, 'padding', 0) in (0, (0, 0))",
+         {"class": "avgpool2d", "config": {"kernel_size": 2, "padding": 1, "lanes": 48}}),
+        ("avgpool2d", "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']",
+         {"class": "avgpool2d", "config": {"kernel_size": 2, "stride": 3, "lanes": 48}}),
+        ("avgpool2d", "get(config, 'ceil_mode', False) == False",
+         {"class": "avgpool2d", "config": {"kernel_size": 2, "ceil_mode": True, "lanes": 48}}),
+        ("avgpool2d", "get(config, 'count_include_pad', True) == True",
+         {"class": "avgpool2d",
+          "config": {"kernel_size": 2, "count_include_pad": False, "lanes": 48}}),
+        ("avgpool2d", "DIVISOR >= KERNEL_AREA",
+         {"class": "avgpool2d",
+          "config": {"kernel_size": 2, "divisor_override": 2, "lanes": 48}}),
+    ]
+    for polarity in ("unipolar", "bipolar"):
+        # WIDTH 31 overflows the 32-bit constants on its own; WIDTH 30 with a
+        # reduction of 400 million entries overflows only through the ENTRY term.
+        cases += [
+            (f"add_any_{polarity}", "WIDTH <= 30", add_any_node(polarity, 31, 16)),
+            (f"add_any_{polarity}", "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1",
+             add_any_node(polarity, 30, 400_000_000)),
+            (f"linear_{polarity}", "shape(config['weight'])[0] == config['lanes']",
+             linear_node("linear", polarity, lanes=4)),
+            (f"linear_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
+             linear_node("linear", polarity, width=4)),
+            (f"linear_ugemm_{polarity}", "shape(config['weight'])[0] == config['lanes']",
+             linear_node("linear_ugemm", polarity, lanes=4)),
+            (f"linear_ugemm_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
+             linear_node("linear_ugemm", polarity, width=4)),
+            (f"linear_ugemm_{polarity}", "WIDTH <= 30",
+             linear_node("linear_ugemm", polarity, width=31)),
+            (f"conv_{polarity}", "shape(config['weight'])[1] == input.size(1)",
+             conv_node(polarity, in_channels=4)),
+            (f"conv_{polarity}", "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS",
+             conv_node(polarity, width=4)),
+            (f"conv_{polarity}",
+             "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)",
+             conv_node(polarity, lanes=28)),
+        ]
+    return cases
+
+
+def test_every_requires_clause_rejects():
+    """Every requires clause in the mapping rejects a configuration that breaks it."""
+    covered = set()
+    for rtl_module, clause, node in rejection_cases():
+        with pytest.raises(TranslationError) as raised:
+            translate_node(node)
+        message = str(raised.value)
+        assert rtl_module in message, f"{clause}: {message}"
+        assert clause in message, f"{clause}: {message}"
+        covered.add((rtl_module, clause))
+    assert covered == requires_clauses()
+
+
+def test_reserved_name_shadows_a_config_key_of_the_same_name():
+    """Keep a config key named `input` readable, and let a real input shape win."""
+    entry = next(item for item in load_mapping()
+                 if item.get("rtl_module") == "mul_gaines_unipolar")
+    scratch = _MAPPING_PATH.parent / "_reserved_name_mapping.yaml"
+    node = {"class": "mul_gaines", "config": {"polarity": "unipolar", "input": 5}}
+    try:
+        scratch.write_text(yaml.safe_dump([dict(entry, parameters={"WIDTH": "input"})]),
+                           encoding="utf-8")
+        assert translate_node(node, mapping_path=scratch).parameters == {"WIDTH": 5}
+
+        scratch.write_text(
+            yaml.safe_dump([dict(entry, parameters={"WIDTH": "input.size(-1)"})]),
+            encoding="utf-8")
+        shaped = dict(node, inputs={"input": {"shape": (4, 16)}})
+        assert translate_node(shaped, mapping_path=scratch).parameters == {"WIDTH": 16}
     finally:
         scratch.unlink(missing_ok=True)
 
@@ -191,5 +354,7 @@ if __name__ == "__main__":
     test_module_layer_parameters()
     test_module_rejects_unsupported_configuration()
     test_layer_key_default_and_validation()
+    test_every_requires_clause_rejects()
+    test_reserved_name_shadows_a_config_key_of_the_same_name()
     test_bindings_match_rtl_module_headers()
     print("Test passed.")

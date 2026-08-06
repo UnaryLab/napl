@@ -177,6 +177,7 @@ def main():
         f"`define GEN_DIVISOR_D8 {DIVISOR_OVERRIDE}\n"
         f"`define GEN_LANES {LANES}\n"
         f"`define GEN_PP_DELAY {pp_delay}\n"
+        f"`define GEN_VECTORS {len(rows) - 1}\n"
     )
     VEC.write_text("\n".join(rows) + "\n")
     print(

@@ -11,8 +11,23 @@ class mul_ugemm(napl_base):
     Multiply a spike stream by a binary-domain operand.
 
     Use conditional spike generation when ``input_0`` arrives one timestep at a
-    time and ``input_1`` is a numeric tensor. Each call reads ``input_1``, so a
-    trainable operand updated between calls takes effect immediately.
+    time and ``input_1`` is a numeric tensor. Each call reads ``input_1``, so an
+    externally updated operand takes effect on the next call within a run.
+
+    Sequence indices advance without wrapping, so a run has a per-polarity
+    budget over the sequence period ``len = 2 ** ceil(log2(timestep))``:
+
+    - **unipolar**: ``seq_idx`` advances only on enabling timesteps, so a run
+      allows at most ``len`` timesteps with ``input_0 == 1``. Timesteps with
+      ``input_0 == 0`` are unbounded.
+    - **bipolar**: ``seq_idx`` advances on enabling timesteps and ``seq_idx_inv``
+      advances on non-enabling timesteps, so a run allows at most ``len``
+      timesteps with ``input_0 == 1`` **and** at most ``len`` timesteps with
+      ``input_0 == 0``, up to ``2 * len`` timesteps in total.
+
+    Exceeding either budget raises an ``IndexError`` from the number-sequence
+    lookup; the index does not wrap silently. ``reset()`` clears both indices and
+    starts a new run.
 
     The target rate-domain operation is
 
@@ -129,7 +144,7 @@ class mul_ugemm(napl_base):
         Args:
             input_0: Current 0/1 spike tensor that enables sequence progress.
             input_1: Numeric multiplier tensor, read on every call, so an update
-                between calls takes effect immediately.
+                between calls takes effect on the next call within a run.
 
         Returns:
             A product spike tensor with the broadcast input shape. The enabled
@@ -143,7 +158,7 @@ class mul_ugemm(napl_base):
                               torch.tensor([0.5]))
         """
         if input_1 is None:
-            message = 'input_1 is None, please provide a valid input_1 tensor.'
+            message = 'Invalid input_1: <None>; legal values: a numeric tensor.'
             logger.error(message)
             raise AssertionError(message)
         in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)

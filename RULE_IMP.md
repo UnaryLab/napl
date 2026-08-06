@@ -17,7 +17,7 @@ Per-corner STA data belongs in `self.hw.timing`, keyed by the MCMM scenario `nod
 6. **RTL coverage.** Every operation with `streaming = True` requires a verified RTL counterpart; operations with `streaming = False` (single-shot binary-domain: `relu_hub`, `sigmoid_hub`, `tanh_hub`, `round_fxp`) have none.
 7. **Input handling.** Every streaming operation's RTL consumes its `i_*` data inputs combinationally in the arrival cycle: registers hold internal state only and never re-register a raw input before its first use. For delay and storage elements whose defined function is capturing the input (`dff`, `shiftreg`, `jkff`, `square_dff`'s internal delay), that capture is the first use.
 8. **Explicit imports.** Python generator and testbench scripts under `src/napl/imp/` use explicit imports and do not use `from x import *`. Package `__init__.py` re-exports may use star imports.
-9. **Seeded sequences.** A configuration a generator builds a model or encoder from sets `seed` whenever `generator` is `sys`. An unseeded `sys` sequence is drawn fresh per instance, so the emitted ROM would not match the sequence a separately constructed model draws, and the co-simulation cannot reveal the mismatch because it builds a single model. `encode_value()` in `operation/_gen_common.py` applies `require_seeded_sys()` to every config it builds an encoder from, so encoder paths are covered without a per-generator call; a generator additionally calls `require_seeded_sys()` at module level for the model configs that never reach an encoder.
+9. **Seeded sequences.** A configuration a generator builds a model or encoder from sets `seed` whenever `generator` is `sys`. An unseeded `sys` sequence is drawn fresh per instance, so the emitted ROM would not match the sequence a separately constructed model draws, and the co-simulation cannot reveal the mismatch because it builds a single model. The check lives in `encode.__init__` (`sim/operation/encode.py`), which applies `require_seeded_sys()` to its own configuration, so every encoder a generator builds is covered whichever way it builds it and no generator can skip the check by omitting a call. `gen_num_seq()` stays permissive, because an unseeded `sys` sequence is a valid simulation-side draw, so a generator still calls `require_seeded_sys()` itself for a model configuration that never reaches an encoder. `operation/_gen_common.py` re-exports the function for those calls.
 
 ## Per-operation structure
 
@@ -53,9 +53,19 @@ For each RTL-backed change:
 4. **Golden vectors.** Expected outputs come from the Python module model in `sim/module/`, driven by the encoder configuration and the fidelity-scale input shape of the class's `test_<name>.py`. The generator flattens the model's per-timestep input and output tensors into the lane order the RTL ports use.
 5. **Timing.** One Python `forward()` timestep corresponds to one `posedge i_clk`, the same as the operation layer, and the testbench checks the observed latency against the class's `self.hw.pp_delay`.
 
-6. **Elaboration guards.** A sizing restriction the RTL cannot check at runtime is enforced at elaboration by instantiating an undefined module inside a `generate` `if`, named `ERROR_<module>_<restriction>`, so the build fails with that name. `avgpool2d` guards `DIVISOR >= KERNEL_AREA` and `linear_ugemm_*` guards `2 ** (WIDTH - 1) > ENTRY` this way. Every such restriction is also stated in the RTL header banner and mirrored as a `requires` condition in `mapping.yaml`, so translation rejects the configuration before elaboration does.
+6. **Elaboration guards.** A sizing restriction the RTL cannot check at runtime is enforced at elaboration by instantiating an undefined module inside a `generate` `if`, so the build fails with that module's name. The guard module is named `ERROR_<base>_<restriction>`, where `<base>` is the polarity-stripped operation or module base name, so every polarity variant of one restriction reports the same name. Guards are elaboration-time constant folding and carry zero area, so they are exempt from the "no excess sanity-checking logic" rule, which targets runtime logic. Write the guard condition so it does not overflow 32-bit integer arithmetic: compare widths (`WIDTH - 1 < clog2(ENTRY + 1)`) rather than the values themselves (`2 ** (WIDTH - 1) <= ENTRY`).
 
-The two implemented modules are `avgpool2d` and `linear_ugemm` (one RTL variant per polarity).
+    The guarded modules are `avgpool2d` (`DIVISOR >= KERNEL_AREA`), `linear_*`, `linear_ugemm_*` and `conv_*` (`2 ** (WIDTH - 1) > ENTRY`, plus `LANES` equal to the output positions the convolution geometry produces for `conv_*`), `add_any_*` (`2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1`, the range of the 32-bit signed elaboration constants, which caps `WIDTH` at 30 on its own), and `div_cordiv` (`DEPTH == 2 ** WIDTH`, which also rules out an empty buffer). `linear_ugemm_*` composes `add_any_*`, so it carries that module's `WIDTH <= 30` cap as a `requires` condition too. Every such restriction is also stated in the RTL header banner and mirrored as a `requires` condition in `mapping.yaml`, so translation rejects the configuration before elaboration does, and enrolled as a row in `imp/test_guards.py`, run by `make guards` and by every `make test` target: each row elaborates a violating parameter set and requires `iverilog` to fail with the guard's name, plus a legal set right below the boundary that must still elaborate. A guard that is deleted or written backwards fails that test, and fails every unit test with it.
+
+    A guard term whose violating parameter set cannot be elaborated has no row: `add_any_*`'s `ENTRY` term needs a bus of hundreds of millions of lanes, so `mapping.yaml`'s `requires`, evaluated in Python, is the only check on it.
+
+7. **Golden-column widths.** `%b` zero-extends a short vector silently, so a testbench that scans a golden column straight into a sized `reg` passes at the wrong lane count. Scan each vector column as `%s`, check its character count against the port width, and convert the characters to bits (`token_len`, `token_bits`, and `check_width` in `conv_tb.v` are the pattern to copy). A testbench copied from an existing module testbench inherits these three helpers with the rest of the pattern.
+
+    The token registers are one character wider than the widest golden column (`MAX_CHARS = <widest column> + 1`). `$fscanf` with `%s` truncates to the token width, so a token sized exactly to the widest column saturates at the expected length and an over-long column of that width passes the check. The spare character makes an over-long column read back long and fail.
+
+8. **Vector count.** The generator emits its row count as `` `define GEN_VECTORS ``, and the testbench requires the number of rows it consumed to equal it, so a vec file that lost or gained rows fails instead of passing on the rows it still holds. The row loop ends on the first `$fscanf` that does not return every column, rather than looping on `$feof`, which spins when a scan stops consuming.
+
+The implemented modules are `avgpool2d`, `linear`, `linear_ugemm`, and `conv` (the last three with one RTL variant per polarity). `conv` wires the im2col patch in hardware, so its input port carries the NCHW spike tensor and a tap outside the input reads `i_pad_bits`, the pad spike the Python model encodes on its own sobol dimension.
 
 ### `mapping.yaml`
 
@@ -76,17 +86,22 @@ The node `config` for a module node carries the class's constructor arguments un
 
 Each `gen_<name>.py` translates its own mapping entry and asserts the resolved parameters equal the ones it used to build its vectors, for every configuration the testbench elaborates. This is mandatory: it makes `make test MODULE=<name>` the gate on the mapping entry as well as on the RTL, so a wrong expression fails the co-simulation instead of passing unnoticed.
 
+That assertion is one-directional. It catches an expression that resolves to something other than the value the vectors were built from, which is the failure mode for a derived expression such as `SEQ_WIDTH` or `SCALE`. For a pass-through parameter it proves nothing beyond that the expression reads the key it was meant to read, because the generator and the mapping read the same source: `LANES: config['lanes']` checked against the generator's own `LANES` is an echo. Such a parameter is only independently checked when the hardware itself is driven by it, as `LANES` is by the golden-column width assertion in the module testbench.
+
+`WIDTH` and `add_ugemm_*`'s `ACC_WIDTH` are checked by nothing. They are pass-through or derived accumulator widths, and the vectors never drive the accumulator near its bound, so a value that is too small changes no compared output and a value that is too large is invisible. Neither the generator assertion, the testbench, nor the elaboration guards close that gap; only the `requires` conditions bound them, and only at their overflow limit. A stimulus row that saturates the accumulator, added to a future vector set, would make a wrong width observable.
+
 The `napl-gen-rtl` skill generates and verifies operation folders only. Module folders are written by hand under this file.
 
 ## Directory layout
 
-The tree contains 43 implemented op folders under `operation/` and two module folders under `module/`, plus the generic `Makefile` and the shared golden-vector helper `operation/_gen_common.py` (`encode_value`, `pair_streams`, ...). Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_gaines` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
+The tree contains 43 implemented op folders under `operation/` and four module folders under `module/`, plus the generic `Makefile`, the shared golden-vector helper `operation/_gen_common.py` (`encode_value`, `pair_streams`, ...), and `test_guards.py`, the elaboration-guard test. Implementations are added one op folder at a time, either by hand following this file or via the `napl-port-unarysim` workflow (which generates each op's RTL + testbench + generator and verifies it against the Python model). `mul_gaines` (unipolar = AND, bipolar = XNOR) is the canonical example referenced throughout.
 
 Each operation is self-contained in its own folder:
 
 ```
 imp/
 ├── Makefile                  # make test OP=<op> | make test MODULE=<module>
+├── test_guards.py            # make guards -- every elaboration guard, violating and legal
 ├── mapping.yaml              # sim class -> RTL module, ports, and parameter expressions
 ├── operation/
 │   ├── _gen_common.py        # shared golden-vector helpers (encode_value, pair_streams, ...)
@@ -114,11 +129,12 @@ Requires the Icarus Verilog toolchain (`iverilog` / `vvp`) and the `napl` conda 
 ```bash
 conda run -n napl make test OP=<op>          # operation layer
 conda run -n napl make test MODULE=<module>  # module layer
+conda run -n napl make guards                # every elaboration guard, all units (also run by make test)
 # or, with the env already active:
 make test OP=<op>
 ```
 
-`OP=<op>` selects `operation/<op>/` and `MODULE=<module>` selects `module/<module>/`; the rest of the flow is identical for both. It (1) runs `<layer>/<unit>/gen/gen_<unit>.py` to emit `<layer>/<unit>/vec/<unit>.vec` from the Python model, (2) compiles `<layer>/<unit>/rtl/*.v` + the testbench with `iverilog`, (3) simulates with `vvp` from inside the unit folder. The testbench prints `PASS ...` only if every vector matches; the Makefile greps for it, so a mismatch makes `make` exit non-zero.
+`OP=<op>` selects `operation/<op>/` and `MODULE=<module>` selects `module/<module>/`; the rest of the flow is identical for both. It (1) runs `<layer>/<unit>/gen/gen_<unit>.py` to emit `<layer>/<unit>/vec/<unit>.vec` from the Python model, (2) compiles `<layer>/<unit>/rtl/*.v` + the testbench with `iverilog`, (3) simulates with `vvp` from inside the unit folder. The testbench prints `PASS ...` only if every vector matches; the Makefile greps for it, so a mismatch makes `make` exit non-zero. It also rejects a log carrying an `ERROR` line, because `vvp` exits zero after a runtime error such as an unreadable `$readmemb` ROM. `make test` runs `make guards` before the unit flow, so every target is a gate on the elaboration guards as well.
 
 An operation compiles from `operation/<op>/rtl/*.v` alone, so an op is self-contained. An op that reuses another op's primitive embeds that logic in its own `rtl/` (e.g. `lt_rc` embeds the `sync_skewed` datapath). A module compiles with every `operation/*/rtl` directory passed to `iverilog` as a `-y` library, so an instantiated operation module is pulled in from the file whose name equals it.
 

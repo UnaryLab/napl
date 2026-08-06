@@ -5,6 +5,11 @@
 // values at or above 2*SCALE, and subtracts 2*SCALE on a fire. Parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears the accumulator to match reset().
+// The accumulator bounds and the pre-clamp sum are 32-bit signed elaboration
+// constants, so WIDTH and ENTRY are capped jointly: 2**WIDTH + 3*ENTRY + 1 must
+// stay at or below 2**31-1, which also caps WIDTH at 30 on its own. The generate
+// guard below enforces both terms at elaboration and mapping.yaml carries the
+// same restriction.
 
 
 module add_any_bipolar #(
@@ -43,6 +48,20 @@ module add_any_bipolar #(
     // pre-clamp sum |value| <= 2^WIDTH + 2*ENTRY + |TWO_OFS| <= 2^WIDTH + 3*ENTRY;
     // size a signed bus to hold it (clog2 magnitude + sign).
     localparam integer SUM_W = clog2((2 ** WIDTH) + 3 * ENTRY + 1) + 1;
+
+    // Largest 3*ENTRY+1 the 32-bit signed constants leave room for, written as
+    // 2*(2**30 - 2**(WIDTH-1)) - 1 == 2**31-1 - 2**WIDTH so the bound itself
+    // never overflows.
+    localparam integer SUM_MAX = 2 * ((2 ** 30) - (2 ** (WIDTH - 1))) - 1;
+
+    // Elaboration-time guard: an unresolvable module reference makes iverilog
+    // fail the build when WIDTH or ENTRY pushes the constants above out of the
+    // 32-bit signed range.
+    generate
+        if (WIDTH > 30 || (3 * ENTRY + 1) > SUM_MAX) begin : g_bad_sizing
+            ERROR_add_any_WIDTH_and_ENTRY_overflow_32_bit_constants u_bad ();
+        end
+    endgenerate
 
     reg signed [ACC_W-1:0] acc;
 

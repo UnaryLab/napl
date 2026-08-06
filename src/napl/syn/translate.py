@@ -312,18 +312,23 @@ def _make_eval_context(node, config, entry):
     if isinstance(segment, int):
         segment = _Count(segment)
 
-    context = {
+    context = dict(config)
+    # The reserved names are set after the config keys, so no config key can
+    # shadow one of them. A module node carries the class's own `config` mapping
+    # under an __init__ argument of that name, so the node config keeps `config`.
+    context.update({
         "config": config,
         "input": _Shape(shape) if shape is not None else None,
         "dim": dim,
         "SEGMENT": segment,
-    }
-    context.update(config)
-    # A module node carries the class's own `config` mapping under an __init__
-    # argument of that name, so the node config keeps the bare name.
-    context["config"] = config
+    })
     if context["input"] is None:
-        context.pop("input")
+        # With no shape to bind, the reserved name has nothing to contribute, so
+        # a config key of that name stays readable instead of being dropped.
+        if "input" in config:
+            context["input"] = config["input"]
+        else:
+            context.pop("input")
     return context
 
 

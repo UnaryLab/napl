@@ -107,6 +107,7 @@ def _kernel_specific_checks():
               f'(ratio {t_lin.seconds/max(t_ug.seconds,1e-9):.2f}x)')
 
     _weight_update_check()
+    _bias_update_check()
 
     print('Test passed.')
 
@@ -128,9 +129,9 @@ def _weight_update_check():
         for _ in range(phase):
             output_spike = layer(input_spike)
         assert output_spike.sum().item() == 0, \
-            f'[{device}] zero weights should emit no output spike, got {output_spike}'
+            f'[{device}] minimum weights should emit no output spike, got {output_spike}'
 
-        # An optimizer step updates the parameter in place, without a reset().
+        # Only an in-place write updates the parameter; optimizers silently skip it.
         with torch.no_grad():
             layer.weight.fill_(1.0)
         for _ in range(phase):
@@ -138,6 +139,40 @@ def _weight_update_check():
         assert torch.equal(output_spike, torch.ones_like(output_spike)), \
             f'[{device}] updated weights ignored, got {output_spike}'
         print(f'[{device}] weight update takes effect without reset.')
+
+
+def _bias_update_check():
+    """A bias update between calls takes effect instead of reusing a stale probability.
+
+    Bipolar only: the unipolar probability is the bias itself, so the check needs the
+    bipolar (b + 1) / 2 conversion to tell a live read from a stale copy. Weights stay
+    at the minimum, so the bias is the only stream that can emit a spike.
+    """
+    in_features, out_features, phase = 4, 2, 16
+    # Both phases advance the same conditional sequence, so it must span them.
+    cfg = {'polarity': 'bipolar', 'timestep': 2 * phase, 'generator': 'sobol', 'dim': 1,
+           'scale': None, 'width': 12}
+    for device in devices():
+        input_spike = torch.ones(1, in_features).type(global_config.ntype).to(device)
+        layer = linear_ugemm(torch.full((out_features, in_features), -1.0),
+                             torch.full((out_features,), -1.0), cfg).to(device)
+
+        for _ in range(phase):
+            output_spike = layer(input_spike)
+        assert output_spike.sum().item() == 0, \
+            f'[{device}] minimum weight and bias should emit no output spike, got {output_spike}'
+
+        # Only an in-place write updates the parameter; optimizers silently skip it.
+        with torch.no_grad():
+            layer.bias.fill_(1.0)
+        # A maximum bias spikes every timestep, so the scaled adder carries once per
+        # entry = in_features + 1 timesteps, on each of out_features accumulators.
+        entry = in_features + 1
+        expected = out_features * (phase // entry)
+        spike_count = sum(layer(input_spike).sum().item() for _ in range(phase))
+        assert spike_count == expected, \
+            f'[{device}] updated bias: got {spike_count} output spikes, expected {expected}'
+        print(f'[{device}] bias update takes effect without reset.')
 
 
 def _suite_weight(polarity):
