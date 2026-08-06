@@ -16,8 +16,12 @@ This file is the canonical policy for building and maintaining NAPL's Sphinx doc
 - Render `__init__()` after the divider, then public members in source order. Include the inherited public `reset()` documentation where the class template provides it.
 - Keep section headings at one visual level within a class page. References use the same heading level as methods and properties, and paper titles use reStructuredText emphasis: `*Paper title*`.
 - Keep every reference entry. When a venue or year cannot be verified, leave it empty rather than guessing it or dropping the entry.
+- Write every reference entry as title, venue, year, with no author names.
+- Validate every reference entry against a real source, such as the publisher page, IEEE Xplore, the ACM Digital Library, arXiv, or DBLP, before writing it. Never cite from memory.
 - Class pages document only the public API surface. Internal helper methods use underscore-prefixed names and are excluded from generated pages.
-- Class overviews state the precise target operation and, when the implementation approximates it, both the exact target equation and the code-exact implemented equation.
+- API pages document classes only. Functions, module instances, and other non-class names are not listed.
+- Class-overview math stays high-level: state what the operation computes, never how the code computes it. No step-by-step narration of the implementation.
+- Give the target equation alone. Add an approximated or implemented equation only when the implementation genuinely approximates the target, such as a truncated series expansion.
 - Use bold text for parameter and configuration-variable labels, including parameter names in API signatures and nested configuration keys. Use inline code for literal values, tensor ranges, identifiers referenced inside prose, and code expressions.
 - Keep examples close to the API item they demonstrate. Code blocks retain syntax highlighting and do not receive prose emphasis.
 

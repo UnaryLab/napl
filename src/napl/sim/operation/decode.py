@@ -12,9 +12,8 @@ class decode(napl_base):
     bipolar value after each timestep. Access :attr:`spike_value` after feeding
     one or more spike tensors.
 
-    The precise target inverts the encoding, mapping the stream rate back to a
-    numeric value. With :math:`c_T = \sum_{t=1}^{T} s_t` the running spike count,
-    the decoder evaluates the target exactly as
+    The target inverts the encoding, mapping the rate of the first :math:`T`
+    spikes back to a numeric value,
 
     .. math::
 
@@ -22,8 +21,9 @@ class decode(napl_base):
        c_T / T, & \text{unipolar},\\
        2 c_T / T - 1, & \text{bipolar},
        \end{cases}
+       \qquad c_T = \sum_{t=1}^{T} s_t.
 
-    and returns zero before the first timestep.
+    The value is zero before the first timestep.
 
     .. rubric:: Example
 
@@ -58,7 +58,7 @@ class decode(napl_base):
 
         Construction initializes the spike counter to a scalar zero.
         """
-        super().__init__(config, ['polarity', 'timestep'], polarity_required=True)
+        super().__init__(config, ['polarity', 'timestep'], optional_key_list=['generator', 'dim', 'seed', 'taps'], polarity_required=True)
 
         #: Maximum number of spike timesteps accepted by this decoder.
         self.timestep = config['timestep']
@@ -99,8 +99,10 @@ class decode(napl_base):
         The call adds ``spike`` to ``spike_count`` and advances
         ``timestep_cur``. It rejects calls beyond the configured **timestep**.
         """
-        assert self.timestep_cur <= self.timestep, \
-            logger.error(f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.')
+        if self.timestep_cur > self.timestep:
+            message = f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.'
+            logger.error(message)
+            raise AssertionError(message)
         # A float accumulator avoids overflow, and 0/1 spikes promote exactly.
         sc = self.spike_count
         # The scalar seed broadcasts once; matching shapes then accumulate in place.

@@ -11,29 +11,17 @@ class signabs_interleave(napl_base):
     Use this streaming counter-based kernel when the magnitude stream should be
     derived from alternating counter parity rather than directly from each input bit.
 
-    The precise target splits a bipolar value :math:`v` into its sign and
-    magnitude, so that the returned streams decode to
+    The target splits a bipolar value :math:`v` into its sign and magnitude, so
+    that the returned streams decode to
 
     .. math::
 
        \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
        \mathrm{magnitude} = |v|.
 
-    The kernel runs the same saturating counter as :class:`signabs`, of width
-    :math:`w`, but takes the magnitude from the counter's parity rather than
-    from the current input spike,
-
-    .. math::
-
-       a_t = \mathrm{clamp}\!\left(a_{t-1} + 2 s_t - 1,\; 0,\; 2^{w}-1\right),
-       \qquad a_0 = 2^{w-1},
-
-    .. math::
-
-       \mathrm{sign}_t = \mathbf{1}\{a_t < 2^{w-1}\},\qquad
-       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus (a_t \bmod 2).
-
-    Reading the parity interleaves the magnitude spikes across timesteps, which
+    A saturating counter of **width** bits estimates the sign online, and the
+    magnitude comes from the counter parity rather than from the current input
+    spike. The parity interleaves the magnitude spikes across timesteps, which
     decorrelates them from the input stream at the cost of tracking a changing
     input more slowly.
 
@@ -46,6 +34,12 @@ class signabs_interleave(napl_base):
 
         operation = signabs_interleave({'width': 3})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -62,13 +56,14 @@ class signabs_interleave(napl_base):
               - **width**: Positive saturating-counter bit width; the default is ``3``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']
-        assert isinstance(self.width, int) and self.width > 0, logger.error(
-            f'Invalid width: <{self.width}>; legal values: a positive integer.'
-        )
+        if not isinstance(self.width, int) or self.width <= 0:
+            message = f'Invalid width: <{self.width}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Largest value retained by the unsigned accumulator.
         self.acc_max = 2**self.width - 1
         #: Half-scale accumulator value that represents bipolar zero.

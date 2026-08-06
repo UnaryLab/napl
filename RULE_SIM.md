@@ -24,6 +24,7 @@ This file is the canonical verification policy for the Python simulation model o
 10. **Native operators.** When a PyTorch native operator implements the computation, use it; re-implementing an existing native operator by hand or by composing lower-level primitives is not allowed. Cross-device bitwise determinism is not a hard requirement: each device's results must meet the stated fidelity bounds, and device-to-device divergence from floating-point reduction order (including spike-trace differences it induces through hard thresholds) is accepted.
 11. **Explicit imports.** Regular simulation modules and test files use explicit imports and do not use `from x import *`. Package `__init__.py` re-exports may use star imports.
 12. **Encode composition.** A class that composes an `encode` instance names it `reference_encode`, suffixing the name when the class holds several, and names the per-timestep spike it returns `reference_encode_bit`.
+13. **Config validation.** A class declares the configuration keys it requires in `key_list` and the keys it accepts but does not require in `optional_key_list`. `check_config` raises when a required key is missing, and accepts exactly the union of both lists plus `name`, raising on any other key present in the config. Put a key in `optional_key_list` only when the class works without it.
 
 Operands that must be independent use distinct Sobol dimensions. Fix or record the random seed and reuse the same logical inputs for the device and CPU runs.
 

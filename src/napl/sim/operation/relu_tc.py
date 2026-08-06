@@ -9,7 +9,7 @@ class relu_tc(napl_base):
     r"""
     Apply ReLU to a bipolar temporal-coded stream.
 
-    The precise target operation is
+    The target operation is
 
     .. math::
 
@@ -17,24 +17,15 @@ class relu_tc(napl_base):
 
     Because :math:`\max(x,0)` is the temporal maximum of the input against a
     stream carrying the value zero, the kernel generates that zero reference
-    internally and ORs it with the input, which is the comparison
-    :class:`napl.max_tc` performs on two supplied streams.
+    internally with a composed :class:`napl.encode` instance and takes the
+    temporal maximum against it, which is the comparison :class:`napl.max_tc`
+    performs on two supplied streams.
 
-    A composed :class:`napl.encode` instance supplies the reference stream: it
-    encodes a constant bipolar zero over the temporal number sequence q of
-    length L = 2**width, selecting the entry for timestep t itself. A bipolar
-    zero encodes to probability 1/2, so the exact output is
-
-    .. math::
-
-       \begin{aligned}
-       r_t &= \mathbf{1}\{\tfrac{1}{2} > q_{(t-1)\bmod L}\},\\
-       y_t &= x_t \mathbin{\lor} r_t.
-       \end{aligned}
-
-    The ascending temporal sequence makes the reference fall at the midpoint
-    cycle, so an input falling later than the midpoint passes through
-    unchanged and an input falling earlier is replaced by zero.
+    napl temporal streams emit ones and then zeros, with the falling edge
+    later for larger values, and a bipolar zero falls at the midpoint of the
+    ``2**width``-cycle codeword. An input falling later than the midpoint
+    therefore passes through unchanged, and an input falling earlier is
+    replaced by zero.
 
     .. rubric:: Example
 
@@ -45,6 +36,12 @@ class relu_tc(napl_base):
 
         operation = relu_tc({'width': 8})
         output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -61,13 +58,14 @@ class relu_tc(napl_base):
               - **width**: Positive temporal-code bit width; the default is ``8``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Number of temporal-code bits in one input value.
         self.width = config['width']
-        assert isinstance(self.width, int) and self.width > 0, logger.error(
-            f'Invalid width: <{self.width}>; legal values: a positive integer.'
-        )
+        if not isinstance(self.width, int) or self.width <= 0:
+            message = f'Invalid width: <{self.width}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Temporal codeword length in cycles.
         self.len = 2 ** self.width
         #: Reference-stream source; encodes the bipolar zero as a temporal code.

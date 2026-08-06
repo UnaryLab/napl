@@ -45,7 +45,7 @@ def _kernel_specific_checks():
         'generator': 'temporal',
         'dim': 2,
     }
-    min_tc_config=codec_config1
+    min_tc_config={'polarity': codec_config1['polarity']}
 
     input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
     input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
@@ -72,9 +72,6 @@ def _kernel_specific_checks():
 def make_operation(polarity, timestep, _device):
     return min_tc({
         'polarity': polarity,
-        'timestep': timestep,
-        'generator': 'temporal',
-        'dim': 1,
     })
 
 

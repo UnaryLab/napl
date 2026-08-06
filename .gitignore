@@ -219,6 +219,8 @@ src/napl/imp/operation/*/vec/*.vh
 .serena/
 .tokensave/
 
+.DS_Store
+
 # Agent coordination state
-.peon-code-task.md
+.peon-code-task*.md
 REVIEW.md

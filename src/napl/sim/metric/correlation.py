@@ -14,25 +14,13 @@ class correlation(napl_base):
     autocorrelation.
 
     Let ``a``, ``b``, ``c``, and ``d`` count the ``11``, ``10``, ``01``, and
-    ``00`` bit pairs over ``n`` timesteps. The precise target is the SCC
+    ``00`` bit pairs over ``n`` timesteps. The target is the SCC
 
     .. math::
 
        \mathrm{SCC} = \begin{cases}
        \dfrac{ad-bc}{n\min(a+b,\,a+c)-(a+b)(a+c)}, & ad > bc,\\[1.2ex]
        \dfrac{ad-bc}{(a+b)(a+c)-n\max(a-d,\,0)}, & ad \leq bc.
-       \end{cases}
-
-    The metric accumulates ``a``, ``a+b``, and ``a+c`` and derives ``d`` from
-    ``n``, so it evaluates the target exactly except that each denominator is
-    floored at ``1`` to keep degenerate counts finite:
-
-    .. math::
-
-       \mathrm{SCC} = \frac{ad-bc}{\max(D,\,1)},\qquad
-       D = \begin{cases}
-       n\min(a+b,\,a+c)-(a+b)(a+c), & ad > bc,\\
-       (a+b)(a+c)-n\max(a-d,\,0), & ad \leq bc.
        \end{cases}
 
     .. rubric:: Example
@@ -52,7 +40,7 @@ class correlation(napl_base):
 
         .. rubric:: References
 
-        *Exploiting Correlation in Stochastic Circuit Design*, ICCD, 2013.
+        *Exploiting correlation in stochastic circuit design*, ICCD, 2013.
     """
 
 
@@ -152,9 +140,9 @@ class correlation(napl_base):
         Return the SCC computed from the accumulated bit-pair counts.
 
         Values range from ``-1`` for fully anticorrelated streams to ``1`` for
-        fully correlated streams. Empty or degenerate counts use the guarded
-        denominators in the SCC definition. Reading this property does not
-        change metric state.
+        fully correlated streams. The denominator is floored at ``1``, so empty
+        or degenerate counts stay finite. Reading this property does not change
+        metric state.
 
         **Example:**
 
@@ -204,7 +192,10 @@ class correlation(napl_base):
 
             value, result = metric.analyze()
         """
-        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
+        if not self.valid:
+            message = 'Metric is not valid. Please call forward() before analyze().'
+            logger.error(message)
+            raise AssertionError(message)
         correlation = self.correlation
         result = analyze(
             correlation,

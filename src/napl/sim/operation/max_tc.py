@@ -7,13 +7,15 @@ class max_tc(napl_base):
     r"""
     Select the maximum of two temporal-coded streams with an OR gate.
 
-    The exact stateless temporal operation is
+    The target operation is
 
     .. math::
 
-       y_t = x_{0,t}\mathbin{\lor}x_{1,t}.
+       y = \max(x_0,x_1).
 
-    For leading-one temporal codes, this OR is the maximum.
+    napl temporal streams emit ones and then zeros, with the falling edge
+    later for larger values, so the elementwise OR keeps the later falling
+    edge and gives the maximum exactly.
 
     .. rubric:: Example
 
@@ -25,6 +27,14 @@ class max_tc(napl_base):
         maximum = max_tc()
         output = maximum(torch.tensor([1], dtype=torch.int8),
                          torch.tensor([0], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Race Logic: A hardware acceleration for dynamic programming algorithms*, ISCA, 2014.
+
+        *Space-Time Computing with Temporal Neural Networks*, Synthesis Lectures on Computer Architecture, 2017.
     """
 
 
@@ -42,7 +52,7 @@ class max_tc(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational temporal maximum.
         self.hw = hw_params(pp_delay=0)
 

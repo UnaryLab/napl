@@ -7,19 +7,14 @@ class dff(napl_base):
     r"""
     Delay a spike tensor by a fixed number of timesteps.
 
-    Let R_t be the depth-row FIFO and h_t its circular head. With
-    R_0[j] = 0 and h_0 = 0, the exact delay recurrence is
+    The output repeats the input **depth** timesteps later,
 
     .. math::
 
-       \begin{aligned}
-       y_t &= R_t[h_t],\\
-       R_{t+1}[h_t] &= x_t,\qquad
-       h_{t+1}=(h_t+1)\bmod depth.
-       \end{aligned}
-
-    Thus the first depth outputs are zero and later outputs are the
-    corresponding earlier inputs.
+       y_t = \begin{cases}
+       0, & t \leq \mathit{depth},\\
+       x_{t-\mathit{depth}}, & t > \mathit{depth}.
+       \end{cases}
 
     .. rubric:: Example
 
@@ -50,7 +45,7 @@ class dff(napl_base):
               - **depth**: Number of timesteps to delay the input; the default is ``1``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
         #: Number of timesteps between an input and its delayed output.
         self.depth = config['depth']
         # This buffer anchors lazy state to the module device.

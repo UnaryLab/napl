@@ -11,30 +11,17 @@ class mul_ugemm(napl_base):
     Multiply a spike stream by a fixed binary-domain operand.
 
     Use conditional spike generation when ``input_0`` arrives one timestep at a
-    time and ``input_1`` is a numeric tensor held constant for the run. Separate
-    enabled sequence indices implement the bipolar positive and inverse paths.
+    time and ``input_1`` is a numeric tensor held constant for the run.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        p_y = p_0p_1 \quad (\text{unipolar}),\qquad
        v_y = v_0v_1 \quad (\text{bipolar}).
 
-    Let ``q = input_1`` in unipolar mode and ``q = (input_1 + 1) / 2`` in
-    bipolar mode. With ``N`` the configured number sequence and ``i_t`` the
-    enabled sequence index, the generated spikes are
-
-    .. math::
-
-       s_t^+ = \mathbf{1}\{q > N_{i_t}\}, \qquad
-       s_t^- = \mathbf{1}\{q \leq N_{i_t^-}\},\qquad
-       y_t = \begin{cases}
-       x_{0,t} s_t^+, & \text{unipolar},\\
-       x_{0,t} s_t^+ + (1-x_{0,t})s_t^-, & \text{bipolar}.
-       \end{cases}
-
-    The bipolar decoded rate is the product of the decoded inputs.
+    The product is sampled over a finite number sequence, so the output rate
+    approximates the target rather than matching it exactly.
 
     .. rubric:: Example
 
@@ -54,7 +41,7 @@ class mul_ugemm(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
 
-        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro Top Picks, 2021.
+        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro, 2021.
     """
     #: Encoding advances conditionally on data, so the RTL counterpart holds
     #: its own encoder instead of sharing an external one.
@@ -87,7 +74,10 @@ class mul_ugemm(napl_base):
 
         #: Requested stream length used to size the conditional number sequence.
         self.timestep = config['timestep']
-        assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width of the power-of-two conditional number sequence.
         self.width = math.ceil(math.log2(self.timestep))
         #: Lowercase name of the configured number-sequence generator.
@@ -159,7 +149,10 @@ class mul_ugemm(napl_base):
                               torch.tensor([0.5]))
         """
         if self.is_first_call is True:
-            assert input_1 is not None, logger.error('input_1 is None, please provide a valid input_1 tensor.')
+            if input_1 is None:
+                message = 'input_1 is None, please provide a valid input_1 tensor.'
+                logger.error(message)
+                raise AssertionError(message)
             self.in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)
             self.is_first_call = False
 

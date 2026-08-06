@@ -49,7 +49,7 @@ class jkff(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Current JK flip-flop output state.
         self.q: torch.Tensor

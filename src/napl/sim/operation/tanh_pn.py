@@ -7,23 +7,15 @@ class tanh_pn(napl_base):
     r"""
     Compute a bipolar tanh FSM with a saturating counter.
 
-    The precise target operation is
+    The target rate-domain operation is
 
     .. math::
 
        f(x) = \tanh\left(\frac{N x}{2}\right),\qquad N=2^{depth}.
 
-    Let N = 2**depth, H = 2**(depth-1), and M = N-1. With a_0 = H, the
-    output uses the pre-update counter state:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= \mathbf{1}\{a_t\geq H\},\\
-       a_{t+1} &= \operatorname{clip}(a_t+2x_t-1,0,M).
-       \end{aligned}
-
-    The input and output are bipolar 0/1 rate-coded streams.
+    A saturating counter with :math:`N` states approximates it, so the accuracy
+    improves with **depth** and the output lags a changing input while the
+    counter settles. The input and output are bipolar 0/1 rate-coded streams.
 
     .. rubric:: Example
 
@@ -39,7 +31,7 @@ class tanh_pn(napl_base):
 
         .. rubric:: References
 
-        B. D. Brown and H. C. Card, *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
+        *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
     """
 
 
@@ -61,7 +53,7 @@ class tanh_pn(napl_base):
               - **depth**: Counter bit width, giving ``2**depth`` states; the default is ``5``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the saturating tanh state counter in bits.
         self.depth = config['depth']

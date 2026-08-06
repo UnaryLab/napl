@@ -7,13 +7,15 @@ class min_tc(napl_base):
     r"""
     Select the minimum of two temporal-coded streams with an AND gate.
 
-    The exact stateless temporal operation is
+    The target operation is
 
     .. math::
 
-       y_t = x_{0,t}\mathbin{\land}x_{1,t}.
+       y = \min(x_0,x_1).
 
-    For leading-one temporal codes, this AND is the minimum.
+    napl temporal streams emit ones and then zeros, with the falling edge
+    later for larger values, so the elementwise AND keeps the earlier falling
+    edge and gives the minimum exactly.
 
     .. rubric:: Example
 
@@ -25,6 +27,14 @@ class min_tc(napl_base):
         minimum = min_tc()
         output = minimum(torch.tensor([1], dtype=torch.int8),
                          torch.tensor([0], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Race Logic: A hardware acceleration for dynamic programming algorithms*, ISCA, 2014.
+
+        *Space-Time Computing with Temporal Neural Networks*, Synthesis Lectures on Computer Architecture, 2017.
     """
 
 
@@ -42,7 +52,7 @@ class min_tc(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational temporal minimum.
         self.hw = hw_params(pp_delay=0)
 

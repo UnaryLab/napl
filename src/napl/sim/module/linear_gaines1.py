@@ -1,7 +1,9 @@
 import torch
 import math
 
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation import encode
+from napl.sim.module._shared import _gaines_counter_step
 from loguru import logger
 
 
@@ -9,63 +11,27 @@ class linear_gaines1(napl_base):
     r"""Apply a streaming Gaines ``gMUL + gADD`` fully connected layer.
 
     Use this variant to reproduce the first UnarySim Gaines linear design or to
-    compare random-threshold and counter-based addition. Each timestep the weights (and
-    bias) are encoded into spikes on a distinct RNG dimension from the input (so the
-    operand streams are decorrelated), multiplied with the incoming input spikes (AND for
-    unipolar, XNOR for bipolar), and the per-timestep parallel count is reduced to one
-    output spike by a Gaines adder instead of :class:`linear`'s scaled accumulator:
+    compare random-threshold and counter-based addition. Weights are rate-coded
+    on a number-sequence dimension separate from the input, and a Gaines adder
+    replaces :class:`linear`'s scaled accumulator, so the target is the affine
+    map
 
-    - ``scaled=True``: the count is compared with the encoder number sequence
-      as ``count / L > q[t]``, where ``L = 2 ** w``, ``w = round(log2(entry))``
-      and ``entry = in_features + has_bias``. The decoded output represents
-      ``(W x + b) / 2 ** w`` for unipolar streams and
-      ``(entry + W x + b) / 2 ** w - 1`` for bipolar streams.
+    .. math::
 
-      This strict comparison replaces a former ``count >= scale_seq[t]``
-      against ``scale_seq = round(q L)``. The two agree except where
-      ``count == scale_seq[t]``. Because ``scale_seq`` is a permutation of
-      ``0 .. L-1``, each count value ties at exactly one position per period,
-      the index ``t`` where ``scale_seq[t] == count``; the former form emitted
-      a spike there and this one does not, so a constant count yields exactly
-      one fewer output spike per period of ``L`` timesteps.
+       y = Wx + b
 
-    - ``scaled=False``: unipolar mode emits ``count > 0``; bipolar mode drives a
-      ``depth``-bit saturating counter by ``2 * count - entry``, so the decoded
+    up to the scaling of the selected adder mode, with
+    ``entry = in_features + has_bias``:
+
+    - ``scaled=True``: random-threshold addition over a period of
+      ``L = 2 ** round(log2(entry))``. The decoded output represents
+      ``(W x + b) / L`` for unipolar streams and
+      ``(entry + W x + b) / L - 1`` for bipolar streams.
+    - ``scaled=False``: unipolar mode emits ``count > 0``; bipolar mode
+      integrates the count in a ``depth``-bit saturating counter, so the decoded
       output tracks ``clamp(W x + b, -1, 1)``.
 
-    It uses rate-coded weights and matches UnarySim ``GainesLinear1``.
-
-    The precise target is the affine map :math:`y = Wx + b`, reachable only up to
-    the mode-specific scaling above. With :math:`x_t` the input spikes,
-    :math:`w_t` the encoded weight spikes, :math:`b_t` the bias spike, :math:`n`
-    the fan-in, :math:`e = n + [\,\text{bias}\,]`, and
-    :math:`w = \mathrm{round}(\log_2 e)`, the layer forms
-
-    .. math::
-
-       c_t = \begin{cases}
-       x_t w_t^{\top} + b_t, & \text{unipolar},\\
-       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
-       & \text{bipolar},
-       \end{cases}
-
-    and emits exactly
-
-    .. math::
-
-       y_t = \begin{cases}
-       \mathbf{1}\{c_t / 2^{w} > q_{t \bmod 2^{w}}\}, & \text{scaled},\\
-       \mathbf{1}\{c_t > 0\}, & \text{non-scaled unipolar},\\
-       \mathbf{1}\{a_t > 2^{d-1}\}, & \text{non-scaled bipolar},
-       \end{cases}
-
-    where :math:`q` is the encoder number sequence and the
-    ``depth``-:math:`d` saturating counter runs as
-
-    .. math::
-
-       a_t = \mathrm{clamp}\left(a_{t-1} + 2c_t - e,\; 0,\; 2^{d}-1\right),
-       \qquad a_0 = 2^{d-1}.
+    This class matches UnarySim ``GainesLinear1``.
 
     .. rubric:: Example
 
@@ -79,9 +45,11 @@ class linear_gaines1(napl_base):
                                        "generator": "sobol", "scaled": True})
         output_spike = layer(torch.ones(1, 2))
 
-    References
-    ----------
-    B. R. Gaines, *Stochastic Computing Systems*.
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 
@@ -100,26 +68,31 @@ class linear_gaines1(napl_base):
         ):
         """Construct the Gaines layer from external numeric parameters.
 
-        Args:
-            weight: Numeric tensor shaped ``(out_features, in_features)``.
-            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults to
-                ``None``.
-            config: Configuration mapping with **polarity** (default
-                ``"bipolar"``), **timestep** (default ``256``), **generator**
-                (default ``"sobol"``), **dim** (weight sequence dimension,
-                default ``2``), **scaled** (random-threshold mode when ``True``,
-                default ``True``), and **depth** (non-scaled bipolar counter bits,
-                default ``8``). **name** is an optional instance label and
-                defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **weight** – Numeric tensor shaped ``(out_features, in_features)``.
+            - **bias** – Optional numeric tensor shaped ``(out_features,)``; the default is ``None``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Weight-encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **dim**: One-based weight sequence dimension, with the bias on ``dim + 1`` and the scaled threshold on ``dim + 2``; the default is ``2``.
+              - **scaled**: Use random-threshold scaled addition when ``True``; the default is ``True``.
+              - **depth**: Bit width of the non-scaled bipolar counter; the default is ``8``.
+              - **name**: Optional instance label.
 
         In scaled mode, the threshold period is
         ``2 ** round(log2(in_features + has_bias))``.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.operation import encode
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scaled', 'depth'], polarity_required=True)
 
-        assert weight.dim() == 2, logger.error(f'linear_gaines1 weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
+        if weight.dim() != 2:
+            message = f'linear_gaines1 weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Trainable numeric weight matrix encoded into a spike stream.
         self.weight = torch.nn.Parameter(weight)
         #: Optional trainable numeric bias encoded on its own sequence.
@@ -166,7 +139,8 @@ class linear_gaines1(napl_base):
             assert torch.allclose(scaled_levels, scaled_levels.round(), atol=1e-9), \
                 f'Sequence value off the 1/{self.scale_len} grid; the count-scale view would not be exact.'
             #: Count-scale view of the encoder sequence, kept for inspection.
-            self.scale_seq = scaled_levels.round().tolist()
+            self.scale_seq: torch.Tensor
+            self.register_buffer('scale_seq', scaled_levels.round())
         else:
             depth = config.get('depth', 8)
             #: Maximum value of the non-scaled bipolar saturating counter.
@@ -178,6 +152,10 @@ class linear_gaines1(napl_base):
                 self.cnt: torch.Tensor
                 self.register_buffer(
                     'cnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
+
+        # Encoders and the Gaines adder are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming layer.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
@@ -220,20 +198,12 @@ class linear_gaines1(napl_base):
             pc.add_(self.b_encoder(self.bias).type(self.ntype))
 
         if self.scaled:
-            # Strict comparison through the encoder; see the class docstring for
-            # the one-tying-position-per-period difference from the former ge form.
+            # The encoder compares the scaled count strictly against its sequence entry.
             reference_encode_bit = self.reference_encode(pc.div(self.scale_len))
             output = reference_encode_bit
         elif self.polarity == 'unipolar':
             output = torch.gt(pc, 0)
         else:
             delta = pc.mul_(2).sub_(self.entry)
-            if self.cnt.shape == delta.shape:
-                # Matching ntype state updates in place without aliasing another timestep.
-                self.cnt.add_(delta).clamp_(0, self.cnt_max)
-            else:
-                # The first update broadcasts scalar state out of place.
-                expanded = self.cnt.add(delta).clamp(0, self.cnt_max).detach()
-                self.cnt.resize_as_(expanded).copy_(expanded)
-            output = torch.gt(self.cnt, self.cnt_half)
+            output = _gaines_counter_step(self.cnt, delta, self.cnt_max, self.cnt_half)
         return output.type(self.stype)

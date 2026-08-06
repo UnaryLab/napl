@@ -1,7 +1,7 @@
 import torch
-import math
 
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation.encode import encode
 from loguru import logger
 
 
@@ -14,37 +14,20 @@ class linear_pc(napl_base):
     into a bitstream. This is the :class:`linear` partial sum without its scaled
     unary adder.
 
-    Each timestep the weights (and bias) are encoded into spikes on a distinct RNG dimension
-    from the input (decorrelated operands). For unipolar this returns the AND-count
-    ``sum(input & weight)`` plus the bias spike; for bipolar it returns the
-    XNOR count ``sum(input == weight)`` plus the bias spike on the input-``1``
-    path, matching ``FSULinearPC``. The count per timestep lies in
-    ``[0, entry]``, where ``entry = in_features + has_bias``. Accumulating the
-    count over ``T`` timesteps and dividing by ``T`` recovers the unipolar inner product directly,
-    or the bipolar inner product as ``2 * mean - entry``. This class matches
-    UnarySim ``FSULinearPC``.
-
-    The precise target is the product count whose time average recovers the
-    inner product,
+    Weights are rate-coded on a number-sequence dimension separate from the
+    input, so unipolar mode counts ``sum(input & weight)`` plus the bias spike
+    and bipolar mode counts ``sum(input == weight)`` plus the bias spike on the
+    input-``1`` path. Each count :math:`c_t` lies in ``[0, entry]``, where
+    ``entry = in_features + has_bias``, and its time average recovers the inner
+    product,
 
     .. math::
 
        \frac{1}{T}\sum_{t=1}^{T} c_t = Wx + b \ \ (\text{unipolar}),\qquad
        \frac{2}{T}\sum_{t=1}^{T} c_t - e = Wx + b \ \ (\text{bipolar}),
 
-    with :math:`e = n + [\,\text{bias}\,]`. Each timestep the layer returns that
-    count exactly, with :math:`w_t` the freshly encoded weight spikes and
-    :math:`b_t` the bias spike,
-
-    .. math::
-
-       c_t = \begin{cases}
-       x_t w_t^{\top} + b_t, & \text{unipolar},\\
-       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
-       & \text{bipolar},
-       \end{cases}
-
-    so :math:`c_t \in [0, e]` and no accumulation is applied.
+    with :math:`e` the fan-in ``entry``. No accumulation is applied inside the
+    layer. This class matches UnarySim ``FSULinearPC``.
 
     .. rubric:: Example
 
@@ -58,9 +41,14 @@ class linear_pc(napl_base):
                                     "generator": "sobol"})
         count = counter(torch.ones(1, 2))
 
-    References
-    ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+    The output is a parallel count rather than a spike stream, so it carries no
+    encoding or polarity and appears in neither port map.
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -77,21 +65,26 @@ class linear_pc(napl_base):
         ):
         """Construct the counter from external numeric weights and bias.
 
-        Args:
-            weight: Numeric tensor shaped ``(out_features, in_features)``.
-            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults
-                to ``None``.
-            config: Configuration mapping with **polarity** (default
-                ``"bipolar"``), **timestep** (default ``256``), **generator**
-                (default ``"sobol"``), and **dim** (weight Sobol dimension,
-                default ``2``; bias uses ``dim + 1``). **name** is an optional
-                instance label and defaults to ``None``.
-        """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.operation.encode import encode
+        .. container:: api-parameter-list
 
-        assert weight.dim() == 2, logger.error(f'linear_pc weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
+            **Parameters:**
+
+            - **weight** – Numeric tensor shaped ``(out_features, in_features)``.
+            - **bias** – Optional numeric tensor shaped ``(out_features,)``; the default is ``None``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Weight-encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1``; the default is ``2``.
+              - **name**: Optional instance label.
+        """
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim'], polarity_required=True)
+
+        if weight.dim() != 2:
+            message = f'linear_pc weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Trainable numeric weight encoded into a spike stream.
         self.weight = torch.nn.Parameter(weight)
         #: Optional trainable numeric bias encoded on its own sequence.
@@ -119,6 +112,10 @@ class linear_pc(napl_base):
             #: Encoder that converts the optional numeric bias to spikes.
             self.b_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
+
+        # Encoding and the parallel count are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming counter.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc'}
         self.polarity_io = {'input_spike': self.polarity}

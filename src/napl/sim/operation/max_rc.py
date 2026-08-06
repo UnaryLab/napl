@@ -8,28 +8,15 @@ class max_rc(napl_base):
     r"""
     Select the maximum of two rate-coded streams and track its source.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \max(p_0,p_1).
 
-    Let (u_t,v_t) = sync_skewed(input_0,input_1), q_{-1}=0, and q be the
-    selection state. The output uses the previous state and the index is the
-    updated state:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= x_{0,t}+q_{t-1}(x_{1,t}-x_{0,t}),\\
-       q_t &=
-       \begin{cases}
-       v_t, & u_t\ne v_t,\\
-       q_{t-1}, & u_t=v_t.
-       \end{cases}
-       \end{aligned}
-
-    Thus q = 0 selects input_0 and q = 1 selects input_1.
+    Alongside the selected stream, the call returns the running argmax index,
+    where ``0`` denotes ``input_0`` and ``1`` denotes ``input_1``. The
+    selection state starts at ``0``.
 
     .. rubric:: Example
 
@@ -58,7 +45,7 @@ class max_rc(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Previous selection decision used to route the synchronized maximum stream.
         self.index: torch.Tensor

@@ -11,31 +11,16 @@ class sqrt_gaines(napl_base):
     Use this streaming kernel for unipolar or bipolar rate-coded square root
     when counter state should be sampled by a configurable number sequence.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \sqrt{x}.
 
-    Let R_t = round(2**width G_t), where G_t is the configured number
-    sequence, and let y_t be sampled before the counter update. With d_{t-1}
-    the previous output spike, the exact recurrence is
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= \mathbf{1}\{scnt_t > R_t\},\\
-       \delta_t &= y_t \mathbin{\land} d_{t-1}
-       &&(\text{unipolar}),\\
-       \delta_t &= 1-(y_t \oplus d_{t-1})
-       &&(\text{bipolar}),\\
-       scnt_{t+1} &= \operatorname{clip}(scnt_t+x_t-\delta_t,
-       0,2^{width}-1), &
-       d_t &= y_t.
-       \end{aligned}
-
-    The threshold output uses the pre-update counter and d_t stores that
-    output for the next squared-output feedback term.
+    A saturating counter of **width** bits drives the output stream, and the
+    squared output is fed back so the counter settles where the output rate
+    squares to the input rate. The accuracy improves with **width** and with
+    the stream length.
 
     .. rubric:: Example
 
@@ -51,7 +36,7 @@ class sqrt_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 
@@ -80,7 +65,7 @@ class sqrt_gaines(napl_base):
               - **taps**: Optional LFSR tap list used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
+        super().__init__(config, ['polarity', 'width', 'generator'], optional_key_list=['dim'], polarity_required=True)
 
         #: Counter and threshold-sequence width in bits.
         self.width = config['width']
@@ -89,8 +74,6 @@ class sqrt_gaines(napl_base):
         #: Half-scale counter value restored by :meth:`_reset`.
         self.cnt_half = 2**(self.width - 1)
 
-        # Python scalar thresholds span the counter range without device synchronization.
-        #: Periodic tensor of stochastic counter thresholds.
         #: Encoder supplying the periodic counter-threshold comparison.
         self.reference_encode = encode({'polarity': 'unipolar',
                                    'timestep': 2**self.width,
@@ -122,7 +105,9 @@ class sqrt_gaines(napl_base):
 
     def _reset(self):
         """
-        Restart the sequence index, counter, and delayed-output feedback state.
+        Restore the counter and delayed-output feedback state.
+
+        The threshold encoder is reset by :meth:`reset` before this local reset.
         """
         self.scnt.resize_(1).fill_(self.cnt_half)
         self.out_d.resize_(1).zero_()

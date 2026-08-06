@@ -1,32 +1,22 @@
-import torch
+from napl.sim.base import napl_base
 
-class butterfly_binary(torch.nn.Module):
+
+class butterfly_binary(napl_base):
     r"""
     Evaluate an exact radix-2 complex butterfly in the binary domain.
 
     Use this stateless PyTorch module as a reference for
     :class:`butterfly_spike` or wherever spike-stream simulation is unnecessary.
 
-    The precise target is the radix-2 decimation-in-time butterfly on complex
-    inputs :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
+    The target is the radix-2 decimation-in-time butterfly on complex inputs
+    :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
 
     .. math::
 
        y_0 = x_0 + w x_1,\qquad y_1 = x_0 - w x_1.
 
-    The module evaluates that target exactly on the real and imaginary parts,
-
-    .. math::
-
-       t_r = w_r x_{1r} - w_i x_{1i},\qquad
-       t_i = w_r x_{1i} + w_i x_{1r},
-
-    .. math::
-
-       y_{0r} = x_{0r} + t_r,\quad y_{0i} = x_{0i} + t_i,\quad
-       y_{1r} = x_{0r} - t_r,\quad y_{1i} = x_{0i} - t_i,
-
-    so the only error is floating-point rounding.
+    The butterfly is evaluated in the binary domain, so the only error is
+    floating-point rounding.
 
     .. rubric:: Example
 
@@ -39,9 +29,11 @@ class butterfly_binary(torch.nn.Module):
         inputs = tuple(torch.zeros(1) for _ in range(6))
         y0r, y0i, y1r, y1i = operation(*inputs)
     """
+    #: Whether calls process one stream timestep; this reference is single-shot.
+    streaming = False
 
 
-    def __init__(self):
+    def __init__(self, config={}):
         """
         Construct the stateless binary-domain butterfly.
 
@@ -49,9 +41,25 @@ class butterfly_binary(torch.nn.Module):
 
             **Parameters:**
 
-            ``None``.
+            - **config** – Configuration mapping; the default is ``{}``.
+
+              - **name**: Optional instance label; the default is ``None``.
         """
-        super().__init__()
+        super().__init__(config, [])
+
+        self.encoding_io = {}
+        self.polarity_io = {}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
+
+
+    def _reset(self):
+        """
+        Reset local execution state.
+
+        This stateless reference holds no run state, so the hook returns ``None``.
+        """
+        pass
 
 
     def forward(self, x0r, x0i, x1r, x1i, wr, wi):

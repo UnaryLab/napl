@@ -67,24 +67,17 @@ class round_fxp(napl_base):
     ``2**(-fracwidth)`` and clamps to the representable range. Use it for
     quantization-aware training because the input gradient passes through unchanged.
 
-    The precise target is the nearest value on the signed fixed-point grid of
-    resolution :math:`2^{-f}`, with :math:`f` the **fracwidth**,
-
-    .. math::
-
-       y = 2^{-f} \left[\,x\,2^{f}\,\right].
-
-    Let :math:`W = i + f` with :math:`i` the **intwidth**. The kernel evaluates
-    that target and saturates the scaled code to the representable range,
+    With :math:`f` the **fracwidth**, :math:`i` the **intwidth**, and
+    :math:`W = i + f`, the operation is
 
     .. math::
 
        y = 2^{-f}\,\mathrm{clamp}\!\left(
        \left[\,x\,2^{f}\,\right],\; -2^{W},\; 2^{W}-1\right),
 
-    where :math:`[\cdot]` rounds to the nearest integer. The clamp is the only
-    departure from the target, and the backward pass returns the incoming
-    gradient unchanged rather than the derivative of either expression.
+    where :math:`[\cdot]` rounds to the nearest integer. The backward pass
+    returns the incoming gradient unchanged rather than the derivative of this
+    expression.
 
     .. rubric:: Example
 
@@ -120,7 +113,7 @@ class round_fxp(napl_base):
               - **fracwidth**: Number of fractional bits; the default is ``4``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['intwidth', 'fracwidth'])
+        super().__init__(config, ['intwidth', 'fracwidth'], optional_key_list=['polarity'])
 
         #: Number of integer magnitude bits in the signed fixed-point format.
         self.intwidth = config['intwidth']

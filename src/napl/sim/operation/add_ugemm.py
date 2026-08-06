@@ -11,28 +11,15 @@ class add_ugemm(napl_base):
     inputs. Use non-scaled mode for a clipped sum. Both modes accept unipolar
     and bipolar streams and keep accumulation state across timesteps.
 
-    The precise target reductions are
+    The target reductions are
 
     .. math::
 
        y_{\\mathrm{scaled}} = \\frac{1}{n}\\sum_i x_i,\\qquad
        y_{\\mathrm{non-scaled}} = \\min\\left(1,\\sum_i x_i\\right).
 
-    Let ``r_t = sum_i x_{i,t}``, ``n`` be the number of reduced streams, and
-    ``o = (n - 1) / 2`` for bipolar input or ``0`` for unipolar input. The
-    accumulator and output are exactly
-
-    .. math::
-
-       \\tilde a_t = a_{t-1} + r_t,\\qquad
-       \\begin{aligned}
-       \\text{scaled:}\\quad &y_t = \\mathbf{1}\\{\\tilde a_t \\geq n\\},\\quad
-       a_t = \\tilde a_t - n y_t,\\\\
-       \\text{non-scaled:}\\quad &a_t = \\tilde a_t - o,\\quad
-       y_t = \\mathbf{1}\\{a_t > b_{t-1}\\},\\quad b_t = b_{t-1} + y_t.
-       \\end{aligned}
-
-    ``b_t`` is the running count of non-scaled output spikes.
+    The number of reduced streams is taken from the first input and stays fixed
+    until ``reset()``.
 
     .. rubric:: Example
 
@@ -43,6 +30,12 @@ class add_ugemm(napl_base):
 
         adder = add_ugemm({'polarity': 'unipolar', 'scaled': True})
         output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 

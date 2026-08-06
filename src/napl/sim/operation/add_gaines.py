@@ -14,33 +14,17 @@ class add_gaines(napl_base):
     or bipolar streams. Use non-scaled mode for an OR-based approximation to a
     small unipolar sum.
 
-    The precise target reductions are
+    The target reductions are
 
     .. math::
 
        y_{\\mathrm{scaled}} = \\frac{1}{n}\\sum_i x_i,\\qquad
        y_{\\mathrm{non-scaled}} = \\min\\left(1,\\sum_i x_i\\right).
 
-    Scaled addition quantizes the number sequence into an input index rather than
-    comparing a value against it, so a :class:`napl.encode` instance supplies the
-    sequence at construction and is not retained. The selection position is held
-    locally.
-
-    In scaled mode, with ``entry`` inputs and the configured number sequence
-    ``G_t``, the exact selected-input reduction is
-
-    .. math::
-
-       j_t = \\lfloor \\mathit{entry} G_t \\rfloor, \\qquad
-       y_t = x_{j_t,t}.
-
-    In non-scaled mode the exact unipolar reduction is
-
-    .. math::
-
-       y_t = \\max_i x_{i,t}.
-
-    Non-scaled bipolar input is not supported.
+    Scaled mode holds the number sequence used to pick one input stream per
+    timestep, so it needs **entry** and **generator** and accepts a power-of-two
+    input count only. Non-scaled mode is unipolar only, and its output
+    approaches the clipped sum only while the input streams do not overlap.
 
     .. rubric:: Example
 
@@ -57,7 +41,7 @@ class add_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 
@@ -89,20 +73,26 @@ class add_gaines(napl_base):
               - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
+        super().__init__(config, ['polarity', 'scaled'], optional_key_list=['entry', 'generator', 'dim', 'seed', 'taps'], polarity_required=True)
 
         #: Whether addition uses MUX-based averaging instead of an OR reduction.
         self.scaled = config['scaled']
-        assert not (self.polarity == 'bipolar' and not self.scaled), \
-            logger.error('Non-scaled Gaines addition does not support bipolar data.')
+        if self.polarity == 'bipolar' and not self.scaled:
+            message = 'Non-scaled Gaines addition does not support bipolar data.'
+            logger.error(message)
+            raise AssertionError(message)
 
         if self.scaled:
-            assert 'entry' in config and 'generator' in config, \
-                logger.error('Scaled Gaines addition requires <entry> and <generator> in configuration.')
+            if 'entry' not in config or 'generator' not in config:
+                message = 'Scaled Gaines addition requires <entry> and <generator> in configuration.'
+                logger.error(message)
+                raise AssertionError(message)
             #: Number of input streams accepted by the scaled MUX adder.
             self.entry = config['entry']
-            assert math.log2(self.entry) == math.ceil(math.log2(self.entry)), \
-                logger.error(f'Input entry <{self.entry}> is not a power of 2.')
+            if math.log2(self.entry) != math.ceil(math.log2(self.entry)):
+                message = f'Input entry <{self.entry}> is not a power of 2.'
+                logger.error(message)
+                raise AssertionError(message)
             # The encoder supplies the sequence once and is not retained.
             reference_encode = encode({'polarity': 'unipolar',
                                        'timestep': self.entry,
@@ -151,8 +141,10 @@ class add_gaines(napl_base):
             output = adder(torch.tensor([1, 0], dtype=torch.int8), dim=0)
         """
         if self.scaled:
-            assert input.size(dim) == self.entry, \
-                logger.error(f'Input size <{input.size(dim)}> along dim <{dim}> != configured entry <{self.entry}>.')
+            if input.size(dim) != self.entry:
+                message = f'Input size <{input.size(dim)}> along dim <{dim}> != configured entry <{self.entry}>.'
+                logger.error(message)
+                raise AssertionError(message)
             output = input.select(dim, self.sel_seq[self.idx])
             self.idx = (self.idx + 1) % len(self.sel_seq)
         else:

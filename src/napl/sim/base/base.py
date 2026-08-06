@@ -57,21 +57,26 @@ class global_config_check:
     root_path: str = field(default_factory=lambda: _GLOBAL_ROOT_PATH)
     #: YAML file that defines the process-wide spike and non-spike dtypes.
     config_file: str = field(default_factory=lambda: _GLOBAL_CONFIG_FILE)
-    assert os.path.exists(_GLOBAL_CONFIG_FILE), logger.error(
-        f'Global configuration file <{_GLOBAL_CONFIG_FILE}> does not exist.'
-    )
+    if not os.path.exists(_GLOBAL_CONFIG_FILE):
+        message = f'Global configuration file <{_GLOBAL_CONFIG_FILE}> does not exist.'
+        logger.error(message)
+        raise AssertionError(message)
     #: Parsed contents of :attr:`config_file`.
     config = read_yaml(_GLOBAL_CONFIG_FILE)
 
     #: PyTorch dtype used for spike tensors.
     stype = torch_dtype_map.get(config['global_config']['spike_type'], None)
-    assert stype in [torch.float, torch.bfloat16, torch.int8], \
-        logger.error(f'Invalid spike type: <{stype}>; legal types: [torch.float, torch.bfloat16, torch.int8].')
+    if stype not in [torch.float, torch.bfloat16, torch.int8]:
+        message = f'Invalid spike type: <{stype}>; legal types: [torch.float, torch.bfloat16, torch.int8].'
+        logger.error(message)
+        raise AssertionError(message)
 
     #: PyTorch dtype used for non-spike values and accumulated results.
     ntype = torch_dtype_map.get(config['global_config']['non_spike_type'], None)
-    assert ntype in [torch.float, torch.bfloat16], \
-        logger.error(f'Invalid non-spike type: <{ntype}>; legal types: [torch.float, torch.bfloat16].')
+    if ntype not in [torch.float, torch.bfloat16]:
+        message = f'Invalid non-spike type: <{ntype}>; legal types: [torch.float, torch.bfloat16].'
+        logger.error(message)
+        raise AssertionError(message)
 
 
 global_config = global_config_check()
@@ -183,7 +188,7 @@ class napl_base(torch.nn.Module):
     internal_encode = False
 
 
-    def __init__(self, config: dict={}, key_list: list=[], polarity_required: bool=False):
+    def __init__(self, config: dict={}, key_list: list=[], optional_key_list: list=[], polarity_required: bool=False):
         """Initialize shared configuration, execution state, and hardware metadata.
 
         Args:
@@ -193,6 +198,8 @@ class napl_base(torch.nn.Module):
                 and ``check_name()`` when the caller permits them to be absent.
             key_list: Configuration keys accepted by the subclass. Defaults to
                 an empty list.
+            optional_key_list: Configuration keys the subclass accepts but does
+                not require. Defaults to an empty list.
             polarity_required: Require **polarity** to be present when ``True``.
                 Defaults to ``False``.
 
@@ -205,9 +212,11 @@ class napl_base(torch.nn.Module):
         #: PyTorch dtype used for non-spike values in this module.
         self.ntype = global_config.ntype
 
-        if polarity_required is True:
-            assert 'polarity' in config, logger.error('Missing key <polarity> in the input configuration.')
-        check_config(config, key_list)
+        if polarity_required is True and 'polarity' not in config:
+            message = 'Missing key <polarity> in the input configuration.'
+            logger.error(message)
+            raise AssertionError(message)
+        check_config(config, key_list, optional_key_list)
         #: Stream encoding, either ``"unipolar"``, ``"bipolar"``, or ``None``.
         self.polarity = check_polarity(config)
         #: User-facing module label derived from the configuration.
@@ -338,11 +347,23 @@ class napl_base(torch.nn.Module):
 
 
 def napl_sim_timesteps(timestep_func):
-    """Repeat a NAPL method or free function for a requested number of timesteps."""
+    """Repeat a NAPL method or free function for a requested number of timesteps.
+
+    Args:
+        timestep_func: Callable that advances one timestep per invocation.
+
+    Returns:
+        A wrapper accepting the same arguments plus two keyword-only entries:
+        **timesteps**, the required number of repetitions, and **verbose**,
+        which logs the run when ``True`` and defaults to ``False``. The wrapper
+        returns the value produced by the final repetition.
+    """
     @wraps(timestep_func)
     def timesteps_wrapper(*args, **kwargs):
-        assert 'timesteps' in kwargs, \
-            logger.error('Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.')
+        if 'timesteps' not in kwargs:
+            message = 'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.'
+            logger.error(message)
+            raise AssertionError(message)
 
         timesteps = kwargs.pop('timesteps', 256)
         verbose = kwargs.pop('verbose', False)

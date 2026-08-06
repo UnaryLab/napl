@@ -8,28 +8,15 @@ class min_rc(napl_base):
     r"""
     Select the minimum of two rate-coded streams and track its source.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \min(p_0,p_1).
 
-    Let (u_t,v_t) = sync_skewed(input_0,input_1), q_{-1}=0, and q be the
-    internal selection state. The output uses the previous state and the
-    returned index is 1-q_t:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= x_{1,t}+q_{t-1}(x_{0,t}-x_{1,t}),\\
-       q_t &=
-       \begin{cases}
-       v_t, & u_t\ne v_t,\\
-       q_{t-1}, & u_t=v_t.
-       \end{cases}
-       \end{aligned}
-
-    The returned index is one for input_0 and zero for input_1.
+    Alongside the selected stream, the call returns the running argmin index,
+    where ``1`` denotes ``input_0`` and ``0`` denotes ``input_1``. Before any
+    stream difference is observed, the returned index is ``1``.
 
     .. rubric:: Example
 
@@ -58,7 +45,7 @@ class min_rc(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Previous selection decision used to route the synchronized minimum stream.
         self.index: torch.Tensor

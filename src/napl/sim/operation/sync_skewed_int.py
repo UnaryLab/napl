@@ -8,21 +8,9 @@ class sync_skewed_int(napl_base):
     r"""
     Synchronize streams with an integral stochastic output.
 
-    Let x_1 be the current first-stream digit, x_2 the release spike,
-    c_{-1}=0, and M = 2**width-1. The exact update is
-
-    .. math::
-
-       \begin{aligned}
-       \tilde c_t &= c_{t-1}+x_{1,t},\\
-       y_{1,t} &= \mathbf{1}\{x_{2,t}=1\}
-       \operatorname{clip}(\tilde c_t,0,M),\\
-       c_t &= \operatorname{clip}(\tilde c_t-y_{1,t},0,M),\qquad
-       y_{2,t}=x_{2,t}.
-       \end{aligned}
-
-    The first stream accumulates until a release spike arrives, and the
-    second stream passes through unchanged.
+    The first stream accumulates until the second stream spikes, which releases
+    the accumulated count as one integer digit bounded by
+    :math:`2^{width}-1`. The second stream passes through unchanged.
 
     .. rubric:: Example
 
@@ -39,7 +27,7 @@ class sync_skewed_int(napl_base):
 
         .. rubric:: References
 
-        *VLSI Implementation of Deep Neural Network Using Integral Stochastic Computing*, TVLSI, 2017.
+        *VLSI Implementation of Deep Neural Network Using Integral Stochastic Computing*, IEEE Transactions on Very Large Scale Integration (VLSI) Systems, 2017.
     """
 
 
@@ -61,18 +49,21 @@ class sync_skewed_int(napl_base):
               - **width**: Counter width in bits, giving a maximum output digit of ``2**width - 1`` that must fit the configured integer spike dtype; the default is ``4``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the stored integer stream-skew counter in bits.
         self.width = config['width']
         #: Largest accumulated first-stream count retained by the synchronizer.
         self.cnt_max = 2**self.width - 1
         if not self.stype.is_floating_point and not self.stype.is_complex and self.stype != torch.bool:
-            assert self.cnt_max <= torch.iinfo(self.stype).max, logger.error(
-                f'sync_skewed_int width <{self.width}> requires digit maximum '
-                f'<{self.cnt_max}>, which exceeds spike dtype <{self.stype}> '
-                f'maximum <{torch.iinfo(self.stype).max}>.'
-            )
+            if self.cnt_max > torch.iinfo(self.stype).max:
+                message = (
+                    f'sync_skewed_int width <{self.width}> requires digit maximum '
+                    f'<{self.cnt_max}>, which exceeds spike dtype <{self.stype}> '
+                    f'maximum <{torch.iinfo(self.stype).max}>.'
+                )
+                logger.error(message)
+                raise AssertionError(message)
         #: Per-element first-stream count awaiting release by the second stream.
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))

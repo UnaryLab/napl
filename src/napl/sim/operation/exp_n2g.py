@@ -7,21 +7,15 @@ class exp_n2g(napl_base):
     r"""
     Compute a bipolar-input exponential with a saturating counter.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
-       y = \exp(-2Gx).
+       y = \exp(-2Gx),
 
-    Let N = 2**depth, G = gain, M = N-1, and H = N-G. With a_0 = N/2,
-    the output uses the pre-update counter state:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= \mathbf{1}\{a_t < H\},\\
-       a_{t+1} &= \operatorname{clip}(a_t+2x_t-1,0,M).
-       \end{aligned}
+    with G = ``gain``. A saturating state counter of ``2**depth`` states
+    approximates that target, and the approximation error shrinks as
+    **depth** grows.
 
     The input is bipolar 0/1 rate-coded and the output is a unipolar 0/1
     rate-coded stream.
@@ -40,7 +34,7 @@ class exp_n2g(napl_base):
 
         .. rubric:: References
 
-        B. D. Brown and H. C. Card, *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
+        *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
     """
 
 
@@ -64,7 +58,7 @@ class exp_n2g(napl_base):
               - **gain**: Exponential gain and number of upper counter states that emit zero; the default is ``1``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity', 'gain'], polarity_required=False)
 
         #: Saturating state-counter width in bits.
         self.depth = config['depth']

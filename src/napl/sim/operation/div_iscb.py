@@ -12,26 +12,15 @@ class div_iscb(napl_base):
     and bipolar conversion stages should handle the complete division path. It
     supports both unipolar and bipolar input streams.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \frac{x}{d}.
 
-    Let S = sync_skewed, C = div_cordiv, A = signabs, B = bi2uni, and
-    U = uni2bi. The composed paths are
-
-    .. math::
-
-       \begin{aligned}
-       (x'_t,d'_t) &= S(x_t,d_t), &
-       y_t &= C(x'_t,d'_t) && (\text{unipolar}),\\
-       (s_x,m_x) &= A(x_t), &
-       (s_d,m_d) &= A(d_t),\\
-       y_t &= s_x \oplus s_d \oplus
-       U\!\left(C\!\left(S(B(m_x),B(m_d))\right)\right)
-       && (\text{bipolar}).
-       \end{aligned}
+    Unlike :class:`napl.div_cordiv`, this divider correlates the streams itself,
+    so the inputs need no prior synchronization. A bipolar quotient is formed
+    from the magnitudes of the two streams and the sign of their product.
 
     .. rubric:: Example
 
@@ -50,7 +39,7 @@ class div_iscb(napl_base):
 
         *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 

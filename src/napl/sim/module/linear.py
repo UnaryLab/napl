@@ -1,7 +1,8 @@
 import torch
-import math
 
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation import add_any
+from napl.sim.operation.encode import encode
 from loguru import logger
 
 
@@ -9,36 +10,17 @@ class linear(napl_base):
     r"""Apply a rate-coded unary fully connected layer one timestep at a time.
 
     Use this layer when inputs are already spike tensors and weights should be
-    encoded on a separate number-sequence dimension. It computes ``W x + b`` bit by bit.
-    Each timestep the weights (and bias) are encoded into spikes on a distinct RNG
-    dimension from the input (so the operand streams are decorrelated), multiplied with
-    the incoming input spikes (XNOR for bipolar, AND for unipolar), and the partial
-    products are summed by a scaled unary adder. The decoded output value is the inner
-    product divided by ``scale``, which defaults to
-    ``in_features + has_bias``, so it represents ``(W x + b) / scale`` within
-    the unary range.
-
-    The precise target is the scaled affine map
+    encoded on a separate number-sequence dimension. It computes the scaled
+    affine map one timestep at a time, over unipolar or bipolar rate-coded
+    streams,
 
     .. math::
 
-       y = \frac{Wx + b}{s}.
+       y = \frac{Wx + b}{s},
 
-    Let :math:`x_t` be the input spike vector, :math:`w_t` the weight spikes
-    encoded on the separate RNG dimension, :math:`b_t` the bias spike, and
-    :math:`n` the fan-in. The layer forms the per-timestep parallel count
-
-    .. math::
-
-       c_t = \begin{cases}
-       x_t w_t^{\top} + b_t, & \text{unipolar},\\
-       2 x_t w_t^{\top} - \sum_j x_{j,t} - \sum_j w_{j,t} + n + b_t,
-       & \text{bipolar},
-       \end{cases}
-
-    and emits :math:`y_t = \mathrm{add\_any}(c_t;\, s)`, the scaled unary adder
-    with **scale** :math:`s`. The output rate approaches the target within the
-    stochastic-computing error of the encoded operand streams.
+    with **scale** :math:`s` defaulting to ``in_features + has_bias``. The
+    output rate reaches that target within the stochastic-computing error of the
+    encoded operand streams.
 
     .. rubric:: Example
 
@@ -51,9 +33,11 @@ class linear(napl_base):
                        "timestep": 4, "generator": "sobol"})
         output_spike = layer(torch.ones(1, 2))
 
-    References
-    ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -72,31 +56,28 @@ class linear(napl_base):
         ):
         """Construct the streaming layer from external numeric parameters.
 
-        Args:
-            weight: Numeric tensor shaped ``(out_features, in_features)``.
-            bias: Optional numeric tensor shaped ``(out_features,)``. Defaults
-                to ``None``.
-            config: Configuration mapping with these keys:
+        .. container:: api-parameter-list
 
-                * **polarity** - ``"unipolar"`` or ``"bipolar"``. Defaults to
-                  ``"bipolar"``.
-                * **timestep** - Weight-encoder stream length. Defaults to ``256``.
-                * **generator** - Number-sequence generator. Defaults to
-                  ``"sobol"``.
-                * **dim** - One-based weight Sobol dimension. Defaults to ``2``;
-                  bias uses the next dimension.
-                * **scale** - Output scaling divisor. ``None`` uses
-                  ``in_features + has_bias``. Defaults to ``None``.
-                * **width** - Signed accumulator width. Defaults to ``12`` and
-                  must satisfy ``2 ** (width - 1) > in_features + has_bias``.
-                * **name** - Optional instance label. Defaults to ``None``.
+            **Parameters:**
+
+            - **weight** – Numeric tensor shaped ``(out_features, in_features)``.
+            - **bias** – Optional numeric tensor shaped ``(out_features,)``; the default is ``None``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Weight-encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **dim**: One-based weight Sobol dimension, with the bias on the next dimension; the default is ``2``.
+              - **scale**: Output scaling divisor, where ``None`` uses ``in_features + has_bias``; the default is ``None``.
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > in_features + has_bias``; the default is ``12``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # These imports stay local to avoid the module-operation import cycle.
-        from napl.sim.operation import add_any
-        from napl.sim.operation.encode import encode
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
 
-        assert weight.dim() == 2, logger.error(f'linear weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.')
+        if weight.dim() != 2:
+            message = f'linear weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Trainable numeric weight encoded into a spike stream.
         self.weight = torch.nn.Parameter(weight)
         #: Optional trainable numeric bias encoded on its own sequence.
@@ -113,11 +94,16 @@ class linear(napl_base):
         #: Divisor implemented by the streaming unary adder.
         self.scale = self.entry if scale is None else scale
 
+        #: Signed accumulator width used by the streaming unary adder.
+        self.width = config.get('width', 12)
         # The signed accumulator range must contain every per-step partial sum.
-        width = config.get('width', 12)
-        assert 2 ** (width - 1) > self.entry, logger.error(
-            f'linear accumulator width <{width}> too small for fan-in <{self.entry}>: '
-            f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
+        if 2 ** (self.width - 1) <= self.entry:
+            message = (
+                f'linear accumulator width <{self.width}> too small for fan-in <{self.entry}>: '
+                f'2**(width-1) must be > entry or partial sums saturate. Increase width.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
 
         dim = config.get('dim', 2)
         # Only Sobol-family generators decorrelate input and weight streams by dimension.
@@ -131,12 +117,16 @@ class linear(napl_base):
         self.w_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                   'generator': config['generator'], 'dim': dim})
         #: Streaming unary adder that reduces each linear product count.
-        self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': config.get('width', 12)})
+        self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': self.width})
 
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
             self.b_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                       'generator': config['generator'], 'dim': dim + 1})
+
+        # Encoders and the unary adder are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming layer.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}

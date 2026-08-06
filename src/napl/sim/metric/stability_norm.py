@@ -67,35 +67,21 @@ class stability_norm(napl_base):
     the source value and current stream length. Use it to compare streams whose
     encoded values have different best-case convergence behavior.
 
-    The precise target divides observed stability :math:`S_T` by the best
-    stability any stream of the same length can reach for the same source value
-    and threshold,
+    The target divides observed stability :math:`S_T` by the best stability
+    :math:`S^{\max}_T` any stream of the same length can reach for the same
+    source value and threshold,
 
     .. math::
 
        N_T = \frac{S_T}{S^{\max}_T}.
 
-    Let :math:`p` be the encoded probability of the source, :math:`\theta` the
-    threshold, and :math:`\theta' = \theta/2` for bipolar or :math:`\theta` for
-    unipolar input. The metric estimates :math:`S^{\max}_T` on the power-of-two
-    grid :math:`L = 2^{\lceil \log_2 T \rceil}` by searching the admissible
-    probability band for the segmented-uniform stream with the shortest unstable
-    prefix :math:`\ell`, then evaluates
+    The maximum is approximated over segmented-uniform streams only, using the
+    shortest unstable prefix :math:`\ell` among those whose rate stays within
+    the threshold band around the encoded source probability,
 
     .. math::
 
-       \ell = \mathrm{search}\!\left(
-       \lfloor L\,\max(p-\theta',0)\rfloor,\;
-       \lceil L\,\min(p+\theta',1)\rceil,\; L,\;
-       \lfloor 2\theta L + 1 \rfloor\right),
-
-    .. math::
-
-       S^{\max}_T = \max\left(1 - \frac{\ell}{T},\, 0\right),\qquad
-       N_T = \mathrm{clamp}\left(\frac{S_T}{S^{\max}_T},\, 0,\, 1\right),
-
-    with a ``nan`` ratio mapped to ``0``. The result is an estimate because the
-    search covers segmented-uniform streams only.
+       S^{\max}_T \approx \max\left(1 - \frac{\ell}{T},\, 0\right).
 
     .. rubric:: Example
 
@@ -257,7 +243,10 @@ class stability_norm(napl_base):
 
             value, result = metric.analyze()
         """
-        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
+        if not self.valid:
+            message = 'Metric is not valid. Please call forward() before analyze().'
+            logger.error(message)
+            raise AssertionError(message)
         stability_norm = self.stability_norm
         result = analyze(
             stability_norm,

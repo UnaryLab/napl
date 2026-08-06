@@ -11,30 +11,17 @@ class signabs(napl_base):
     need a magnitude stream plus a sign stream. A sign bit of ``0`` denotes
     non-negative and ``1`` denotes negative.
 
-    The precise target splits a bipolar value :math:`v` into its sign and
-    magnitude, so that the returned streams decode to
+    The target splits a bipolar value :math:`v` into its sign and magnitude, so
+    that the returned streams decode to
 
     .. math::
 
        \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
        \mathrm{magnitude} = |v|.
 
-    The sign is not known in advance, so the kernel estimates it from a running
-    saturating counter of width :math:`w`. With :math:`s_t` the input spike,
-
-    .. math::
-
-       a_t = \mathrm{clamp}\!\left(a_{t-1} + 2 s_t - 1,\; 0,\; 2^{w}-1\right),
-       \qquad a_0 = 2^{w-1},
-
-    .. math::
-
-       \mathrm{sign}_t = \mathbf{1}\{a_t < 2^{w-1}\},\qquad
-       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus s_t.
-
-    The counter integrates :math:`\pm 1` per timestep, so its position relative
-    to mid-range tracks the sign of the input rate; the estimate is wrong while
-    the counter is still settling and near :math:`v = 0`.
+    The sign is not known in advance, so a saturating counter of **width** bits
+    estimates it online from the input stream. The estimate is wrong while the
+    counter is still settling and near :math:`v = 0`.
 
     .. rubric:: Example
 
@@ -45,6 +32,12 @@ class signabs(napl_base):
 
         operation = signabs({'width': 3})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -66,7 +59,7 @@ class signabs(napl_base):
               - **width**: Saturating-counter bit width; the default is ``3``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']

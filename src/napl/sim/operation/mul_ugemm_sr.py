@@ -10,32 +10,16 @@ class mul_ugemm_sr(napl_base):
     Multiply unary streams with shift-register decorrelation.
 
     Use this streaming multiplier when the operand streams may be correlated.
-    It stores recent ``input_1`` spikes, samples their population with a number
-    sequence, and gates that sample with ``input_0``.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        p_y = p_0p_1 \quad (\text{unipolar}),\qquad
        v_y = v_0v_1 \quad (\text{bipolar}).
 
-    Let ``C_t`` be the number of one-spikes in the ``2**width``-entry register,
-    and let ``R_t^+`` and ``R_t^-`` be the current entries of the direct and
-    inverse ``floor(2**width * gen_num_seq)`` sequences. The threshold samples
-    and output are
-
-    .. math::
-
-       s_t^+ = \mathbf{1}\{C_t > R_t^+\}, \qquad
-       s_t^- = \mathbf{1}\{C_t \leq R_t^-\},\qquad
-       y_t = \begin{cases}
-       x_{0,t} s_t^+, & \text{unipolar},\\
-       x_{0,t} s_t^+ + (1-x_{0,t})s_t^-, & \text{bipolar}.
-       \end{cases}
-
-    After the output, the oldest register row is replaced by ``input_1`` and
-    ``C_t`` is updated by the inserted and removed spikes.
+    The product is sampled from a finite spike history, so the output rate
+    approximates the target rather than matching it exactly.
 
     .. rubric:: Example
 
@@ -48,6 +32,14 @@ class mul_ugemm_sr(napl_base):
                                  'generator': 'sobol'})
         output = multiply(torch.tensor([1], dtype=torch.int8),
                           torch.tensor([1], dtype=torch.int8))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+
+        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro, 2021.
     """
     #: Encoding advances conditionally on data, so the RTL counterpart holds
     #: its own encoder instead of sharing an external one.
@@ -78,14 +70,15 @@ class mul_ugemm_sr(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(
-            config, ['polarity', 'width', 'generator'], polarity_required=True
+            config, ['polarity', 'width', 'generator'], optional_key_list=['dim'], polarity_required=True
         )
 
         #: Address width of the random sequence and shift register.
         self.width = config['width']
-        assert isinstance(self.width, int) and self.width > 0, logger.error(
-            f'Invalid width: <{self.width}>; legal values: a positive integer.'
-        )
+        if not isinstance(self.width, int) or self.width <= 0:
+            message = f'Invalid width: <{self.width}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Number of random-sequence values and shift-register entries.
         self.depth = 2**self.width
 

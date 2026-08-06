@@ -35,17 +35,17 @@ reference for the math). **Python-only**: the `imp/` RTL tree is untouched.
 ## Gap analysis (UnarySim main -> napl)
 
 Already present (no work): FSUMul->mul_gaines/mul_ugemm, FSUAdd->add_any, FSUDiv/CORDIV->div_*,
-FSUReLU->relu_*, FSUSqrt->sqrt_*, FSUSignAbs->signabs, FSUHardsigmoid->sigmoid_hard,
+FSUReLU->relu_*, FSUSqrt->sqrt_*, FSUAbs+FSUSign->signabs, FSUHardsigmoid->sigmoid_hard,
 FSUHardtanh->tanh_hard, JKFF/ShiftReg/Bi2Uni/Uni2Bi/SkewedSync, ProgError->metric/accuracy,
-RNG/BinGen/BSGen/RawScale folded into encoder/decoder/gen_num_seq.
+RNG/SourceGen/BSGen/RawScale folded into encoder/decoder/gen_num_seq.
 
 To port:
 - **Metrics:** Correlation -> metric/correlation.py; Stability -> metric/stability.py
 - **Round primitive:** Round/RoundSTE -> operation/round_fxp.py (round_ste, round_fxp)
 - **Linear:** FSULinear(+PC) -> linear; HUB/FXP/TLUT -> linear_hub/_fxp/_tlut
 - **Conv:** FSUConv2d(+PC) -> conv; HUB/FXP/TLUT -> conv_hub/_fxp/_tlut
-- **RNN:** FSUMGUCell -> mgu; HUBMGUCell/HardMGUCell/HardMGUCellFXP -> mgu_hub/_hard/_hardfxp
-- **Activations (binary):** HUBReLU/HUBHardsigmoid/HUBHardtanh -> *_hub
+- **RNN:** FSUMGUCell -> mgu; HUBMGUCell/HardMGUCell/HardMGUCellFxp -> mgu_hub/_hard/_hardfxp
+- **Activations (binary):** ScaleReLU/ScaleHardsigmoid/ScaleHardtanh -> *_hub
 - **utils helpers:** conv2d padding/shape, num2tuple, rshift_offset, truncated_normal,
   NN_SC_Weight_Clipper, float-shift shims (pow2_lshift/pow2_rshift)
 

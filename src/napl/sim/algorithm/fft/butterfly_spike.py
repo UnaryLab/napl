@@ -1,8 +1,9 @@
 import torch
 
-from napl.sim.base import napl_base, napl_sim_timesteps
+from napl.sim.base import napl_base, hw_params
 from napl.sim.operation import add_any, decode, encode, mul_ugemm
 from napl.sim.metric import accuracy
+from loguru import logger
 
 
 class butterfly_spike(napl_base):
@@ -12,35 +13,28 @@ class butterfly_spike(napl_base):
     Use this class for a progressively decoded unary FFT stage. Use
     :class:`butterfly_binary` when an exact binary-domain reference is needed.
 
-    The precise target is the radix-2 decimation-in-time butterfly on complex
-    inputs :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
+    The target is the radix-2 decimation-in-time butterfly on complex inputs
+    :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
 
     .. math::
 
        y_0 = x_0 + w x_1,\qquad y_1 = x_0 - w x_1.
 
-    Every operand is encoded into a bipolar spike stream and the four real
-    products of the twiddle multiply are formed by ``mul_ugemm`` on stacked lanes,
+    Operands are encoded into bipolar spike streams and the outputs are read
+    from a progressive decoder, so the returned values approximate the target
+    divided by the adder scale from ``add_config``, within the
+    stochastic-computing error of the encoded streams,
 
     .. math::
 
-       t_{r,t} = (w_r x_{1r})_t - (w_i x_{1i})_t,\qquad
-       t_{i,t} = (w_r x_{1i})_t + (w_i x_{1r})_t,
+       \hat y_0 \approx \frac{x_0 + w x_1}{\mathit{scale}},\qquad
+       \hat y_1 \approx \frac{x_0 - w x_1}{\mathit{scale}}.
 
-    where a subtraction is the complemented spike stream and the constant it
-    introduces is absorbed by the per-lane bias term. Each output lane is then
-    the scaled unary sum of three streams,
+    Only bipolar encoding is supported, because :math:`y_1 = x_0 - w x_1` is
+    negative for positive operands and a unipolar stream cannot represent that.
 
-    .. math::
-
-       y_{0,t} = \mathrm{add\_any}\!\left(x_{0,t} + t_t + \beta_0;\;
-       e = 3\right),\qquad
-       y_{1,t} = \mathrm{add\_any}\!\left(x_{0,t} - t_t + \beta_1;\;
-       e = 3\right),
-
-    and the result is read from the progressive decoder. The output therefore
-    represents the target divided by the adder scale, within the
-    stochastic-computing error of the encoded streams.
+    The ports carry numeric values rather than spike streams, since the class
+    encodes its inputs and decodes its outputs internally.
 
     .. rubric:: Example
 
@@ -53,7 +47,8 @@ class butterfly_spike(napl_base):
         adder = {'polarity': 'bipolar', 'scale': 3, 'width': 3}
         operation = butterfly_spike(codec, codec, adder, {'polarity': 'bipolar'})
         inputs = tuple(torch.zeros(1) for _ in range(6))
-        y0r, y0i, y1r, y1i = operation(*inputs, timesteps=4)
+        for _ in range(4):
+            y0r, y0i, y1r, y1i = operation(*inputs)
     """
 
 
@@ -76,8 +71,8 @@ class butterfly_spike(napl_base):
 
             - **codec_config** – Shared encoder and decoder configuration.
 
-              - **polarity**: Required stream encoding, either ``"unipolar"``
-                or ``"bipolar"``.
+              - **polarity**: Required stream encoding, which must be
+                ``"bipolar"``.
               - **timestep**: Required positive maximum decoder run length.
               - **generator**: Required encoder number-sequence generator. The
                 accepted values are ``"sobol"``, ``"lfsr"``, ``"sys"``,
@@ -89,8 +84,8 @@ class butterfly_spike(napl_base):
 
             - **mul_config** – Conditional-spike multiplier configuration.
 
-              - **polarity**: Required stream encoding, either ``"unipolar"``
-                or ``"bipolar"``.
+              - **polarity**: Required stream encoding, which must be
+                ``"bipolar"``.
               - **timestep**: Required positive sequence length basis.
               - **generator**: Required number-sequence generator, with the same
                 accepted values as ``codec_config``.
@@ -98,19 +93,26 @@ class butterfly_spike(napl_base):
 
             - **add_config** – Scaled-adder configuration.
 
-              - **polarity**: Required stream encoding, either ``"unipolar"``
-                or ``"bipolar"``.
+              - **polarity**: Required stream encoding, which must be
+                ``"bipolar"``.
               - **scale**: Required output carry scale.
               - **width**: Required signed accumulator width in bits.
               - **name**: Optional component label; the default is ``None``.
 
             - **acc_config** – Output accuracy-metric configuration.
 
-              - **polarity**: Required stream encoding, either ``"unipolar"``
-                or ``"bipolar"``.
+              - **polarity**: Required stream encoding, which must be
+                ``"bipolar"``.
               - **name**: Optional metric label; the default is ``None``.
         """
-        super().__init__()
+        super().__init__(codec_config, ['polarity', 'timestep', 'generator'],
+                         optional_key_list=['width', 'dim', 'seed', 'taps'], polarity_required=True)
+        # y1 = x0 - w x1 is negative for positive operands, which a unipolar stream
+        # cannot represent, so the subtraction path requires bipolar encoding.
+        if self.polarity != 'bipolar':
+            message = f'Invalid polarity: <{self.polarity}>; legal values: <[\'bipolar\']>.'
+            logger.error(message)
+            raise AssertionError(message)
 
         # Four batched lanes share a per-step threshold and keep elementwise child state.
         #: Encoder that converts the four stacked complex-input components into spikes.
@@ -124,11 +126,35 @@ class butterfly_spike(napl_base):
         #: Scaled unary adder that combines each input with its twiddle term.
         self.add_y = add_any(add_config)
 
-        # Cached stacks are valid only for the same tensor identity, version, and shape.
-        self._stack_cache = None
+        # Stacks derived from the inputs; buffers so they follow the module device.
+        #: Stacked complex input components fed to the encoder.
+        self.x_stack: torch.Tensor
+        self.register_buffer('x_stack', None, persistent=False)
+        #: Stacked twiddle components fed to the multiplier.
+        self.w_stack: torch.Tensor
+        self.register_buffer('w_stack', None, persistent=False)
+        #: Per-lane sign that turns a subtraction into a complemented stream.
+        self.sign: torch.Tensor
+        self.register_buffer('sign', None, persistent=False)
+        #: Bias absorbing the complement constant on the first output lane.
+        self.bias0: torch.Tensor
+        self.register_buffer('bias0', None, persistent=False)
+        #: Bias absorbing the complement constant on the second output lane.
+        self.bias1: torch.Tensor
+        self.register_buffer('bias1', None, persistent=False)
+        #: Leading batch size the cached stacks were built for.
+        self.batch = None
+        # The cache is valid only while the same input tensors hold the same versions.
+        self._stack_inputs = None
 
+        # Encoding, multiplication, and addition are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming butterfly.
+        self.hw = hw_params(pp_delay=0)
+
+        #: Empty, since the numeric ports carry no stream encoding.
         self.encoding_io = {}
-        self.polarity_io = {port: self.encoder_x.polarity for port in
+        #: Value range of all ten numeric ports, which share the class polarity.
+        self.polarity_io = {port: self.polarity for port in
                             ('x0r', 'x0i', 'x1r', 'x1i', 'wr', 'wi', 'y0r', 'y0i', 'y1r', 'y1i')}
         self.correlation_i = {}
         self.stability_flux = 1.0
@@ -141,17 +167,21 @@ class butterfly_spike(napl_base):
         The inherited reset method also resets the timestep and every child NAPL
         module before calling this hook. This hook returns ``None``.
         """
-        self._stack_cache = None
+        self.x_stack = None
+        self.w_stack = None
+        self.sign = None
+        self.bias0 = None
+        self.bias1 = None
+        self.batch = None
+        self._stack_inputs = None
 
 
-    @napl_sim_timesteps
     def forward(self, x0r, x0i, x1r, x1i, wr, wi):
         """
-        Simulate the configured butterfly for multiple spike timesteps.
+        Process one spike timestep of the configured butterfly.
 
         The six tensors must be broadcast-compatible and have at least one
-        dimension. Call the module with the required keyword-only simulation
-        control ``timesteps``.
+        dimension. Call the module once per timestep of the run.
 
         Args:
             x0r: Real part of the first complex input.
@@ -165,16 +195,17 @@ class butterfly_spike(napl_base):
             A tuple ``(y0r, y0i, y1r, y1i)`` of progressively decoded tensors,
             each with the broadcast input shape.
 
-        Each internal timestep advances the child encoder, multiplier, adder,
-        decoder, and accuracy metric. One outer module call increments this
-        module's timestep once. The inputs themselves are not modified.
+        The call advances the child encoder, multiplier, adder, decoder, and
+        accuracy metric, and increments this module's timestep once. The inputs
+        themselves are not modified.
 
         **Example:**
 
         .. code-block:: python
 
             operation.reset()
-            outputs = operation(*inputs, timesteps=4)
+            for _ in range(4):
+                outputs = operation(*inputs)
         """
         x_stack, w_stack, sign, bias0, bias1, b = self._stacks(x0r, x0i, x1r, x1i, wr, wi)
 
@@ -200,17 +231,28 @@ class butterfly_spike(napl_base):
 
 
     def _stacks(self, x0r, x0i, x1r, x1i, wr, wi):
-        key = tuple((t.data_ptr(), t._version, t.shape) for t in (x0r, x0i, x1r, x1i, wr, wi))
-        if self._stack_cache is not None and self._stack_cache[0] == key:
-            return self._stack_cache[1:]
+        """Build, or reuse, the stacked operands and per-lane constants.
+
+        The cached stacks are returned while the same input tensor objects carry
+        the same versions, and are rebuilt otherwise. The cache holds references
+        to the inputs and compares them by object identity.
+        """
+        inputs = (x0r, x0i, x1r, x1i, wr, wi)
+        if self._stack_inputs is not None:
+            cached, versions = self._stack_inputs
+            if all(a is b for a, b in zip(cached, inputs)) \
+                    and all(t._version == v for t, v in zip(inputs, versions)):
+                return self.x_stack, self.w_stack, self.sign, self.bias0, self.bias1, self.batch
         shape = torch.broadcast_shapes(x0r.shape, x0i.shape, x1r.shape, x1i.shape, wr.shape, wi.shape)
-        x0r, x0i, x1r, x1i, wr, wi = (t.expand(shape) for t in (x0r, x0i, x1r, x1i, wr, wi))
-        x_stack = torch.cat([x0r, x0i, x1r, x1i], 0)
-        w_stack = torch.cat([wr, wr, wi, wi], 0)
+        x0r, x0i, x1r, x1i, wr, wi = (t.expand(shape) for t in inputs)
+        self.x_stack = torch.cat([x0r, x0i, x1r, x1i], 0)
+        self.w_stack = torch.cat([wr, wr, wi, wi], 0)
         b = shape[0]
         tail = (1,) * (len(shape) - 1)
-        sign = torch.cat([torch.full((b,) + tail, -1), torch.full((b,) + tail, 1)]).type(self.stype).to(x_stack.device)
-        bias0 = sign.eq(-1).type(self.stype)
-        bias1 = torch.cat([bias0.narrow(0, 0, b), bias0.narrow(0, 0, b) + 1])
-        self._stack_cache = (key, x_stack, w_stack, sign, bias0, bias1, b)
-        return x_stack, w_stack, sign, bias0, bias1, b
+        self.sign = torch.cat([torch.full((b,) + tail, -1),
+                               torch.full((b,) + tail, 1)]).type(self.stype).to(self.x_stack.device)
+        self.bias0 = self.sign.eq(-1).type(self.stype)
+        self.bias1 = torch.cat([self.bias0.narrow(0, 0, b), self.bias0.narrow(0, 0, b) + 1])
+        self.batch = b
+        self._stack_inputs = (inputs, tuple(t._version for t in inputs))
+        return self.x_stack, self.w_stack, self.sign, self.bias0, self.bias1, self.batch

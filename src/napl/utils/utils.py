@@ -108,7 +108,10 @@ def check_type(input, type):
     """
     check whether input is the required type
     """
-    assert isinstance(input, type), logger.error('Invalid input type')
+    if not isinstance(input, type):
+        message = 'Invalid input type'
+        logger.error(message)
+        raise AssertionError(message)
 
 
 def check_file_list(file_list: list):
@@ -116,7 +119,10 @@ def check_file_list(file_list: list):
     check whether all files in the list exist
     """
     for file in file_list:
-        assert os.path.exists(file), logger.error('No file: ' + file)
+        if not os.path.exists(file):
+            message = 'No file: ' + file
+            logger.error(message)
+            raise AssertionError(message)
 
 
 def clean_file_list(file_list: list):
@@ -259,7 +265,10 @@ def get_input_tuple(input, size=2):
         times.
     """
     if isinstance(input, tuple):
-        assert len(input) == size, logger.error('Invalid input size: ' + str(len(input)) + '!=' + str(size))
+        if len(input) != size:
+            message = 'Invalid input size: ' + str(len(input)) + '!=' + str(size)
+            logger.error(message)
+            raise AssertionError(message)
         return input
     else:
         output = (input, ) * size
@@ -277,7 +286,10 @@ def get_path(path):
     """
     path = os.path.abspath(path)
     path = os.path.realpath(path)
-    assert os.path.exists(path), logger.error('Invalid path: ' + path)
+    if not os.path.exists(path):
+        message = 'Invalid path: ' + path
+        logger.error(message)
+        raise AssertionError(message)
     return path
 
 
@@ -356,7 +368,10 @@ def check_yaml_header(input_dict: OrderedDict, header: str, yaml_path: str):
     Returns:
         ``None``.
     """
-    assert header in input_dict.keys(), logger.error(f'Missing header <{header}> in .{header}.yaml at <{yaml_path}>.')
+    if header not in input_dict.keys():
+        message = f'Missing header <{header}> in .{header}.yaml at <{yaml_path}>.'
+        logger.error(message)
+        raise AssertionError(message)
 
 
 def check_yaml_cfg(input_dict: OrderedDict, key: str, yaml_path: str):
@@ -370,7 +385,10 @@ def check_yaml_cfg(input_dict: OrderedDict, key: str, yaml_path: str):
     Returns:
         ``None``.
     """
-    assert key in input_dict.keys(), logger.error(f'Missing key <{key}> in the configuration at <{yaml_path}>.')
+    if key not in input_dict.keys():
+        message = f'Missing key <{key}> in the configuration at <{yaml_path}>.'
+        logger.error(message)
+        raise AssertionError(message)
 
 
 def call_func_from_yaml(yaml_path: str=None, header: str=None, func_name: str=None, py_path: str=None, **kwargs):
@@ -432,12 +450,24 @@ def call_func_from_cfg(cfg: dict, header: str, func_name: str, py_path: str, **k
     return module_py.create(cfg, **kwargs)
 
 
-def check_config(config: dict, key_list: list):
+def check_config(config: dict, key_list: list, optional_key_list: list = []):
     """
     Check if all key in the key_list exists in the config.
+
+    Keys in the optional_key_list may be absent; any other key is rejected.
     """
     for key in key_list:
-        assert key in config, logger.error(f'Missing key <{key}> in the input configuration.')
+        if key not in config:
+            message = f'Missing key <{key}> in the input configuration.'
+            logger.error(message)
+            raise AssertionError(message)
+    accepted = set(key_list) | set(optional_key_list) | {'name'}
+    for key in config:
+        if key not in accepted:
+            message = (f'Unknown key <{key}> in the input configuration; '
+                       f'accepted keys: <{sorted(accepted)}>.')
+            logger.error(message)
+            raise AssertionError(message)
 
 
 def check_polarity(config: dict):
@@ -446,10 +476,16 @@ def check_polarity(config: dict):
     """
     polarity = config.get('polarity', None)
     if polarity is not None:
-        assert isinstance(polarity, str), logger.error(f'Invalid polarity: <{polarity}>; polarity should be a string.')
+        if not isinstance(polarity, str):
+            message = f'Invalid polarity: <{polarity}>; polarity should be a string.'
+            logger.error(message)
+            raise AssertionError(message)
         polarity = polarity.lower()
         legal_polarity = ['unipolar', 'bipolar']
-        assert polarity in legal_polarity, logger.error(f'Invalid polarity: <{polarity}>; legal values: <{str(legal_polarity)}>.')
+        if polarity not in legal_polarity:
+            message = f'Invalid polarity: <{polarity}>; legal values: <{str(legal_polarity)}>.'
+            logger.error(message)
+            raise AssertionError(message)
     return polarity
 
 
@@ -622,6 +658,9 @@ def check_name(config: dict):
     """
     name = config.get('name', None)
     if name is not None:
-        assert isinstance(name, str), logger.error(f'Invalid name: <{name}>; name should be a string.')
+        if not isinstance(name, str):
+            message = f'Invalid name: <{name}>; name should be a string.'
+            logger.error(message)
+            raise AssertionError(message)
         name = name.lower()
     return name

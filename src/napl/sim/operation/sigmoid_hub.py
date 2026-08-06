@@ -7,13 +7,17 @@ class sigmoid_hub(napl_base):
     r"""
     Apply a scaled hard sigmoid in the binary domain.
 
-    The single-shot forward operation is
+    The target is the scaled logistic sigmoid
+
+    .. math::
+
+       y = \sigma(scale\,x).
+
+    The kernel evaluates its piecewise-linear approximation
 
     .. math::
 
        y = \operatorname{clip}\left(\frac{scale\,x}{6}+\frac{1}{2},0,1\right).
-
-    This is the piecewise-linear binary-domain sigmoid.
 
     .. rubric:: Example
 
@@ -44,10 +48,10 @@ class sigmoid_hub(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **scale**: Input multiplier; the default is ``3``.
+              - **scale**: Optional input multiplier; the default is ``3``.
               - **name**: Optional module name.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=['polarity', 'scale'])
         #: Modeled scalar latency of the single-shot hard sigmoid.
         self.delay = 0
         #: Input multiplier applied before the hard sigmoid.

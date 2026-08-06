@@ -8,25 +8,16 @@ class uni2bi(napl_base):
     r"""
     Convert a unipolar rate-coded spike stream to bipolar form.
 
-    The precise target mapping is
+    The output stream carries the same numeric value as the input stream, so its
+    bipolar value equals the input rate,
 
     .. math::
 
-       v_y = 2p_x-1.
+       v_y = p_x,
 
-    The accumulator starts at ``a_0=0`` with rails ``M_-`` and ``M_+``.
-    The exact conversion recurrence is
-
-    .. math::
-
-       \begin{aligned}
-       \tilde a_t &= \operatorname{clip}(a_{t-1}+x_t+1,M_-,M_+),\\
-       y_t &= \mathbf{1}\{\tilde a_t\geq 2\},\qquad
-       a_t=\tilde a_t-2y_t.
-       \end{aligned}
-
-    The output y_t is bipolar and preserves the represented value through
-    its one-density mapping.
+    which puts the output one-density at :math:`(p_x + 1)/2`. A signed
+    accumulator of **width** bits carries the conversion error between
+    timesteps.
 
     .. rubric:: Example
 
@@ -42,7 +33,7 @@ class uni2bi(napl_base):
 
         .. rubric:: References
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -64,7 +55,7 @@ class uni2bi(napl_base):
               - **width**: Signed accumulator width in bits; it must make the emission threshold ``2`` reachable, and the default is ``3``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Signed conversion-accumulator width in bits.
         self.width = config['width']
@@ -72,10 +63,13 @@ class uni2bi(napl_base):
         self.acc_max = 2**(self.width-1) - 1
         #: Smallest value retained by the conversion accumulator.
         self.acc_min = -2**(self.width-1)
-        assert self.acc_max >= 2, logger.error(
-            f'uni2bi width <{self.width}> has accumulator maximum <{self.acc_max}>, '
-            'but the emission threshold <2> is unreachable.'
-        )
+        if self.acc_max < 2:
+            message = (
+                f'uni2bi width <{self.width}> has accumulator maximum <{self.acc_max}>, '
+                'but the emission threshold <2> is unreachable.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
         #: Running unipolar-to-bipolar conversion error.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))

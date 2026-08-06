@@ -95,7 +95,7 @@ grep -rhoE '^class +[A-Za-z0-9_]+' /Users/diwu/Projects/UnarySim/{kernel,metric,
 ```
 
 **Skip non-ports:** backward-only `torch.autograd.Function` helpers (`*Function`, the STE shims behind
-HUB/FXP/TLUT layers) are not standalone napl modules; the `RNG`/`RawScale`/`BinGen`/`BSGen` stream
+HUB/FXP/TLUT layers) are not standalone napl modules; the `RNG`/`RawScale`/`SourceGen`/`BSGen` stream
 generators correspond to napl's `encoder`/`decoder`/`gen_num_seq` codec, not new classes. The genuine
 gaps today are the parallel-counter variants (`FSULinearPC`, `FSUConv2dPC`). Record a skip with its
 reason rather than forcing an unnatural port.
@@ -139,8 +139,9 @@ following napl's style exactly (see `CLAUDE.md` and the nearest existing sibling
   Follow napl's broadcasting idiom so the class works on vector inputs without pre-sizing.
 - **hw_params:** if it is an `operation` with a gate-level mapping, set
   `self.hw = hw_params(pp_delay=...)` (`from napl.sim.base import napl_base, hw_params`).
-- **Imports:** import `operation` primitives **lazily inside `__init__`** (the `module`<->`operation`
-  import cycle). Wire the new class into its subpackage `__init__.py` (mind import order).
+- **Imports:** import `operation` primitives **at file top**; `operation` imports nothing from
+  `module`, `metric`, or `algorithm`. Wire the new class into its subpackage `__init__.py`
+  (mind import order).
 
 ### Step 4 - Write the test and update the mapping
 

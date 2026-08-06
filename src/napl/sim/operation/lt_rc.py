@@ -8,27 +8,15 @@ class lt_rc(napl_base):
     r"""
     Compare two rate-coded streams for a less-than result.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \mathbf{1}\{p_0 < p_1\}.
 
-    Let (u_t,v_t) = sync_skewed(input_0,input_1), and let q be the one-bit
-    decision state with q_{-1} = 0. The returned decision is pre-update:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= q_{t-1},\\
-       q_t &=
-       \begin{cases}
-       v_t, & u_t\ne v_t,\\
-       q_{t-1}, & u_t=v_t.
-       \end{cases}
-       \end{aligned}
-
-    A one output denotes the smaller running rate for input_0.
+    A one output denotes the smaller running rate for ``input_0``. The
+    decision state starts at ``0`` and each call returns the state held before
+    that timestep's update.
 
     .. rubric:: Example
 
@@ -57,7 +45,7 @@ class lt_rc(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Previous comparison decision used as the one-cycle delayed output.
         self.decision: torch.Tensor

@@ -1,22 +1,17 @@
 import torch
-import math
-import torch.nn.functional as F
 
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_sr, add_any
+from napl.sim.module.linear import linear
 from loguru import logger
-# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 
 
 class mgu(napl_base):
     r"""Evaluate a bipolar rate-coded MGU cell one timestep at a time.
 
     Use this class as the streaming inner cell for :class:`mgu_hub`, or directly
-    when input and hidden spike streams are already available. The two gate linears
-    use a saturating ``scale=1`` unary adder, which realizes ``linear + hard tanh``
-    in the unary domain. The forget-gate hard sigmoid computes ``(x + 1) / 2``;
-    ``fg * hx`` uses conditional-spike generation with fixed ``hx``; ``fg * ng``
-    uses XNOR multiplication; and the output applies the same adder to
-    ``[ng, 1 - fg * ng, fg * hx]``. The ``hx`` value remains fixed for the run.
+    when input and hidden spike streams are already available. The numeric hidden
+    value bound to ``hx_value`` stays fixed for the whole run.
 
     The precise target is the Minimal Gated Unit recurrence
 
@@ -29,21 +24,15 @@ class mgu(napl_base):
 
        h' = (1 - f) \odot n + f \odot h.
 
-    Each timestep the cell evaluates the same recurrence on spike streams. The
-    gate linears use a saturating ``scale=1`` unary adder, so each realizes
-    :math:`\mathrm{clamp}(W\cdot + b, -1, 1)` rather than an unbounded linear;
-    the forget gate uses the hard sigmoid :math:`(v+1)/2`; and the output stage
-    is the same saturating adder over three streams,
+    Each timestep the cell evaluates that recurrence on spike streams with
+    saturating unary adders and the hard sigmoid
+    :math:`\sigma_h(v) = (v + 1)/2`, so the emitted stream tracks
 
     .. math::
 
-       h'_t = \mathrm{add\_any}\!\left(
-       n_t + \overline{(f \odot n)_t} + (f \odot h)_t;\; e = 3,\; s = 1\right),
+       h' = \mathrm{clamp}\!\left(n - f \odot n + f \odot h,\, -1,\, 1\right)
 
-    where :math:`\overline{\,\cdot\,}` is the complemented stream, which in the
-    bipolar domain decodes to the negation. The result therefore tracks
-    :math:`\mathrm{clamp}(n - f \odot n + f \odot h, -1, 1)` within the
-    stochastic-computing error of the streams.
+    within the stochastic-computing error of the streams.
 
     .. rubric:: Example
 
@@ -57,6 +46,12 @@ class mgu(napl_base):
                    {"polarity": "bipolar", "timestep": 4,
                     "generator": "sobol", "width": 12})
         output_spike = cell(torch.ones(1, 2), torch.ones(1, 3))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uBrain: A Unary Brain Computer Interface*, ISCA, 2022.
     """
 
 
@@ -64,36 +59,37 @@ class mgu(napl_base):
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'width': 12, 'depth_ismul': 6}):
         """Construct a streaming MGU from external gate parameters.
 
-        Args:
-            weight_f: Forget-gate weight tensor shaped
-                ``(hidden_size, hidden_size + input_size)``.
-            bias_f: Forget-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
-            weight_n: New-gate weight tensor with the same shape as ``weight_f``.
-            bias_n: New-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
-            hx_value: Fixed numeric hidden value used by conditional spike
-                generation.
-            config: Configuration mapping with these keys:
+        .. container:: api-parameter-list
 
-                * **polarity** - Must be ``"bipolar"``. Defaults to
-                  ``"bipolar"``.
-                * **timestep** - Encoder stream length. Defaults to ``256``.
-                * **generator** - Number-sequence generator. Defaults to
-                  ``"sobol"``.
-                * **width** - Unary-adder accumulator width. Defaults to ``12``.
-                * **depth_ismul** - Register-address width for the non-static
-                  forget/new multiplier. Defaults to ``6``.
-                * **name** - Optional instance label. Defaults to ``None``.
+            **Parameters:**
+
+            - **weight_f** – Forget-gate weight tensor shaped ``(hidden_size, hidden_size + input_size)``.
+            - **bias_f** – Forget-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
+            - **weight_n** – New-gate weight tensor with the same shape as **weight_f**.
+            - **bias_n** – New-gate bias tensor shaped ``(hidden_size,)`` or ``None``.
+            - **hx_value** – Fixed numeric hidden value used by conditional spike generation, or ``None`` to bind ``hx_value`` before the run.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, which must be ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **width**: Unary-adder accumulator width; the default is ``12``.
+              - **depth_ismul**: Register-address width for the non-static forget and new multiplier; the default is ``6``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_sr, add_any
-        from napl.sim.module.linear import linear
-        assert self.polarity == 'bipolar', logger.error('mgu requires bipolar.')
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'depth_ismul'], polarity_required=True)
+        if self.polarity != 'bipolar':
+            message = f'Invalid polarity: <{self.polarity}>; legal values: <[\'bipolar\']>.'
+            logger.error(message)
+            raise AssertionError(message)
 
         ts, gen = config['timestep'], config['generator']
         width = config.get('width', 12)
         self.depth_ismul = config.get('depth_ismul', 6)
+        # Registering the run input as a buffer keeps it on the module's device.
         #: Fixed numeric hidden value used by conditional-spike multiplication.
-        self.hx_value = hx_value
+        self.hx_value: torch.Tensor
+        self.register_buffer('hx_value', hx_value, persistent=False)
         # Distinct RNG dimensions decorrelate the gates; scale 1 implements hard tanh.
         def lin(w, b, d):
             return linear(w, b, {'polarity': 'bipolar', 'timestep': ts, 'generator': gen,
@@ -114,6 +110,10 @@ class mgu(napl_base):
         })
         #: Saturating unary adder that forms the next hidden-state stream.
         self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
+
+        # The composed gates, multipliers, and adders are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming cell.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc', 'hx_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'hx_spike': self.polarity, 'output': self.polarity}

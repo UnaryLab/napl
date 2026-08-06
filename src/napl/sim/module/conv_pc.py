@@ -1,7 +1,8 @@
 import torch
 
 from napl.utils import conv2d_output_shape, num2tuple
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation.encode import encode
 from loguru import logger
 
 
@@ -9,25 +10,15 @@ class conv_pc(napl_base):
     r"""Return per-timestep parallel counts for a unary convolution.
 
     Use this streaming layer when downstream logic needs raw convolution product
-    counts instead of a scaled output bitstream. It returns the per-timestep
-    binary inner-product count of the image-column input spikes against freshly
-    encoded weight spikes, before accumulation into a bitstream. This is the
-    :class:`conv` partial sum without its scaled unary adder, and the convolution
-    counterpart of :class:`linear_pc`.
+    counts instead of a scaled output bitstream. It is the :class:`conv` partial
+    sum without its scaled unary adder, and the convolution counterpart of
+    :class:`linear_pc`. Unipolar counts are AND counts of the input and weight
+    spikes, bipolar counts are XNOR counts, and each count lies in
+    ``[0, entry]`` with
+    ``entry = in_channels * kernel_height * kernel_width + has_bias``.
 
-    Each timestep the weights (and bias) are encoded into spikes on a distinct RNG dimension
-    from the input (decorrelated operands), the input is unfolded to patches, and the spike
-    product is counted. Unipolar mode returns ``sum(input & weight)`` plus the
-    bias spike; bipolar mode returns ``sum(input == weight)`` plus bias on the
-    input-``1`` path. Each output count lies in ``[0, entry]``, where
-    ``entry = in_channels * kernel_height * kernel_width + has_bias``. Summing
-    counts over ``T`` timesteps and dividing by ``T`` recovers the unipolar
-    convolution, while bipolar decoding uses ``2 * mean - entry``. Bipolar
-    zero-padding uses a decorrelated rate-``0.5`` pad
-    stream. This class matches UnarySim ``FSUConv2dPC`` and supports ``groups=1``
-    with zero padding only.
-
-    The precise target is the count whose time average recovers the convolution,
+    The target is the count :math:`c_t` whose time average recovers the
+    convolution,
 
     .. math::
 
@@ -36,19 +27,11 @@ class conv_pc(napl_base):
        \frac{2}{T}\sum_{t=1}^{T} c_t - e = \mathrm{conv2d}(x, W) + b
        \ \ (\text{bipolar}),
 
-    with :math:`e = K + [\,\text{bias}\,]` and :math:`K` the kernel fan-in. Each
-    timestep the layer returns that count exactly, with :math:`u_t` the im2col
-    patch spikes and :math:`w_t` the freshly encoded weight spikes,
-
-    .. math::
-
-       c_t = \begin{cases}
-       u_t w_t^{\top} + b_t, & \text{unipolar},\\
-       u_t w_t^{\top} + b_t + (1 - u_t)(1 - w_t)^{\top}, & \text{bipolar},
-       \end{cases}
-
-    the bipolar line adding the input-``0`` AND path to complete the XNOR count,
-    so :math:`c_t \in [0, e]` and no accumulation is applied.
+    with :math:`e` the fan-in ``entry``. Weights and bias are encoded on RNG
+    dimensions distinct from the input, so the operands are decorrelated, and
+    bipolar zero padding uses a decorrelated rate-``0.5`` pad stream. This class
+    matches UnarySim ``FSUConv2dPC`` and supports ``groups=1`` with zero padding
+    only.
 
     .. rubric:: Example
 
@@ -62,9 +45,14 @@ class conv_pc(napl_base):
                                   "generator": "sobol"})
         count = counter(torch.ones(1, 1, 4, 4))
 
-    References
-    ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+    The output is a parallel count rather than a spike stream, so it carries no
+    encoding or polarity and appears in neither port map.
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -72,25 +60,29 @@ class conv_pc(napl_base):
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol', 'dim': 2}):
         """Construct the counter from external numeric weights and bias.
 
-        Args:
-            weight: Numeric tensor shaped
-                ``(out_channels, in_channels, kernel_height, kernel_width)``.
-            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
-                ``None``.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            config: Configuration mapping with **polarity** (default
-                ``"bipolar"``), **timestep** (default ``256``), **generator**
-                (default ``"sobol"``), and **dim** (weight Sobol dimension,
-                default ``2``; bias and padding use following dimensions).
-                **name** is an optional instance label and defaults to ``None``.
-        """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # This import stays local to avoid the module-operation import cycle.
-        from napl.sim.operation.encode import encode
+        .. container:: api-parameter-list
 
-        assert weight.dim() == 4, logger.error(f'conv_pc weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
+            **Parameters:**
+
+            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Weight-encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1`` and the bipolar pad stream on ``dim + 2``; the default is ``2``.
+              - **name**: Optional instance label.
+        """
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim'], polarity_required=True)
+
+        if weight.dim() != 4:
+            message = f'conv_pc weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Trainable numeric convolution kernel encoded into a spike stream.
         self.weight = torch.nn.Parameter(weight)
         #: Optional trainable numeric bias encoded on its own sequence.
@@ -137,6 +129,10 @@ class conv_pc(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
+
+        # Encoding and the parallel count are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming counter.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc'}
         self.polarity_io = {'input_spike': self.polarity}

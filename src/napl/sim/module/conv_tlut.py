@@ -1,8 +1,6 @@
-import torch
 import math
 
 from napl.sim.base import napl_base
-from loguru import logger
 from napl.sim.module._shared import (
     _init_conv_params,
     _conv2d_binary,
@@ -11,45 +9,40 @@ from napl.sim.module._shared import (
     _linear_tlut_fpfp_fn,
     _TLUT_FP_WIDTH,
 )
+from loguru import logger
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'temporal': 'i',
+    'widtht': 4,
+    'formati': 'fxp',
+    'widthi': 8,
+    'quantilei': 1,
+    'formatw': 'fxp',
+    'widthw': 8,
+    'quantilew': 1,
+    'cycle': None,
+    'rounding': 'round',
+}
 
 
 class conv_tlut(napl_base):
     r"""Apply a temporal-LUT approximation of ``torch.nn.Conv2d``.
 
     Use this single-shot trainable layer to decompose either convolution inputs or
-    weights into temporal digits. It supports modes
-    fxpfxp/fxpfp/fpfp via the (formati, formatw) pair. Single-shot; trains via STE.
-    Approximates nn.Conv2d within the temporal-decomposition bound.
-    ``fxpfxp``, ``fxpfp``, and ``fpfp`` with ``groups=1`` and zero padding.
-
-    The precise target is
+    weights into temporal digits. The ``(formati, formatw)`` pair selects the
+    ``fxpfxp``, ``fxpfp``, or ``fpfp`` arithmetic path, and the layer supports
+    ``groups=1`` and zero padding. The target is
 
     .. math::
 
        y = \mathrm{conv2d}(x, W) + b.
 
-    Lowering to image columns makes the convolution a matrix product, so the
-    layer evaluates the :class:`linear_tlut` kernel on the patches and adds the
-    bias after folding. The selected operand is replaced by its temporal
-    decomposition, which peels ``degree`` digits of ``widtht`` bits and clamps
-    each to the run cycle range :math:`[-c+1,\, c-1]`,
-
-    .. math::
-
-       m_k = \mathrm{trunc}\!\left(m_{k-1} 2^{-w_t}\right),\qquad
-       f_k = \mathrm{clamp}\!\left(
-       2^{w_t}\,\mathrm{frac}\!\left(m_{k-1} 2^{-w_t}\right),\,
-       -c+1,\; c-1\right),
-
-    .. math::
-
-       D(m) = \sum_{k=1}^{\text{degree}} f_k\, 2^{-(\text{degree}-k+1) w_t},
-       \qquad
-       y = \mathrm{fold}\!\left(\tilde u \tilde W^{\top}\right) + b,
-
-    with :math:`m_0 = m` and :math:`\tilde u`, :math:`\tilde W` the patch and
-    weight matrices after substituting the decomposed operand. The error is the
-    discarded low-order digits plus the per-digit clamp.
+    The operand named by **temporal** is replaced by its temporal decomposition
+    into **degree** digits of **widtht** bits. The decomposition recomposes that
+    operand exactly, so the departures from the target are the fixed-point
+    truncation of the operands and the per-digit clamp that applies when
+    **cycle** is below its cap. Gradients use a straight-through estimator.
 
     .. rubric:: Example
 
@@ -63,43 +56,52 @@ class conv_tlut(napl_base):
                                   "formati": "fxp", "widthi": 8,
                                   "formatw": "fxp", "widthw": 8})
         output = layer(torch.zeros(1, 1, 4, 4))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Carat: Unlocking Value-Level Parallelism for Multiplier-Free GEMMs*, ASPLOS, 2024.
+
+        *T-MAC: Temporal Multiplication with Accumulation*, Young Architect Workshop, 2022.
     """
     streaming = False
 
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
-                 config={'temporal': 'i', 'widtht': 4, 'formati': 'fxp', 'widthi': 8, 'quantilei': 1,
-                         'formatw': 'fxp', 'widthw': 8, 'quantilew': 1, 'cycle': None, 'rounding': 'round'}):
+                 config=_DEFAULT_CONFIG):
         """Configure convolution geometry and temporal decomposition.
 
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            kernel_size: Kernel size accepted as an integer or pair.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            bias: Create a trainable bias when ``True``. Defaults to ``True``.
-            weight_ext: Optional initial convolution weight. Defaults to ``None``.
-            bias_ext: Optional initial bias. Defaults to ``None``.
-            config: Configuration mapping with these keys:
+        .. container:: api-parameter-list
 
-                * **temporal** - ``"i"``/``"input"`` or ``"w"``/``"weight"``.
-                  Defaults to ``"i"``.
-                * **widtht** - Bits per temporal digit. Defaults to ``4``.
-                * **formati**, **formatw** - ``"fxp"`` or a supported floating
-                  format: ``"bfloat16"``, ``"float16"``, or ``"float32"``.
-                  Both default to ``"fxp"``.
-                * **widthi**, **widthw** - Fixed-point widths. Both default to ``8``.
-                * **quantilei**, **quantilew** - Scaling quantiles. Both default
-                  to ``1``.
-                * **cycle** - Active cycles, capped at ``2 ** widtht``. Defaults
-                  to ``None``, which selects the cap.
-                * **rounding** - Fixed-point rounding mode. Defaults to ``"round"``.
-                * **name** - Optional instance label. Defaults to ``None``.
+            **Parameters:**
+
+            - **in_channels** – Number of input channels.
+            - **out_channels** – Number of output channels.
+            - **kernel_size** – Kernel size accepted as an integer or pair.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **bias** – Create a trainable bias when ``True``; the default is ``True``.
+            - **weight_ext** – Optional initial convolution weight; the default is ``None``.
+            - **bias_ext** – Optional initial bias; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **temporal**: Operand decomposed into temporal digits, ``"i"``/``"input"`` or ``"w"``/``"weight"``; the default is ``"i"``.
+              - **widtht**: Bits per temporal digit; the default is ``4``.
+              - **formati**: Input format, ``"fxp"`` or one of ``"bfloat16"``, ``"float16"``, ``"float32"``; the default is ``"fxp"``.
+              - **widthi**: Fixed-point width for input values; the default is ``8``.
+              - **quantilei**: Input-magnitude scaling quantile; the default is ``1``.
+              - **formatw**: Weight format, with the same choices as **formati**; the default is ``"fxp"``.
+              - **widthw**: Fixed-point width for weight values; the default is ``8``.
+              - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
+              - **cycle**: Active cycles, capped at ``2 ** widtht``, where ``None`` selects the cap; the default is ``None``.
+              - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Spatial height and width of the convolution kernel.
         self.kernel_size = kernel_size
         #: Spatial step between adjacent convolution windows.
@@ -109,25 +111,27 @@ class conv_tlut(napl_base):
         #: Spacing between kernel elements.
         self.dilation = dilation
         #: Operand decomposed into temporal digits.
-        self.temporal = config.get('temporal', 'i').lower()
+        self.temporal = cfg['temporal'].lower()
         #: Number of bits represented by each temporal digit.
-        self.widtht = config.get('widtht', 4)
+        self.widtht = cfg['widtht']
         #: Numeric format used for input values.
-        self.formati = config.get('formati', 'fxp').lower()
+        self.formati = cfg['formati'].lower()
         #: Numeric format used for weight values.
-        self.formatw = config.get('formatw', 'fxp').lower()
+        self.formatw = cfg['formatw'].lower()
         #: Fixed-point width used for input values.
-        self.widthi = config.get('widthi', 8)
+        self.widthi = cfg['widthi']
         #: Fixed-point width used for weight values.
-        self.widthw = config.get('widthw', 8)
+        self.widthw = cfg['widthw']
         #: Input-magnitude quantile used to choose the scaling shift.
-        self.quantilei = config.get('quantilei', 1)
+        self.quantilei = cfg['quantilei']
         #: Weight-magnitude quantile used to choose the scaling shift.
-        self.quantilew = config.get('quantilew', 1)
-        #: Rounding mode used during fixed-point conversion.
-        self.rounding = config.get('rounding', 'round').lower()
-        assert self.temporal in ('i', 'input', 'w', 'weight'), \
-            logger.error(f"conv_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}.")
+        self.quantilew = cfg['quantilew']
+        #: Rounding mode applied to the log2 magnitude that sets the scaling shift.
+        self.rounding = cfg['rounding'].lower()
+        if self.temporal not in ('i', 'input', 'w', 'weight'):
+            message = f"conv_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}."
+            logger.error(message)
+            raise AssertionError(message)
 
         if self.formati == 'fxp' and self.formatw == 'fxp':
             #: Arithmetic path selected from the input and weight formats.
@@ -141,7 +145,7 @@ class conv_tlut(napl_base):
 
         #: Maximum number of temporal cycles per product.
         self.cycle_max = 2 ** self.widtht
-        cycle_cfg = config.get('cycle', None)
+        cycle_cfg = cfg['cycle']
         #: Number of temporal cycles used per product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
         #: Input magnitude width excluding its sign bit.

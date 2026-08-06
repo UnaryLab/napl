@@ -12,25 +12,13 @@ class accuracy(napl_base):
     Use this metric to inspect progressive error as more timesteps arrive or to
     decide whether a stream has reached sufficient precision.
 
-    The precise target is the progressive error between the decoded stream value
-    and a reference :math:`r` scaled by :math:`\sigma`,
+    The target is the progressive error between the decoded stream value
+    :math:`\hat x_T` over the first :math:`T` timesteps and a reference
+    :math:`r` scaled by :math:`\sigma`,
 
     .. math::
 
        e_T = \hat x_T - r/\sigma.
-
-    Let :math:`s_t` be the spike at timestep :math:`t` and
-    :math:`c_T = \sum_{t=1}^{T} s_t`. The metric evaluates the target exactly as
-
-    .. math::
-
-       \hat x_T = \begin{cases}
-       c_T / T, & \text{unipolar},\\
-       2 c_T / T - 1, & \text{bipolar},
-       \end{cases}
-       \qquad e_T = \hat x_T - r/\sigma,
-
-    with :math:`\hat x_T = 0` before the first timestep.
 
     .. rubric:: Example
 
@@ -74,11 +62,11 @@ class accuracy(napl_base):
               - **polarity**: Choose ``"unipolar"`` for values in ``[0, 1]`` or ``"bipolar"`` for values in ``[-1, 1]``; the default is ``"bipolar"``.
               - **name**: Optional instance label; the default is ``None``.
         """
-        super().__init__(config, ['polarity'], polarity_required=True)
+        super().__init__(config, ['polarity'], optional_key_list=['timestep', 'generator', 'dim', 'seed', 'taps'], polarity_required=True)
 
         #: Running count of one-valued spikes for each observed stream element.
         self.spike_count: torch.Tensor
-        self.register_buffer('spike_count', torch.zeros(1))
+        self.register_buffer('spike_count', torch.zeros(1, dtype=self.ntype))
 
 
     def _reset(self):
@@ -156,8 +144,8 @@ class accuracy(napl_base):
 
         Args:
             reference: Expected numeric value with the same logical shape as the spike stream.
-            verbose: Set to ``True`` to print the analysis summary.
-            scale_ref: Divisor applied to ``reference``; the comparison uses ``reference / scale_ref``.
+            verbose: Set to ``True`` to print the analysis summary. The default is ``False``.
+            scale_ref: Divisor applied to ``reference``; the comparison uses ``reference / scale_ref``. The default is ``1``.
 
         Returns:
             A pair containing the per-element signed progressive error and its complete :class:`napl.sim.metric._shared.Analysis` summary.
@@ -171,7 +159,10 @@ class accuracy(napl_base):
             error, result = metric.analyze(torch.tensor([1.0, -1.0]))
 
         """
-        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
+        if not self.valid:
+            message = 'Metric is not valid. Please call forward() before analyze().'
+            logger.error(message)
+            raise AssertionError(message)
         spike_value = self.spike_value
         progressive_error = spike_value.sub(reference.div(scale_ref)).detach()
         result = analyze(

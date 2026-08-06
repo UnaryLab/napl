@@ -1,11 +1,17 @@
 import torch
-import math
 import torch.nn.functional as F
 
 from napl.sim.base import napl_base
-from loguru import logger
-# Operation imports stay inside __init__ to avoid the module-operation import cycle.
 from napl.sim.module._shared import _init_mgu_params
+from napl.sim.operation import sigmoid_hub, tanh_hub, round_fxp
+
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'hard': True,
+    'intwidth': 3,
+    'fracwidth': 4,
+}
 
 
 class mgu_hardfxp(napl_base):
@@ -26,26 +32,20 @@ class mgu_hardfxp(napl_base):
 
        h' = (1 - f) \odot n + f \odot h.
 
-    Let :math:`Q(\cdot)` be the ``round_fxp`` quantizer for the configured
-    **intwidth** and **fracwidth**. The cell evaluates the same recurrence with
-    hard activations and applies :math:`Q` to every operand and intermediate
-    result,
+    The cell evaluates that recurrence with the hard activations
 
     .. math::
 
-       f = \sigma_h\!\left(Q\!\left(\mathrm{clamp}\left(
-       W'_f\,[Q(h), Q(x)]' + b'_f,\, -1,\, 1\right)\right)\right),\qquad
-       n = \tanh_h\!\left(Q\!\left(W'_n\,[Q(f \odot h), Q(x)]' + b'_n\right)\right),
+       \sigma_h(v) = \mathrm{clip}\!\left(\frac{v}{2} + \frac{1}{2},\, 0,\, 1
+       \right),\qquad
+       \tanh_h(v) = \mathrm{clamp}(v, -1, 1)
 
-    .. math::
-
-       h' = \mathrm{clamp}\!\left(
-       Q(n) - Q\!\left(Q(f) \odot Q(n)\right) + Q(f \odot h),\, -1,\, 1\right),
-
-    where a primed symbol denotes its quantized form,
-    :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)`, and
-    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)`. The quantization step, the
-    hard activations, and the output clamp are the departures from the target.
+    when **hard** is ``True``, and with ``Sigmoid`` and ``Tanh`` otherwise. Every
+    operand, parameter, and intermediate result is rounded to the fixed-point
+    format given by **intwidth** and **fracwidth** before it enters the next
+    stage; the returned hidden state carries no rounding after its final clamp.
+    The forget-gate linear and the returned hidden state are clamped to
+    ``[-1, 1]``.
 
     .. rubric:: Example
 
@@ -57,29 +57,36 @@ class mgu_hardfxp(napl_base):
         cell = mgu_hardfxp(2, 3, config={"hard": True,
                                         "intwidth": 3, "fracwidth": 4})
         hidden = cell(torch.zeros(1, 2))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Simplified minimal gated unit variations for recurrent neural networks*, MWSCAS, 2017.
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
 
 
-    def __init__(self, input_size, hidden_size, bias=True, config={'hard': True, 'intwidth': 3, 'fracwidth': 4}):
+    def __init__(self, input_size, hidden_size, bias=True, config=_DEFAULT_CONFIG):
         """Construct the fixed-point MGU and initialize trainable parameters.
 
-        Args:
-            input_size: Number of input features.
-            hidden_size: Number of hidden features.
-            bias: Create trainable gate biases when ``True``. Defaults to ``True``.
-            config: Configuration mapping with these keys:
+        .. container:: api-parameter-list
 
-                * **hard** - Use hard gate activations when ``True``; otherwise
-                  use ``Sigmoid`` and ``Tanh``. Defaults to ``True``.
-                * **intwidth** - Integer-bit count passed to ``round_fxp``.
-                  Defaults to ``3``.
-                * **fracwidth** - Fractional-bit count passed to ``round_fxp``.
-                  Defaults to ``4``.
-                * **name** - Optional instance label. Defaults to ``None``.
+            **Parameters:**
+
+            - **input_size** – Number of input features.
+            - **hidden_size** – Number of hidden features.
+            - **bias** – Create trainable gate biases when ``True``; the default is ``True``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **hard**: Use hard gate activations when ``True``, or ``Sigmoid`` and ``Tanh`` when ``False``; the default is ``True``.
+              - **intwidth**: Integer-bit count passed to ``round_fxp``; the default is ``3``.
+              - **fracwidth**: Fractional-bit count passed to ``round_fxp``; the default is ``4``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features in each input vector.
         self.input_size = input_size
         #: Number of features in each hidden-state vector.
@@ -87,12 +94,11 @@ class mgu_hardfxp(napl_base):
         #: Whether the forget and new gates include trainable biases.
         self.bias = bias
         #: Whether the forget and new gates use hard activations.
-        self.hard = config.get('hard', True)
-        from napl.sim.operation import sigmoid_hub, tanh_hub, round_fxp
+        self.hard = cfg['hard']
         #: Hard-tanh operator that bounds intermediate and output values.
         self.htanh = tanh_hub()
         #: Fixed-point quantizer applied to recurrent operands and parameters.
-        self.trunc = round_fxp({'intwidth': config.get('intwidth', 3), 'fracwidth': config.get('fracwidth', 4)})
+        self.trunc = round_fxp({'intwidth': cfg['intwidth'], 'fracwidth': cfg['fracwidth']})
         #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the candidate hidden state.

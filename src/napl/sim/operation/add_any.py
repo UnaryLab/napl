@@ -12,7 +12,7 @@ class add_any(napl_base):
     spike per ``scale`` accumulated units. It supports unipolar and bipolar
     rate-coded inputs.
 
-    The precise target reductions are
+    The target reductions are
 
     .. math::
 
@@ -21,19 +21,9 @@ class add_any(napl_base):
        v_y = \\frac{1}{\\mathit{scale}}\\sum_i v_i
        \\quad (\\text{bipolar}).
 
-    Let ``r_t`` be ``input`` when ``dim=None`` and otherwise the sum of
-    ``input`` along ``dim``. With ``o = 0`` for unipolar input and
-    ``o = (entry - scale) / 2`` for bipolar input, the exact carry recurrence is
-
-    .. math::
-
-       \\tilde a_t = \\operatorname{clip}(a_{t-1} + r_t - o,
-       -2^{w-1}, 2^{w-1}-1),\\qquad
-       y_t = \\mathbf{1}\\{\\tilde a_t \\geq \\mathit{scale}\\},\\qquad
-       a_t = \\tilde a_t - \\mathit{scale} y_t.
-
-    The output removes the reduced dimension and emits one spike for each
-    inclusive ``scale`` threshold crossing.
+    The output removes the reduced dimension. A finite accumulator width
+    saturates the running sum, so the realized rate departs from the target once
+    the reduced sum stays outside the representable range.
 
     .. rubric:: Example
 
@@ -44,6 +34,12 @@ class add_any(napl_base):
 
         adder = add_any({'polarity': 'unipolar', 'scale': 2, 'width': 10})
         output = adder(torch.tensor([[1, 0], [1, 1]], dtype=torch.int8), dim=0)
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -77,10 +73,13 @@ class add_any(napl_base):
         self.acc_max = 2**(self.width-1) - 1
         #: Smallest value retained by the signed accumulator.
         self.acc_min = -2**(self.width-1)
-        assert config['scale'] <= self.acc_max, logger.error(
-            f'add_any scale <{config["scale"]}> exceeds accumulator maximum '
-            f'<{self.acc_max}> for width <{self.width}>.'
-        )
+        if config['scale'] > self.acc_max:
+            message = (
+                f'add_any scale <{config["scale"]}> exceeds accumulator maximum '
+                f'<{self.acc_max}> for width <{self.width}>.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Accumulated amount consumed when an output spike is emitted.
         self.scale = config['scale']
@@ -133,8 +132,10 @@ class add_any(napl_base):
         if self.is_first_call:
             if self.polarity == 'bipolar':
                 if entry is None:
-                    assert dim is not None, \
-                        logger.error('add_any with pre-reduced input (dim=None) requires an explicit <entry>.')
+                    if dim is None:
+                        message = 'add_any with pre-reduced input (dim=None) requires an explicit <entry>.'
+                        logger.error(message)
+                        raise AssertionError(message)
                     entry = input.size()[dim]
                 self.offset = (entry - self.scale)/2
 

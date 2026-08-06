@@ -1,55 +1,37 @@
-import torch
-import math
-
 from napl.utils import rshift_offset
 from napl.sim.base import napl_base
-from loguru import logger
 from napl.sim.module._shared import _init_linear_params, _linear_fxp_fn
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'widthi': 8,
+    'quantilei': 1,
+    'widthw': 8,
+    'quantilew': 1,
+    'rounding': 'round',
+}
 
 
 class linear_fxp(napl_base):
     r"""Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
 
-    Use this single-shot layer for quantization-aware evaluation or training. It dynamically scales input and weight
-    to ``widthi``- and ``widthw``-bit fixed point through ``rshift_offset``,
-    multiplies them, then restores the output scale. It is single-shot, trains
-    through a straight-through estimator, and approximates ``nn.Linear`` within
-    the quantization bound.
-
-    The precise target is the affine map
+    Use this single-shot layer for quantization-aware evaluation or training.
+    Input and weight are dynamically scaled to ``widthi``- and ``widthw``-bit
+    signed fixed point, and the target is the affine map
 
     .. math::
 
        y = x W^{\top} + b.
 
-    Let :math:`M_i` and :math:`M_w` be the quantile-clipped operand magnitudes.
-    ``rshift_offset`` derives the dynamic shifts
+    The operands are not used exactly: each is rounded and clamped to its signed
+    fixed-point range, written :math:`Q_i` and :math:`Q_w`,
 
     .. math::
 
-       r_i = \langle \log_2 M_i \rangle - (\text{widthi}-1),\qquad
-       r_w = \langle \log_2 M_w \rangle - (\text{widthw}-1),
+       y \approx Q_i(x)\, Q_w(W)^{\top} + b,
 
-    where :math:`\langle\cdot\rangle` applies the configured **rounding** and a
-    zero magnitude maps to a zero offset. With
-    :math:`A_i = 2^{\text{widthi}-1}` and :math:`A_w = 2^{\text{widthw}-1}`, the
-    layer evaluates
-
-    .. math::
-
-       \hat x = \mathrm{clamp}\left(
-       \left[x\,2^{-r_i}\right],\, -A_i,\, A_i - 1\right),\qquad
-       \hat W = \mathrm{clamp}\left(
-       \left[W\,2^{-r_w}\right],\, -A_w,\, A_w - 1\right),
-
-    .. math::
-
-       y = \left(\hat x \hat W^{\top}\right) 2^{-r_o} + b,\qquad
-       r_o = -r_i - r_w,
-
-    where :math:`[\cdot]` rounds to the nearest integer. The rounding and clamp
-    are the only departures from the target, so the error is bounded by the
-    fixed-point quantization step.
+    so the error is the fixed-point quantization. It trains through a
+    straight-through estimator.
 
     .. rubric:: Example
 
@@ -71,45 +53,44 @@ class linear_fxp(napl_base):
             bias=True,
             weight_ext=None,
             bias_ext=None,
-            config={
-                'widthi': 8,
-                'quantilei': 1,
-                'widthw': 8,
-                'quantilew': 1,
-                'rounding': 'round',
-            }
+            config=_DEFAULT_CONFIG
         ):
         """Construct the fixed-point layer and initialize trainable parameters.
 
-        Args:
-            in_features: Number of input features.
-            out_features: Number of output features.
-            bias: Create a trainable bias when ``True``. Defaults to ``True``.
-            weight_ext: Optional initial weight tensor shaped
-                ``(out_features, in_features)``. Defaults to ``None``.
-            bias_ext: Optional initial bias tensor shaped ``(out_features,)``.
-                Used only when **bias** is ``True``. Defaults to ``None``.
-            config: Configuration mapping with **widthi** and **widthw** (input
-                and weight widths, both default ``8``), **quantilei** and
-                **quantilew** (scaling quantiles, both default ``1``), and
-                **rounding** (rounding mode, default ``"round"``). **name** is an
-                optional instance label and defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **in_features** – Number of input features.
+            - **out_features** – Number of output features.
+            - **bias** – Create a trainable bias when ``True``; the default is ``True``.
+            - **weight_ext** – Optional initial weight tensor shaped ``(out_features, in_features)``; the default is ``None``.
+            - **bias_ext** – Optional initial bias tensor shaped ``(out_features,)``, used only when **bias** is ``True``; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **widthi**: Fixed-point width for input values; the default is ``8``.
+              - **quantilei**: Input-magnitude scaling quantile; the default is ``1``.
+              - **widthw**: Fixed-point width for weight values; the default is ``8``.
+              - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
+              - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features consumed by the layer.
         self.in_features = in_features
         #: Number of features produced by the layer.
         self.out_features = out_features
         #: Fixed-point width used for input values.
-        self.widthi = config.get('widthi', 8)
+        self.widthi = cfg['widthi']
         #: Fixed-point width used for weight values.
-        self.widthw = config.get('widthw', 8)
+        self.widthw = cfg['widthw']
         #: Input-magnitude quantile used to choose the scaling shift.
-        self.quantilei = config.get('quantilei', 1)
+        self.quantilei = cfg['quantilei']
         #: Weight-magnitude quantile used to choose the scaling shift.
-        self.quantilew = config.get('quantilew', 1)
-        #: Rounding mode used during fixed-point conversion.
-        self.rounding = config.get('rounding', 'round').lower()
+        self.quantilew = cfg['quantilew']
+        #: Rounding mode used when choosing the scaling shift.
+        self.rounding = cfg['rounding'].lower()
         #: Largest input magnitude represented by the quantized kernel.
         self.max_abs_i = 2 ** (self.widthi - 1)
         #: Largest weight magnitude represented by the quantized kernel.

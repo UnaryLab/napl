@@ -11,32 +11,16 @@ class div_cordiv(napl_base):
     Divide synchronized unipolar streams by correlated division.
 
     Use this kernel when the dividend and divisor have already been correlated,
-    for example by :class:`napl.sync_skewed`. It buffers recent quotient spikes
-    and reuses them when the divisor does not spike.
+    for example by :class:`napl.sync_skewed`.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \frac{x}{d}.
 
-    The kernel quantizes the number sequence into a history row index rather than
-    comparing a value against it, so a :class:`napl.encode` instance supplies the
-    sequence at construction and is not retained. The selection position is held
-    locally.
-
-    Let D = depth, G_t be the configured number sequence, x_t the dividend
-    spike, and d_t the divisor spike. The exact history recurrence is
-
-    .. math::
-
-       \begin{aligned}
-       j_t &= \lfloor D G_t \rfloor, &
-       q_t &= d_t x_t + (1-d_t)b_{t,j_t},\\
-       b_{t+1,j} &= (1-d_t)b_{t,j} + d_t b_{t,j+1}
-       && (0 \leq j < D-1),\\
-       b_{t+1,D-1} &= (1-d_t)b_{t,D-1} + d_t q_t.
-       \end{aligned}
+    Both streams are unipolar and must be positively correlated; the quotient
+    approaches the target only under that condition.
 
     .. rubric:: Example
 
@@ -53,11 +37,11 @@ class div_cordiv(napl_base):
 
         .. rubric:: References
 
-        *Design of Division Circuits for Stochastic Computing*, ISVLSI, 2016.
+        *Design of division circuits for stochastic computing*, ISVLSI, 2016.
 
         *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -84,11 +68,14 @@ class div_cordiv(napl_base):
               - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['depth', 'generator'], polarity_required=False)
+        super().__init__(config, ['depth', 'generator'], optional_key_list=['polarity', 'dim', 'seed', 'taps'], polarity_required=False)
 
         #: Number of recent quotient spikes retained for reuse.
         self.depth = config['depth']
-        assert math.log2(self.depth) == math.ceil(math.log2(self.depth)), logger.error(f'Input depth <{self.depth}> is not power of 2.')
+        if math.log2(self.depth) != math.ceil(math.log2(self.depth)):
+            message = f'Input depth <{self.depth}> is not power of 2.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Number-sequence width needed to address :attr:`depth` history rows.
         self.width = int(math.log2(self.depth))
 

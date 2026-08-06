@@ -1,10 +1,21 @@
 import torch
-import math
 
 from napl.utils import rshift_offset
 from napl.sim.base import napl_base
-from loguru import logger
 from napl.sim.module._shared import _init_conv_params, _conv2d_binary, _build_hub_map, _linear_hub_fn
+from loguru import logger
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'widthi': 8,
+    'rngi': 'sobol',
+    'quantilei': 1,
+    'widthw': 8,
+    'rngw': 'sobol',
+    'quantilew': 1,
+    'cycle': None,
+    'rounding': 'round',
+}
 
 
 class conv_hub(napl_base):
@@ -14,34 +25,21 @@ class conv_hub(napl_base):
     unary multiplication lookup map while the interface remains numeric. It
     supports ``groups=1``, zero padding, and requires ``widthi == widthw``.
 
-    The precise target is
+    The target is
 
     .. math::
 
        y = \mathrm{conv2d}(x, W) + b.
 
-    Lowering to image columns makes the convolution a matrix product, so the
-    layer evaluates the :class:`linear_hub` kernel on the patches and adds the
-    bias after folding. With :math:`u` the im2col patches,
-    :math:`C = 2^{\text{width}-1}` the cycle count, and :math:`M` the
-    unary AND-count value map,
+    Each product is replaced by the unary AND-count of the two quantized
+    magnitudes, read from the lookup map :math:`M`,
 
     .. math::
 
-       \hat u = \mathrm{clamp}\left(
-       \left\lfloor |u\,2^{-r_i}| \right\rfloor,\, 0,\, C-1\right),\qquad
-       \hat W = \mathrm{clamp}\left(
-       \left\lfloor |W\,2^{-r_w}| \right\rfloor,\, 0,\, C-1\right),
+       M_{a,b} \approx \frac{a\,b}{C},\qquad C = 2^{\text{width}-1},
 
-    .. math::
-
-       y = \mathrm{fold}\!\left(\left(\mathrm{sgn}(u)\left[
-       M_{\hat u \hat W}\,\mathrm{sgn}(W)\right]^{\top}\right)
-       2^{-r_o}\right) + b.
-
-    Magnitudes are truncated rather than rounded, and each product is the unary
-    AND-count instead of an exact product, so the error is bounded by the
-    unary-multiplication bound at :math:`C` cycles.
+    so the error is bounded by the unary-multiplication bound at **cycle**
+    cycles.
 
     .. rubric:: Example
 
@@ -53,37 +51,50 @@ class conv_hub(napl_base):
         layer = conv_hub(1, 2, 3, padding=1,
                          config={"widthi": 4, "widthw": 4, "cycle": 8})
         output = layer(torch.zeros(1, 1, 4, 4))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uSystolic: Byte-Crawling Unary Systolic Array*, HPCA, 2022.
     """
     streaming = False
 
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
-                 config={'widthi': 8, 'rngi': 'sobol', 'quantilei': 1, 'widthw': 8, 'rngw': 'sobol',
-                         'quantilew': 1, 'cycle': 128, 'rounding': 'round'}):
+                 config=_DEFAULT_CONFIG):
         """Configure the convolution geometry and HUB lookup map.
 
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            kernel_size: Kernel size accepted as an integer or pair.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            bias: Create a trainable bias when ``True``. Defaults to ``True``.
-            weight_ext: Optional initial convolution weight. Defaults to ``None``.
-            bias_ext: Optional initial bias. Defaults to ``None``.
-            config: Configuration mapping with equal **widthi** and **widthw**
-                (both default ``8``), **rngi** and **rngw** (both default
-                ``"sobol"``), **quantilei** and **quantilew** (both default
-                ``1``), **cycle** (declared default ``128``; ``None`` selects the
-                maximum), and **rounding** (default ``"round"``). **name** is an
-                optional instance label and defaults to ``None``.
+        .. container:: api-parameter-list
 
-        **cycle** is capped at ``2 ** (widthi - 1)``. The generated lookup map is
-        persistent non-trainable state.
+            **Parameters:**
+
+            - **in_channels** – Number of input channels.
+            - **out_channels** – Number of output channels.
+            - **kernel_size** – Kernel size accepted as an integer or pair.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **bias** – Create a trainable bias when ``True``; the default is ``True``.
+            - **weight_ext** – Optional initial convolution weight; the default is ``None``.
+            - **bias_ext** – Optional initial bias; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **widthi**: Quantization width for input values, which must equal **widthw**; the default is ``8``.
+              - **rngi**: Number-sequence generator for input values, one of ``"sobol"``, ``"rc"``, ``"tc"``; the default is ``"sobol"``.
+              - **quantilei**: Input-magnitude scaling quantile; the default is ``1``.
+              - **widthw**: Quantization width for weight values; the default is ``8``.
+              - **rngw**: Number-sequence generator for weight values, one of ``"sobol"``, ``"rc"``, ``"tc"``; the default is ``"sobol"``.
+              - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
+              - **cycle**: Active unary cycles, capped at ``2 ** (widthi - 1)``, where ``None`` selects the cap; the default is ``None``.
+              - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
+              - **name**: Optional instance label.
+
+        The generated lookup map is persistent non-trainable state.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Spatial height and width of the convolution kernel.
         self.kernel_size = kernel_size
         #: Spatial step between adjacent convolution windows.
@@ -93,24 +104,26 @@ class conv_hub(napl_base):
         #: Spacing between kernel elements.
         self.dilation = dilation
         #: Quantization width used for input values.
-        self.widthi = config.get('widthi', 8)
+        self.widthi = cfg['widthi']
         #: Quantization width used for weight values.
-        self.widthw = config.get('widthw', 8)
-        assert self.widthi == self.widthw, \
-            logger.error(f'conv_hub requires widthi == widthw (got {self.widthi}, {self.widthw}).')
+        self.widthw = cfg['widthw']
+        if self.widthi != self.widthw:
+            message = f'conv_hub requires widthi == widthw (got {self.widthi}, {self.widthw}).'
+            logger.error(message)
+            raise AssertionError(message)
         #: Number-sequence generator used for input values.
-        self.rngi = config.get('rngi', 'sobol').lower()
+        self.rngi = cfg['rngi'].lower()
         #: Number-sequence generator used for weight values.
-        self.rngw = config.get('rngw', 'sobol').lower()
+        self.rngw = cfg['rngw'].lower()
         #: Input-magnitude quantile used to choose the scaling shift.
-        self.quantilei = config.get('quantilei', 1)
+        self.quantilei = cfg['quantilei']
         #: Weight-magnitude quantile used to choose the scaling shift.
-        self.quantilew = config.get('quantilew', 1)
-        #: Rounding mode used during quantization.
-        self.rounding = config.get('rounding', 'round').lower()
+        self.quantilew = cfg['quantilew']
+        #: Rounding mode applied to the log2 magnitude that sets the scaling shift.
+        self.rounding = cfg['rounding'].lower()
         #: Maximum cycle count supported by the unary product map.
         self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
-        cycle_cfg = config.get('cycle', None)
+        cycle_cfg = cfg['cycle']
         #: Cycle count used for each unary product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
         #: Lookup map used to evaluate unary products.

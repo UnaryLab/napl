@@ -21,3 +21,28 @@ from .avgpool2d import *
 from .mgu_hardnua import *
 from .mgu_hardpt import *
 from .gru_hardnuapt import *
+
+__all__ = [
+    'avgpool2d',
+    'conv',
+    'conv_fxp',
+    'conv_hub',
+    'conv_pc',
+    'conv_tlut',
+    'conv_ugemm',
+    'gru_hardnuapt',
+    'linear',
+    'linear_fxp',
+    'linear_gaines1',
+    'linear_gaines2',
+    'linear_hub',
+    'linear_pc',
+    'linear_tlut',
+    'linear_ugemm',
+    'mgu',
+    'mgu_hard',
+    'mgu_hardfxp',
+    'mgu_hardnua',
+    'mgu_hardpt',
+    'mgu_hub',
+]

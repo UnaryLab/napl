@@ -1,8 +1,9 @@
 import torch
-import math
 
 from napl.utils import conv2d_output_shape, num2tuple
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation import add_any
+from napl.sim.operation.encode import encode
 from loguru import logger
 
 
@@ -10,36 +11,17 @@ class conv(napl_base):
     r"""Apply a rate-coded unary convolution one timestep at a time.
 
     Use this layer when the input is an NCHW spike stream and weights should be
-    encoded on a separate number-sequence dimension. Each timestep the weights are encoded
-    into spikes on a distinct RNG dimension, multiplied (XNOR bipolar / AND unipolar) with the
-    im2col'd input patches, and the partial products summed by a scaled unary adder, then
-    folded back to NCHW. The decoded output represents
-    ``conv2d(x, W) + b`` divided by ``scale``, which defaults to
-    ``in_channels * kh * kw + has_bias``, to stay in the unary range. Bipolar zero-padding uses a
-    decorrelated rate-0.5 pad stream (a separate pad encoder), not a deterministic toggle.
-    It supports rate-coded weights, ``groups=1``, and zero padding only.
-
-    The precise target is the scaled convolution
+    encoded on a separate number-sequence dimension. The decoded output rate
+    represents the convolution divided by **scale**, which defaults to the kernel
+    fan-in plus the bias, keeping the result inside the unary range,
 
     .. math::
 
        y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
 
-    Let :math:`u_t` be the im2col patch spikes, :math:`w_t` the weight spikes
-    encoded on the separate RNG dimension, :math:`b_t` the bias spike, and
-    :math:`K` the kernel fan-in. The layer forms the per-timestep parallel count
-
-    .. math::
-
-       c_t = \begin{cases}
-       w_t u_t + b_t, & \text{unipolar},\\
-       2 w_t u_t - \sum_k u_{k,t} - \sum_k w_{k,t} + K + b_t, & \text{bipolar},
-       \end{cases}
-
-    and emits :math:`y_t = \mathrm{add\_any}(c_t;\, s)` folded back to NCHW.
-    Bipolar padding contributes a rate-``0.5`` spike drawn from the separate pad
-    stream rather than a constant, so it decodes to ``0`` without correlating
-    with the weight stream.
+    Bipolar zero padding draws a rate-``0.5`` spike from a separate pad encoder,
+    so the padding decodes to ``0`` without correlating with the weight stream.
+    The layer supports rate-coded weights, ``groups=1``, and zero padding only.
 
     .. rubric:: Example
 
@@ -60,29 +42,31 @@ class conv(napl_base):
                          'dim': 2, 'scale': None, 'width': 12}):
         """Construct the streaming convolution from external numeric parameters.
 
-        Args:
-            weight: Numeric tensor shaped
-                ``(out_channels, in_channels, kernel_height, kernel_width)``.
-            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
-                ``None``.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            config: Configuration mapping with **polarity** (default
-                ``"bipolar"``), **timestep** (default ``256``), **generator**
-                (default ``"sobol"``), **dim** (weight Sobol dimension, default
-                ``2``), **scale** (default ``None``, meaning fan-in plus bias),
-                and **width** (accumulator width, default ``12``). **name** is an
-                optional instance label and defaults to ``None``.
+        .. container:: api-parameter-list
 
-        **width** must satisfy ``2 ** (width - 1) > fan_in + has_bias``. Bias and
-        bipolar padding use the next number-sequence dimensions.
+            **Parameters:**
+
+            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Weight-encoder stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1`` and the bipolar pad stream on ``dim + 2``; the default is ``2``.
+              - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > fan_in + has_bias``; the default is ``12``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        from napl.sim.operation import add_any
-        from napl.sim.operation.encode import encode
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
 
-        assert weight.dim() == 4, logger.error(f'conv weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
+        if weight.dim() != 4:
+            message = f'conv weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Trainable numeric convolution kernel encoded into a spike stream.
         self.weight = torch.nn.Parameter(weight)
         #: Optional trainable numeric bias encoded on its own sequence.
@@ -110,9 +94,13 @@ class conv(napl_base):
         self.scale = self.entry if scale is None else scale
 
         width = config.get('width', 12)
-        assert 2 ** (width - 1) > self.entry, logger.error(
-            f'conv accumulator width <{width}> too small for fan-in <{self.entry}>: '
-            f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
+        if 2 ** (width - 1) <= self.entry:
+            message = (
+                f'conv accumulator width <{width}> too small for fan-in <{self.entry}>: '
+                f'2**(width-1) must be > entry or partial sums saturate. Increase width.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
         if config['generator'].lower() not in ['sobol', 'rc', 'rate']:
             logger.warning(
                 f'conv decorrelates operands via distinct sobol dimensions, but generator '
@@ -138,6 +126,10 @@ class conv(napl_base):
                                self.pad_encoder.num_seq.detach()).type(self.stype)
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
+
+        # Encoders and the unary adder are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming layer.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}

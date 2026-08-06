@@ -237,8 +237,8 @@ Hard constraints on the Step 3 edit; a violation is a bug, not a speedup:
   and the test gate (Step 4) is what decides whether that is acceptable.
 - Follow `CLAUDE.md` conventions: spike/non-spike dtypes (`self.stype`/`self.ntype`);
   **never use `>>`/`<<` on float tensors** (use `pow2_lshift`/`pow2_rshift` from
-  `utils/utils.py`); keep the lazy `operation` imports inside `__init__` that break the
-  `module`<->`operation` import cycle.
+  `utils/utils.py`); keep `operation` imports at file top, since `operation` imports nothing
+  from `module`, `metric`, or `algorithm`.
 - **Preserve broadcast ability.** If the module sizes a running accumulator/buffer as a scalar
   (`torch.zeros(1)`) and grows it to the input shape on the first `forward()` via an out-of-place
   op, do NOT convert that to in-place: in-place cannot expand the destination and breaks the

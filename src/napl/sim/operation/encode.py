@@ -25,11 +25,14 @@ def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
     needs distinct sequences checks the sequences it derived, not the seeds it
     passed.
     """
-    assert width >= 2, logger.error(
-        f'Invalid lfsr width: <{width}>; legal values: an integer >= 2. '
-        f'A width-1 LFSR has no feedback polynomial. A caller deriving this width '
-        f'from a size, such as round(log2(entry)), needs that size to be at least 3.'
-    )
+    if width < 2:
+        message = (
+            f'Invalid lfsr width: <{width}>; legal values: an integer >= 2. '
+            f'A width-1 LFSR has no feedback polynomial. A caller deriving this width '
+            f'from a size, such as round(log2(entry)), needs that size to be at least 3.'
+        )
+        logger.error(message)
+        raise AssertionError(message)
 
     if seed is None:
         # The default seed makes generated sequences reproducible.
@@ -91,8 +94,10 @@ def gen_num_seq(config={
 
     legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'rate', 'temporal']
 
-    assert generator in legal_rngs, \
-        logger.error(f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.')
+    if generator not in legal_rngs:
+        message = f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.'
+        logger.error(message)
+        raise AssertionError(message)
 
     if (generator == 'sobol') or (generator == 'rc') or (generator == 'rate'):
         # Rate coding uses the requested Sobol dimension.
@@ -117,8 +122,10 @@ def input_scale(input, quantile=1):
     The input quantile needs to be within (0, 1].
     """
 
-    assert quantile > 0 and quantile <= 1, \
-        logger.error(f'Invalid quantile: <{quantile}>; legal values: (0, 1].')
+    if quantile <= 0 or quantile > 1:
+        message = f'Invalid quantile: <{quantile}>; legal values: (0, 1].'
+        logger.error(message)
+        raise AssertionError(message)
 
     quantile_lower = 0.5 - quantile / 2
     quantile_upper = 0.5 + quantile / 2
@@ -137,8 +144,8 @@ class encode(napl_base):
     call. Values are interpreted in ``[0, 1]`` for unipolar encoding and
     ``[-1, 1]`` for bipolar encoding.
 
-    The precise target is a stream whose rate equals the encoded probability of
-    the input value :math:`x`,
+    The target is a stream whose rate equals the encoded probability of the input
+    value :math:`x`,
 
     .. math::
 
@@ -148,16 +155,10 @@ class encode(napl_base):
        (x+1)/2, & \text{bipolar}.
        \end{cases}
 
-    Let :math:`q` be the generated number sequence of period
-    :math:`L = 2^{\lceil \log_2 T \rceil}`. Each timestep compares the encoded
-    probability against the next number in that sequence,
-
-    .. math::
-
-       s_t = \mathbf{1}\left\{p > q_{(t-1) \bmod L}\right\},
-
-    so the realized rate matches the target only to the resolution of the
-    length-:math:`L` sequence.
+    The realized rate matches this target to the resolution of the number
+    sequence, whose period is :math:`2^{\lceil \log_2 T \rceil}`. With a temporal
+    generator the stream is a run of ones followed by zeros, and a larger value
+    places the falling edge later.
 
     .. rubric:: Example
 
@@ -169,6 +170,16 @@ class encode(napl_base):
         enc = encode({"polarity": "unipolar", "timestep": 4,
                        "generator": "sobol"})
         output_spike = enc(torch.tensor([0.25, 0.75]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        Sobol number sequence generator:
+        *Energy efficient stochastic computing with Sobol sequences*, DATE, 2017.
+
+        Comparator-based stream generator:
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 
@@ -204,11 +215,14 @@ class encode(napl_base):
 
         Construction generates and stores the complete number sequence.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'dim', 'seed', 'taps'], polarity_required=True)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
-        assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width of the power-of-two number-sequence period.
         self.width = math.ceil(math.log2(self.timestep))
         #: Lowercase name of the configured number-sequence generator.

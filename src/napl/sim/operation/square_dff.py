@@ -8,23 +8,15 @@ class square_dff(napl_base):
     r"""
     Square a unary stream by multiplying it with a delayed copy.
 
-    The precise target rate-domain operation is
+    The rate-domain operation is
 
     .. math::
 
        p_y = p_x^2 \quad (\text{unipolar}),\qquad
        v_y = v_x^2 \quad (\text{bipolar}).
 
-    Let z_t be the input delayed by depth timesteps, with z_t=0 while the
-    internal D flip-flop is filling. The exact polarity-dependent operation is
-
-    .. math::
-
-       y_t =
-       \begin{cases}
-       x_t\mathbin{\land}z_t, & \text{unipolar},\\
-       1-(x_t\mathbin{\oplus}z_t), & \text{bipolar}.
-       \end{cases}
+    A **depth**-timestep delay decorrelates the stream from itself. The first
+    **depth** outputs are formed against the zero-filled delay line.
 
     .. rubric:: Example
 
@@ -42,7 +34,7 @@ class square_dff(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
 
-        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro Top Picks, 2021.
+        *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro, 2021.
     """
 
 
@@ -66,7 +58,7 @@ class square_dff(napl_base):
               - **depth**: Number of timesteps in the internal D flip-flop delay; the default is ``1``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity'], polarity_required=True)
+        super().__init__(config, ['polarity', 'depth'], polarity_required=True)
 
         #: Delay line that supplies the earlier spike multiplied with the current input.
         self.dff = dff(config={'depth': config['depth']})

@@ -7,25 +7,15 @@ class relu_cnt(napl_base):
     r"""
     Apply ReLU to a bipolar rate-coded stream with a saturating counter.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \max(x,0).
 
-    Let x_t be the current input spike, a_t the counter state, and
-    H = 2**(width-1). The output is generated before the counter update:
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= x_t \mathbin{\lor} \mathbf{1}\{a_{t-1}<H\},\\
-       a_t &= \operatorname{clip}(a_{t-1}+2y_t-1,\,
-       0,\,2^{width}-1).
-       \end{aligned}
-
-    The initial counter is a_0 = H and the output remains a bipolar 0/1
-    spike stream.
+    The output rate is held at or above bipolar zero to the resolution of a
+    **width**-bit counter, so the result approximates the target. The input and
+    the output are both bipolar 0/1 spike streams.
 
     .. rubric:: Example
 
@@ -36,6 +26,12 @@ class relu_cnt(napl_base):
 
         operation = relu_cnt()
         output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -57,7 +53,7 @@ class relu_cnt(napl_base):
               - **width**: Counter bit width; the default is ``3``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Saturating accumulator width in bits.
         self.width = config['width']

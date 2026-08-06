@@ -12,28 +12,16 @@ class sqrt_tracejkff(napl_base):
     when a JK flip-flop trace is desired. Its accuracy is more sensitive to
     input-stream randomness than :class:`sqrt_traceiscb`.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \sqrt{x}.
 
-    Let q_t be the stored JK state and x_t the current input spike. The output
-    and trace update are
-
-    .. math::
-
-       \begin{aligned}
-       u_t &= q_t \mathbin{\lor} x_t, &
-       q_{t+1} &= (1-q_t)u_t
-       && (\text{unipolar}),\\
-       q_{t+1} &= (1-q_t)B(u_t)
-       && (\text{bipolar}),\\
-       p_q &= \frac{p_u}{p_u+1}, &
-       p_u^2 &= p_x,
-       \end{aligned}
-
-    where B is the bipolar-to-unipolar conversion used for the bipolar trace.
+    The kernel approximates it by inserting a trace stream into the input. The
+    trace holds the rate :math:`p_q = p_y / (p_y + 1)`, which makes
+    :math:`p_y^2 = p_x`, and a JK flip-flop driven by the output stream
+    generates it.
 
     .. rubric:: Example
 
@@ -51,7 +39,7 @@ class sqrt_tracejkff(napl_base):
 
         *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 

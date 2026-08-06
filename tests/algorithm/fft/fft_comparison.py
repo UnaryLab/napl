@@ -12,17 +12,19 @@ x = torch.tensor([
     1.0000, 1.14644661, 0.5000, 0.14644661
 ])
 
+# Measured with butterfly_spike over four radix-2 stages: bipolar sobol streams,
+# timestep 4096, adder scale 2, input scaled by 1/2 and the output by 2 * 2**4.
 unary_real = torch.tensor([
-    15.9375, -0.0391, -0.0234, -0.0234,
-    -0.0156, 0.0000, 0.0000, -0.0156,
-    0.0000, 0.0000, 0.0078, -0.0078,
-    -0.0078, 0.0000, 0.0000, -0.0078
+    15.9844, 0.0000, -0.0156, 0.0000,
+    -0.0156, 0.0000, -0.0156, 0.0000,
+    -0.0156, 0.0000, -0.0156, 0.0000,
+    0.0000, 0.0000, 0.0000, 0.0000
 ])
 unary_imag = torch.tensor([
-    -0.0078, 0.0000, -4.0078, -0.0156,
-    -4.0000, 0.0000, -0.0234, -0.0078,
-    -0.0078, 0.0000, 0.0000, 0.0000,
-    3.9922, 0.0000, 3.9922, 0.0000
+    -0.0312, 0.0000, -3.9844, 0.0000,
+    -4.0000, 0.0000, 0.0156, 0.0000,
+    0.0000, 0.0000, -0.0156, 0.0000,
+    3.9844, 0.0000, 3.9531, 0.0000
 ])
 
 torch_real = torch.tensor([
@@ -38,7 +40,8 @@ torch_imag = torch.tensor([
     4.0, 0.0, 4.0, 0.0
 ])
 
-# Restore natural order from the bit-reversed FFT output.
+# Both spectra are in natural bin order; the sort below only moves the negative
+# frequencies ahead of the positive ones for plotting.
 n = 16
 duration = 1  # seconds
 

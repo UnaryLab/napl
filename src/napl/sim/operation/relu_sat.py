@@ -6,28 +6,14 @@ class relu_sat(napl_base):
     r"""
     Apply ReLU to a bipolar rate-coded stream with saturating adders.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \max(x,0).
 
-    With a_0^(1) = a_0^(2) = 0, the two width-three adders implement
-
-    .. math::
-
-       \begin{aligned}
-       \tilde a_t^{(1)} &=
-       \operatorname{clip}(a_{t-1}^{(1)}+x_t-\tfrac{1}{2},-4,3),&
-       u_t &= \mathbf{1}\{\tilde a_t^{(1)}\geq 1\},&
-       a_t^{(1)} &= \tilde a_t^{(1)}-u_t,\\
-       \tilde a_t^{(2)} &=
-       \operatorname{clip}(a_{t-1}^{(2)}+u_t+\tfrac{1}{2},-4,3),&
-       y_t &= \mathbf{1}\{\tilde a_t^{(2)}\geq 1\},&
-       a_t^{(2)} &= \tilde a_t^{(2)}-y_t.
-       \end{aligned}
-
-    The output is the bipolar 0/1 spike y_t produced by the second adder.
+    Rate saturation clips the negative part away, so the result approximates
+    the target. The input and the output are both bipolar 0/1 spike streams.
 
     .. rubric:: Example
 
@@ -38,6 +24,12 @@ class relu_sat(napl_base):
 
         operation = relu_sat()
         output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -54,7 +46,7 @@ class relu_sat(napl_base):
 
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Bipolar saturating adder that performs the first ReLU transform stage.
         self.sub_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})

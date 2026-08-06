@@ -29,7 +29,7 @@ Do not run the full sweep (`tests/sweep_test.py`) without explicit user approval
 ## Critical implementation gotchas
 
 - **Never use `>>`/`<<` on float tensors.** UnarySim relied on a monkey-patched float bit-shift; stock PyTorch shifts are integer-only. Use the `pow2_lshift`/`pow2_rshift` shims in `utils/utils.py`.
-- **Import direction:** `sim/operation` is self-contained and does not import `sim/module`; `encode`, `decode`, and `gen_num_seq` live in `sim/operation`. `sim/module/{linear,conv,rnn}` still import `sim/operation` primitives lazily inside `__init__`.
+- **Import direction:** `sim/operation` is self-contained and does not import `sim/module`, `sim/metric`, or `sim/algorithm`; `encode`, `decode`, and `gen_num_seq` live in `sim/operation`. `sim/module` imports `sim/operation` primitives at file top, and `napl/__init__.py` star-imports `sim/operation` before `sim/module`.
 - `conv` bipolar zero-padding uses a *decorrelated rate-0.5 pad stream* (a separate pad encoder), not a deterministic 0/1 toggle (which would correlate with the Sobol weight stream).
 ## RTL implementation (`src/napl/imp/`)
 

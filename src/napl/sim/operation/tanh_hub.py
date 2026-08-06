@@ -7,14 +7,17 @@ class tanh_hub(napl_base):
     r"""
     Apply hard tanh in the binary domain.
 
-    The single-shot forward operation is
+    The target is
 
     .. math::
 
-       y = \operatorname{clip}(x,-1,1)
-       = \min(\max(x,-1),1).
+       y = \tanh(x).
 
-    This is the bounded binary-domain hard-tanh operation.
+    The kernel evaluates its piecewise-linear approximation
+
+    .. math::
+
+       y = \operatorname{clip}(x,-1,1).
 
     .. rubric:: Example
 
@@ -43,7 +46,7 @@ class tanh_hub(napl_base):
 
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=['polarity'])
         #: Modeled scalar latency of the single-shot hard tanh.
         self.delay = 0
 

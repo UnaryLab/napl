@@ -1,8 +1,8 @@
 import torch
-import math
 
 from napl.utils import conv2d_output_shape, num2tuple
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
+from napl.sim.operation import add_any, mul_ugemm
 from loguru import logger
 
 
@@ -10,47 +10,22 @@ class conv_ugemm(napl_base):
     r"""Apply streaming unary convolution with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
-    free-running weight encoder used by :class:`conv`. It provides uGEMM-style
-    conditional spike generation. Each weight-stream index advances when its
-    input spike is ``1``, following the ``mul_ugemm`` rule, so products are
-    input-driven. Per timestep, image-column input spikes gate the weight bits;
-    bipolar mode adds the input-``0`` inverse path. A scaled unary adder emits
-    the output spike and the decoded output represents
-    ``(conv2d(x, W) + b) / scale``, with **scale** defaulting to
-    ``in_channels * kernel_height * kernel_width + has_bias``. Bipolar
-    zero-padding alternates ``0`` and ``1`` each timestep, a deterministic
-    rate-``0.5`` stream, unlike :class:`conv`'s decorrelated pad
-    encoder). It is rate-coded, supports ``groups=1`` and zero padding, and
-    implements only the scaled UnarySim ``FSUConv2duGEMM`` mode.
-
-    The precise target is the scaled convolution
+    free-running weight encoder used by :class:`conv`. Weight spikes come from
+    :class:`mul_ugemm` conditional spike generation, where each weight-stream
+    index advances only when its input spike is ``1``, and bipolar mode adds an
+    input-``0`` path on a separate index. The decoded output rate
+    represents the convolution divided by **scale**, which defaults to the kernel
+    fan-in plus the bias,
 
     .. math::
 
        y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
 
-    Let :math:`p_k` be the encoded weight probability, :math:`u_{k,t}` the im2col
-    patch spikes, and :math:`q` the number sequence. Each weight keeps its own
-    index, advanced only by the matching input spike,
-
-    .. math::
-
-       k_{t} = \sum_{\tau < t} u_{\tau},\qquad
-       \hat w_{t} = \mathbf{1}\{p > q_{k_{t}}\},
-
-    and the per-timestep sum is
-
-    .. math::
-
-       c_t = \sum_k \hat w_{k,t}\, u_{k,t} + b_t
-       + \underbrace{\sum_k \mathbf{1}\{p_k \leq q_{k^{0}_{t}}\}
-       (1 - u_{k,t})}_{\text{bipolar only}},
-
-    where the input-``0`` path keeps a second index advanced by
-    :math:`1 - u_{k,t}`. The output is
-    :math:`y_t = \mathrm{add\_any}(c_t;\, s)`. In the code both paths are gated
-    by shifting the compared threshold by :math:`\pm 2`, which is equivalent to
-    masking the inactive lanes.
+    Bipolar zero padding alternates ``0`` and ``1`` each timestep, a
+    deterministic rate-``0.5`` stream, where :class:`conv` instead uses a
+    decorrelated pad encoder. The layer is rate-coded, supports ``groups=1`` and
+    zero padding, and implements only the scaled UnarySim ``FSUConv2duGEMM``
+    mode.
 
     .. rubric:: Example
 
@@ -64,9 +39,11 @@ class conv_ugemm(napl_base):
                                    "generator": "sobol"})
         output_spike = layer(torch.ones(1, 1, 4, 4))
 
-    References
-    ----------
-    *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
     #: Encoding advances conditionally on data, so the RTL counterpart holds
     #: its own encoder instead of sharing an external one.
@@ -78,31 +55,33 @@ class conv_ugemm(napl_base):
                          'scale': None, 'width': 12}):
         """Construct the streaming CSG convolution.
 
-        Args:
-            weight: Numeric convolution weight shaped
-                ``(out_channels, in_channels, kernel_height, kernel_width)``.
-            bias: Optional numeric tensor shaped ``(out_channels,)``. Defaults to
-                ``None``.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            config: Configuration mapping with **polarity** (default
-                ``"bipolar"``), **timestep** (positive stream length, default
-                ``256``), **generator** (default ``"sobol"``), **scale**
-                (default ``None``, meaning fan-in plus bias), and **width**
-                (accumulator width, default ``12``). **name** is an optional
-                instance label and defaults to ``None``.
+        .. container:: api-parameter-list
 
-        **width** must satisfy ``2 ** (width - 1) > fan_in + has_bias``.
-        Numeric weights and bias are converted to persistent spike probabilities.
+            **Parameters:**
+
+            - **weight** – Numeric convolution weight shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **timestep**: Positive stream length; the default is ``256``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > fan_in + has_bias``; the default is ``12``.
+              - **name**: Optional instance label.
+
+        The weight is held as a numeric buffer and converted to spike
+        probabilities by the conditional spike generator on its first call.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        # These imports stay local to avoid the module-operation import cycle.
-        from napl.sim.operation import add_any
-        from napl.sim.operation.encode import gen_num_seq
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['scale', 'width'], polarity_required=True)
 
-        assert weight.dim() == 4, logger.error(
-            f'conv_ugemm weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.')
+        if weight.dim() != 4:
+            message = f'conv_ugemm weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Number of convolution output channels.
         self.out_channels = weight.shape[0]
         #: Number of convolution input channels.
@@ -127,31 +106,32 @@ class conv_ugemm(napl_base):
         self._is_bipolar = (self.polarity == 'bipolar')
 
         width = config.get('width', 12)
-        assert 2 ** (width - 1) > self.entry, logger.error(
-            f'conv_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
-            f'2**(width-1) must be > entry or partial sums saturate. Increase width.')
+        if 2 ** (width - 1) <= self.entry:
+            message = (
+                f'conv_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
+                f'2**(width-1) must be > entry or partial sums saturate. Increase width.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
-        assert self.timestep > 0, logger.error(
-            f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
-        rng_width = math.ceil(math.log2(self.timestep))
-        #: Power-of-two period of the conditional-generator sequence.
-        self.len = 2 ** rng_width
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         # Weight and bias CSG paths share one RNG sequence.
-        #: Threshold sequence shared by weight and bias spike generation.
-        self.num_seq: torch.Tensor
-        self.register_buffer(
-            'num_seq',
-            gen_num_seq(config={'width': rng_width, 'generator': config['generator']}),
-        )
+        #: Conditional spike generator holding the weight sequence and its per-input indices.
+        self.mul = mul_ugemm({'polarity': self.polarity, 'timestep': self.timestep,
+                              'generator': config['generator']})
+        #: Power-of-two period of the conditional-generator sequence.
+        self.len = self.mul.len
 
-        w_prob = (weight + 1) / 2 if self._is_bipolar else weight
-        #: Flattened numeric weight probabilities used by conditional generation.
-        self.w_prob: torch.Tensor
+        #: Flattened numeric weight used by conditional generation.
+        self.w_flat: torch.Tensor
         self.register_buffer(
-            'w_prob',
-            w_prob.reshape(self.out_channels, -1).type(self.ntype).detach(),
+            'w_flat',
+            weight.reshape(self.out_channels, -1).type(self.ntype).detach(),
         )
         if self.has_bias:
             b_prob = (bias + 1) / 2 if self._is_bipolar else bias
@@ -159,18 +139,20 @@ class conv_ugemm(napl_base):
             self.b_prob: torch.Tensor
             self.register_buffer('b_prob', b_prob.type(self.ntype).detach())
 
-        # Input-one and input-zero bits advance separate CSG indices.
-        #: Per-input conditional-generator indices advanced by input-one spikes.
-        self.w_idx: torch.Tensor
-        self.register_buffer('w_idx', torch.zeros(1, dtype=torch.long))
-        if self._is_bipolar:
-            #: Per-input indices advanced by input-zero spikes in bipolar mode.
-            self.w_idx_inv: torch.Tensor
-            self.register_buffer('w_idx_inv', torch.zeros(1, dtype=torch.long))
-
         #: Streaming unary adder that reduces each convolution product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
+
+        #: Flat gather indices that build the im2col patch layout, rebuilt on demand.
+        self._im2col_idx: torch.Tensor
+        self.register_buffer('_im2col_idx', None, persistent=False)
+        #: Input shape and device the cached gather indices were built for.
         self._im2col_key = None
+        #: Spatial output shape cached with the gather indices.
+        self._out_hw = None
+
+        # Conditional generation and the adder are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming layer.
+        self.hw = hw_params(pp_delay=0)
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
@@ -179,14 +161,15 @@ class conv_ugemm(napl_base):
 
 
     def _reset(self):
-        """Reset the local conditional-generator indices.
+        """Drop the cached convolution geometry.
 
-        The input-one path index and, for bipolar streams, the input-zero path
-        index return to scalar zero. Cached convolution geometry remains available.
+        The gather indices and output shape are rebuilt on the next call. The
+        inherited ``reset()`` method restarts the conditional spike generator,
+        which owns the per-input sequence indices, and the unary adder.
         """
-        self.w_idx.resize_(1).zero_()
-        if self._is_bipolar:
-            self.w_idx_inv.resize_(1).zero_()
+        self._im2col_idx = None
+        self._im2col_key = None
+        self._out_hw = None
 
 
     def forward(self, input_spike):
@@ -214,32 +197,16 @@ class conv_ugemm(napl_base):
             pad_bit = float((self.timestep_cur - 1) % 2) if self._is_bipolar else 0.0
             xf = torch.nn.functional.pad(xf, (pw, pw, ph, ph), value=pad_bit)
         inp = xf.reshape(xf.size(0), -1).index_select(1, self._im2col_idx).view(-1, self.K)
-        inv = 1 - inp
 
-        # Adding 2 disables CSG comparisons on input-zero lanes.
-        rnd = self.num_seq[self.w_idx] + inv * 2
-        psum = torch.gt(self.w_prob.unsqueeze(0), rnd.unsqueeze(1)).sum(-1, dtype=self.ntype)
-        # Input-one indices expand once, then advance in place.
-        if self.w_idx.shape == inp.shape:
-            self.w_idx.add_(inp.type(torch.long))
-        else:
-            expanded = self.w_idx.add(inp.type(torch.long)).detach()
-            self.w_idx.resize_as_(expanded).copy_(expanded)
-
-        if self._is_bipolar:
-            # Subtracting 2 disables inverse comparisons on input-one lanes.
-            rnd_inv = self.num_seq[self.w_idx_inv] - inp * 2
-            psum += torch.le(self.w_prob.unsqueeze(0), rnd_inv.unsqueeze(1)).sum(-1, dtype=self.ntype)
-            if self.w_idx_inv.shape == inv.shape:
-                self.w_idx_inv.add_(inv.type(torch.long))
-            else:
-                expanded = self.w_idx_inv.add(inv.type(torch.long)).detach()
-                self.w_idx_inv.resize_as_(expanded).copy_(expanded)
+        # The patch spike broadcasts over output channels, so each patch position
+        # keeps one sequence index shared by the whole weight row.
+        product = self.mul(inp.unsqueeze(1), self.w_flat)
+        psum = product.type(self.ntype).sum(-1)
 
         if self.has_bias:
             # The bias stream advances once per timestep on the shared RNG.
             psum += torch.gt(self.b_prob,
-                             self.num_seq[(self.timestep_cur - 1) % self.len]).type(self.ntype)
+                             self.mul.num_seq[(self.timestep_cur - 1) % self.len]).type(self.ntype)
 
         acc = self.acc(psum, entry=self.entry, dim=None)
         return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \

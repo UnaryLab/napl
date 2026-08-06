@@ -11,28 +11,18 @@ class signabs_shiftreg(napl_base):
     Use this streaming kernel when recent input history should estimate the sign
     without a multi-bit saturating counter.
 
-    The precise target splits a bipolar value :math:`v` into its sign and
-    magnitude, so that the returned streams decode to
+    The target splits a bipolar value :math:`v` into its sign and magnitude, so
+    that the returned streams decode to
 
     .. math::
 
        \mathrm{sign} = \mathbf{1}\{v < 0\},\qquad
        \mathrm{magnitude} = |v|.
 
-    The kernel estimates the sign from the ones in a depth-:math:`d` shift
-    register holding the most recent inputs, seeded with alternating bits so its
-    initial count is balanced,
-
-    .. math::
-
-       n_t = \sum_{k=1}^{d} s_{t-k},\qquad
-       \mathrm{sign}_t = \mathbf{1}\{n_t < d/2\},\qquad
-       \mathrm{magnitude}_t = \mathrm{sign}_t \oplus s_t,
-
-    where the register is updated after the outputs are formed, so
-    :math:`n_t` covers the previous :math:`d` timesteps and not the current one.
-    A fixed window tracks a changing input faster than a saturating counter but
-    gives a noisier estimate near :math:`v = 0`.
+    The sign is estimated online from the ones count of the previous **depth**
+    inputs, held in a shift register seeded with alternating bits so its initial
+    count is balanced. A fixed window tracks a changing input faster than a
+    saturating counter but gives a noisier estimate near :math:`v = 0`.
 
     .. rubric:: Example
 
@@ -43,6 +33,12 @@ class signabs_shiftreg(napl_base):
 
         operation = signabs_shiftreg({'depth': 8})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -59,15 +55,14 @@ class signabs_shiftreg(napl_base):
               - **depth**: Shift-register length as an integer in ``[1, 127]``; the default is ``8``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Number of bipolar spike-history entries retained by the converter.
         self.depth = config['depth']
-        assert isinstance(self.depth, int) and 0 < self.depth <= 127, (
-            logger.error(
-                f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
-            )
-        )
+        if not isinstance(self.depth, int) or not (0 < self.depth <= 127):
+            message = f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
+            logger.error(message)
+            raise AssertionError(message)
         #: Half-depth count threshold that represents bipolar zero.
         self.depth_half = self.depth / 2
 

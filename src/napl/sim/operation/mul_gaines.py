@@ -10,17 +10,12 @@ class mul_gaines(napl_base):
     Use this stateless operation for two already-decorrelated spike streams:
     AND for unipolar streams and XNOR for bipolar streams.
 
-    For binary input spikes ``s_0`` and ``s_1``, the exact per-timestep gate is
+    The target rate-domain operation is
 
     .. math::
 
-       y_t = \begin{cases}
-       s_{0,t} s_{1,t}, & \text{unipolar},\\
-       s_{0,t} s_{1,t} + (1-s_{0,t})(1-s_{1,t}), & \text{bipolar}.
-       \end{cases}
-
-    Thus the unipolar rate is ``p_0 p_1`` and the bipolar decoded value is the
-    product of the two bipolar decoded input values.
+       p_y = p_0p_1 \quad (\text{unipolar}),\qquad
+       v_y = v_0v_1 \quad (\text{bipolar}).
 
     .. rubric:: Example
 
@@ -37,7 +32,7 @@ class mul_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 

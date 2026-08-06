@@ -1,5 +1,6 @@
 import copy
 import inspect
+import re
 
 import torch
 
@@ -7,11 +8,12 @@ import napl
 from napl.sim.base import napl_base
 
 
-# A superset of the configuration keys used across the simulation classes. Each
-# class reads the keys it declares and ignores the rest, so one mapping probes
-# nearly every constructor.
+# A superset of the configuration keys used across the simulation classes. A
+# class rejects any key it does not declare, so the probe below trims this
+# mapping down to what each constructor accepts. Every class accepts 'name', so
+# the trimmed mapping always keeps at least that key.
 CONFIG = {
-    'polarity': 'unipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 1, 'seed': 1,
+    'name': 'probe', 'polarity': 'unipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 1, 'seed': 1,
     'width': 4, 'depth': 4, 'entry': 4, 'scaled': True, 'scale': 2, 'bitwidth': 8,
     'cycle': 8, 'widthi': 4, 'widthw': 4, 'quantilei': 1, 'quantilew': 1,
     'rounding': 'round', 'rngi': 'sobol', 'rngw': 'sobol', 'temporal': 'i',
@@ -39,15 +41,20 @@ SPECIAL_CASES = {
              {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2,
               'scale': None, 'width': 12}),
     'conv_ugemm': ([WEIGHT_4D, None, 1, 0, 1],
-                   {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2}),
+                   {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
+    # mgu is bipolar only and holds its hidden value as a buffer, so it needs a tensor.
+    'mgu': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
+            {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
+    # mgu_hub builds its streaming cell at construction, so the gate tensors must fit.
+    'mgu_hub': ([2, 2, True, torch.zeros(2, 4), torch.zeros(2), torch.zeros(2, 4), torch.zeros(2)],
+                {'polarity': 'bipolar', 'width': 2, 'generator': 'sobol', 'depth_ismul': 6}),
 }
 
 # butterfly_spike takes four separate configuration mappings instead of one.
 BUTTERFLY_CONFIGS = (
     {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 1},
-    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2},
-    {'polarity': 'bipolar', 'scale': 2, 'width': 10, 'scaled': True, 'entry': 2,
-     'generator': 'sobol', 'dim': 3},
+    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'},
+    {'polarity': 'bipolar', 'scale': 2, 'width': 10},
     {'polarity': 'bipolar', 'timestep': 16},
 )
 
@@ -99,24 +106,39 @@ def simulation_classes():
     )
 
 
+# The key named by the rejection raised from check_config for an unaccepted key.
+UNKNOWN_KEY = re.compile(r'Unknown key <([^>]+)>')
+
+
 def _probe(cls, arguments, config):
-    """Construct ``cls`` and return the writes it made, or ``None`` when it did not construct."""
+    """Construct ``cls`` and return ``(writes, error)``; ``writes`` is ``None`` on failure."""
     probe = recording_dict(copy.deepcopy(config))
     try:
         cls(*arguments, probe) if arguments else cls(probe)
-    except Exception:
-        return None
-    return probe.writes
+    except Exception as error:
+        return None, error
+    return probe.writes, None
 
 
 def _probe_generic(cls):
-    """Try each argument shape and polarity until one constructs."""
+    """Try each argument shape and polarity until one constructs.
+
+    A class rejects any configuration key it does not declare, so a rejected key
+    is dropped from the candidate configuration and the shape is retried. The
+    retry count is bounded by the number of keys, and a configuration that would
+    become empty is abandoned so every probe carries at least one key.
+    """
     for polarity in ('unipolar', 'bipolar'):
         config = dict(CONFIG, polarity=polarity)
         for arguments in ARGUMENT_SHAPES:
-            writes = _probe(cls, arguments, config)
-            if writes is not None:
-                return writes
+            for _ in range(len(CONFIG)):
+                writes, error = _probe(cls, arguments, config)
+                if writes is not None:
+                    return writes
+                match = UNKNOWN_KEY.search(str(error))
+                if match is None or match.group(1) not in config or len(config) == 1:
+                    break
+                del config[match.group(1)]
     return None
 
 
@@ -133,7 +155,7 @@ def test_config_not_mutated():
             writes = [write for probe in probes for write in probe.writes]
         elif name in SPECIAL_CASES:
             arguments, config = SPECIAL_CASES[name]
-            writes = _probe(getattr(napl, name), arguments, config)
+            writes, _ = _probe(getattr(napl, name), arguments, config)
         else:
             writes = _probe_generic(getattr(napl, name))
 

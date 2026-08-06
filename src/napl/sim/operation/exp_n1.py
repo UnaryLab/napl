@@ -14,24 +14,24 @@ class exp_n1(napl_base):
     when the input represents values in ``[0, 1]`` and a stochastic
     approximation of the negative exponential is required.
 
-    The precise target operation is
+    The target operation is
 
     .. math::
 
        f(x) = \\exp(-x).
 
-    For input rate ``x`` and stream length ``T``, the coefficient rates are
-    ``c_1 = Q_T(0.2)``, ``c_2 = Q_T(0.25)``, ``c_3 = Q_T(0.3333)``, and
-    ``c_4 = Q_T(0.5)``, where ``Q_T(v)`` is the ``torch.round`` quantization
-    to ``2**ceil(log2(T))`` levels used by the four coefficient streams. The
-    rate-domain operation implemented by the NAND chain is
+    The series is truncated after five terms and its coefficients are
+    quantized, following the circuit in Fig. 12 of the reference below, so the
+    approximated rate-domain operation is
 
     .. math::
 
        \\mathbb{E}[y] = 1 - x + c_4 x^2 - c_4 c_3 x^3
-       + c_4 c_3 c_2 x^4 - c_4 c_3 c_2 c_1 x^5.
+       + c_4 c_3 c_2 x^4 - c_4 c_3 c_2 c_1 x^5,
 
-    With the default ``T = 256``, the coefficients are
+    where ``c_1``, ``c_2``, ``c_3``, and ``c_4`` are ``0.2``, ``0.25``,
+    ``0.3333``, and ``0.5`` rounded to ``2**ceil(log2(T))`` levels for stream
+    length ``T``. With the default ``T = 256`` they are
     ``(c_1, c_2, c_3, c_4) = (51/256, 1/4, 85/256, 1/2)``.
 
     .. rubric:: Example
@@ -48,7 +48,7 @@ class exp_n1(napl_base):
 
         .. rubric:: References
 
-        K. Parhi and Y. Liu, *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2017, Fig. 12.
+        *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
 
 
@@ -76,14 +76,18 @@ class exp_n1(napl_base):
               - **dim**: First Sobol dimension used for the four constant streams; the default is ``1``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        assert self.polarity == 'unipolar', \
-            logger.error(f'Invalid polarity: <{self.polarity}>; exp_n1 supports unipolar only.')
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim'], polarity_required=True)
+        if self.polarity != 'unipolar':
+            message = f'Invalid polarity: <{self.polarity}>; exp_n1 supports unipolar only.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Requested stream length used to size the periodic coefficient sequences.
         self.timestep = config['timestep']
-        assert self.timestep > 0, \
-            logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width of the power-of-two coefficient sequences.
         self.width = math.ceil(math.log2(self.timestep))
         #: Period of each coefficient spike sequence.

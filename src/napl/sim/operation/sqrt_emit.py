@@ -11,30 +11,15 @@ class sqrt_emit(napl_base):
     Use this streaming kernel for unipolar or bipolar rate-coded square root
     when an emission-feedback implementation is desired.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \sqrt{x}.
 
-    Let a_t be the nsadd accumulator and e_t the saved emission bit. With
-    S_2 denoting the depth-two shift-register output, the exact update is
-
-    .. math::
-
-       \begin{aligned}
-       \tilde a_t &= a_{t-1} + x_t + e_t, &
-       y_t &= \mathbf{1}\{\tilde a_t \geq 1\}, &
-       a_t &= \tilde a_t-y_t,\\
-       e_{t+1} &= S_2(1-y_t)\mathbin{\land}y_t
-       &&(\text{unipolar}),\\
-       e_{t+1} &= S_2(1-y_t)\mathbin{\land}B(y_t)
-       &&(\text{bipolar}).
-       \end{aligned}
-
-    Here B is bi2uni applied only in the bipolar emission path.
-    The width-three nsadd clamp to ``[-4, 3]`` never binds on this reachable
-    state because the partial sum stays within that range.
+    The kernel approximates it by inserting extra spikes into the input stream
+    whenever the output stream can absorb them, so the accuracy depends on the
+    stream length and on the randomness of the input stream.
 
     .. rubric:: Example
 
@@ -52,7 +37,7 @@ class sqrt_emit(napl_base):
 
         *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 

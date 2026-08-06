@@ -1,44 +1,37 @@
-import torch
-import math
-
 from napl.utils import rshift_offset
 from napl.sim.base import napl_base
-from loguru import logger
 from napl.sim.module._shared import _init_conv_params, _conv2d_binary, _linear_fxp_fn
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'widthi': 8,
+    'quantilei': 1,
+    'widthw': 8,
+    'quantilew': 1,
+    'rounding': 'round',
+}
 
 
 class conv_fxp(napl_base):
     r"""Apply a trainable fixed-point approximation of ``torch.nn.Conv2d``.
 
     Use this single-shot layer for quantization-aware convolution with
-    ``groups=1`` and zero padding. It lowers convolution to image columns, applies
-    the fixed-point linear kernel, and folds the result back to NCHW.
-
-    The precise target is
+    ``groups=1`` and zero padding. The target is
 
     .. math::
 
-       y = \mathrm{conv2d}(x, W) + b.
+       y = \mathrm{conv2d}(x, W) + b,
 
-    Lowering to image columns makes the convolution a matrix product, so the
-    layer evaluates the :class:`linear_fxp` kernel on the patches and adds the
-    bias after folding,
-
-    .. math::
-
-       \hat u = \mathrm{clamp}\left(\left[u\,2^{-r_i}\right],\,
-       -A_i,\, A_i - 1\right),\qquad
-       \hat W = \mathrm{clamp}\left(\left[W\,2^{-r_w}\right],\,
-       -A_w,\, A_w - 1\right),
+    evaluated with inputs and weights quantized to **widthi** and **widthw**
+    signed fixed-point bits,
 
     .. math::
 
-       y = \mathrm{fold}\!\left(\left(\hat u \hat W^{\top}\right)
-       2^{-r_o}\right) + b,\qquad r_o = -r_i - r_w,
+       \tilde{y} = \mathrm{conv2d}(Q_i(x), Q_w(W)) + b,
 
-    with :math:`u` the im2col patches, :math:`[\cdot]` rounding to the nearest
-    integer, and :math:`A_i`, :math:`A_w` the sign-magnitude ranges. The rounding
-    and clamp are the only departures from the target.
+    where :math:`Q` rounds an operand onto its fixed-point grid and clamps it to
+    the signed range, so rounding and clamping are the only departures from the
+    target.
 
     .. rubric:: Example
 
@@ -55,28 +48,33 @@ class conv_fxp(napl_base):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1,
                  bias=True, weight_ext=None, bias_ext=None,
-                 config={'widthi': 8, 'quantilei': 1, 'widthw': 8, 'quantilew': 1, 'rounding': 'round'}):
+                 config=_DEFAULT_CONFIG):
         """Configure the convolution geometry and fixed-point approximation.
 
-        Args:
-            in_channels: Number of input channels.
-            out_channels: Number of output channels.
-            kernel_size: Kernel size accepted as an integer or pair.
-            stride: Convolution stride. Defaults to ``1``.
-            padding: Symmetric zero padding. Defaults to ``0``.
-            dilation: Kernel dilation. Defaults to ``1``.
-            bias: Create a trainable bias when ``True``. Defaults to ``True``.
-            weight_ext: Optional initial weight shaped
-                ``(out_channels, in_channels, kernel_height, kernel_width)``.
-                Defaults to ``None``.
-            bias_ext: Optional initial bias shaped ``(out_channels,)``. Defaults
-                to ``None``.
-            config: Configuration mapping with **widthi** and **widthw** (both
-                default ``8``), **quantilei** and **quantilew** (both default
-                ``1``), and **rounding** (default ``"round"``). **name** is an
-                optional instance label and defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **in_channels** – Number of input channels.
+            - **out_channels** – Number of output channels.
+            - **kernel_size** – Kernel size accepted as an integer or pair.
+            - **stride** – Convolution stride; the default is ``1``.
+            - **padding** – Symmetric zero padding; the default is ``0``.
+            - **dilation** – Kernel dilation; the default is ``1``.
+            - **bias** – Create a trainable bias when ``True``; the default is ``True``.
+            - **weight_ext** – Optional initial weight shaped ``(out_channels, in_channels, kernel_height, kernel_width)``; the default is ``None``.
+            - **bias_ext** – Optional initial bias shaped ``(out_channels,)``; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **widthi**: Fixed-point width for input values; the default is ``8``.
+              - **quantilei**: Input-magnitude scaling quantile; the default is ``1``.
+              - **widthw**: Fixed-point width for weight values; the default is ``8``.
+              - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
+              - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Spatial height and width of the convolution kernel.
         self.kernel_size = kernel_size
         #: Spatial step between adjacent convolution windows.
@@ -86,15 +84,15 @@ class conv_fxp(napl_base):
         #: Spacing between kernel elements.
         self.dilation = dilation
         #: Fixed-point width used for input values.
-        self.widthi = config.get('widthi', 8)
+        self.widthi = cfg['widthi']
         #: Fixed-point width used for weight values.
-        self.widthw = config.get('widthw', 8)
+        self.widthw = cfg['widthw']
         #: Input-magnitude quantile used to choose the scaling shift.
-        self.quantilei = config.get('quantilei', 1)
+        self.quantilei = cfg['quantilei']
         #: Weight-magnitude quantile used to choose the scaling shift.
-        self.quantilew = config.get('quantilew', 1)
-        #: Rounding mode used during fixed-point conversion.
-        self.rounding = config.get('rounding', 'round').lower()
+        self.quantilew = cfg['quantilew']
+        #: Rounding mode applied to the log2 magnitude that sets the scaling shift.
+        self.rounding = cfg['rounding'].lower()
         #: Largest positive input magnitude represented by the quantized kernel.
         self.max_abs_i = 2 ** (self.widthi - 1)
         #: Largest positive weight magnitude represented by the quantized kernel.

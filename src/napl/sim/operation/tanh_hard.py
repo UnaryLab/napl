@@ -7,14 +7,14 @@ class tanh_hard(napl_base):
     r"""
     Apply hard tanh to an already bounded spike stream.
 
-    The exact streaming operation is the identity
+    The operation is
 
     .. math::
 
-       y_t = x_t.
+       y = \operatorname{clip}(x,-1,1).
 
-    Valid unipolar and bipolar spike-stream values already lie within the
-    hard-tanh bounds.
+    Valid unipolar and bipolar spike-stream values already lie within those
+    bounds, so the stream passes through unchanged.
 
     .. rubric:: Example
 
@@ -41,7 +41,7 @@ class tanh_hard(napl_base):
 
             - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational hard tanh.
         self.hw = hw_params(pp_delay=0)
 

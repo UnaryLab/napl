@@ -26,15 +26,7 @@ class inhibit(napl_base):
        \end{cases}
 
     with :math:`y_{\max}=1` for unipolar and :math:`y_{\max}=+1` for bipolar
-    streams. Per timestep, a latch records that the data stream was still high
-    while the inhibiting stream had fallen, with :math:`s_{-1}=0`:
-
-    .. math::
-
-       \begin{aligned}
-       s_t &= s_{t-1}\mathbin{\lor}(x_{0,t}\mathbin{\land}\lnot x_{1,t}),\\
-       y_t &= x_{0,t}\mathbin{\lor}s_t.
-       \end{aligned}
+    streams.
 
     Relative to Tzimpragos et al. (2019): napl shares that paper's value-to-time
     direction, value = arrival time with a larger value arriving later, and
@@ -57,26 +49,17 @@ class inhibit(napl_base):
         output = gate(torch.tensor([1], dtype=torch.int8),
                       torch.tensor([0], dtype=torch.int8))
 
-    .. rubric:: References
+    .. container:: api-references
 
-    A. Madhavan, T. Sherwood, and D. Strukov, *Race Logic: A Hardware
-    Acceleration for Dynamic Programming Algorithms*, ISCA, 2014. (introduces
-    race logic: MAX, MIN, ADD-CONSTANT)
-    https://sites.cs.ucsb.edu/~sherwood/pubs/ISCA-14-racelogic.pdf
+        .. rubric:: References
 
-    J. E. Smith, *Space-Time Computing with Temporal Neural Networks*,
-    Synthesis Lectures on Computer Architecture, 2017. (temporal spike
-    computing that motivates INHIBIT)
-    https://link.springer.com/book/10.1007/978-3-031-01754-4
+        *Race Logic: A hardware acceleration for dynamic programming algorithms*, ISCA, 2014.
 
-    J. E. Smith, *Space-Time Algebra: A Model for Neocortical Computation*,
-    ISCA, 2018. (space-time algebra generalizing race logic with inhibition)
-    https://ieeexplore.ieee.org/document/8416835
+        *Space-Time Computing with Temporal Neural Networks*, Synthesis Lectures on Computer Architecture, 2017.
 
-    G. Tzimpragos, A. Madhavan, D. Vasudevan, D. Strukov, and T. Sherwood,
-    *Boosted Race Trees for Low Energy Classification*, ASPLOS, 2019. (adds
-    INHIBIT to the race-logic primitive set)
-    https://sites.cs.ucsb.edu/~sherwood/pubs/ASPLOS-19-racetree.pdf
+        *Space-Time Algebra: A Model for Neocortical Computation*, ISCA, 2018.
+
+        *Boosted Race Trees for Low Energy Classification*, ASPLOS, 2019.
     """
 
 
@@ -94,9 +77,9 @@ class inhibit(napl_base):
             - **config** – Configuration mapping with no operation-specific keys.
               **name** may optionally label the instance; the default is ``{}``.
         """
-        super().__init__(config, [], polarity_required=False)
+        super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
-        #: Latched inhibition state; ``1`` forces the output low permanently.
+        #: Latched inhibition state; ``1`` holds the output high permanently.
         self.latch: torch.Tensor
         self.register_buffer('latch', torch.zeros(1, dtype=torch.int8))
         #: Hardware latency and timing metadata for the combinational INHIBIT output.
@@ -124,9 +107,10 @@ class inhibit(napl_base):
             input_1: Current 0/1 tensor from the inhibiting temporal stream.
 
         Returns:
-            The data spike masked by the inhibition latch. The latch is set
-            permanently once the inhibiting stream spikes while the data
-            stream has not.
+            The data spike held high by the inhibition latch. The latch is set
+            permanently once the data stream is still high while the
+            inhibiting stream has already fallen, after which the output stays
+            high for the rest of the codeword.
 
         **Example:**
 

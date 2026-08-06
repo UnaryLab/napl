@@ -7,14 +7,15 @@ class relu_hub(napl_base):
     r"""
     Apply a bounded ReLU in the binary domain.
 
-    The single-shot forward operation is
+    The target operation is
 
     .. math::
 
        y = \operatorname{clip}(x,0,scale)
        = \min(\max(x,0),scale).
 
-    This is the binary-domain bounded ReLU.
+    The call consumes a complete tensor in one shot rather than one spike
+    timestep at a time.
 
     .. rubric:: Example
 
@@ -48,7 +49,7 @@ class relu_hub(napl_base):
               - **scale**: Upper output bound; the default is ``1.0``.
               - **name**: Optional module name.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=['polarity', 'scale'])
         #: Upper bound applied to the clipped output tensor.
         self.scale = config.get('scale', 1.0)
 

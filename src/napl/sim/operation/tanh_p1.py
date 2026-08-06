@@ -9,23 +9,25 @@ from loguru import logger
 
 class tanh_p1(napl_base):
     r"""
-    Compute the code-quantized odd series from a unipolar spike stream.
+    Approximate tanh with a code-quantized odd series on a unipolar spike stream.
 
-    The precise target operation is
+    The target rate-domain operation is
 
     .. math::
 
        f(x) = \tanh(x).
 
-    Let x be the input rate, L = 2**ceil(log2(timestep)), and
-    Q_L(v) = round(v L)/L. The four coefficient streams use
-    c_2 = Q_L(62/153), c_3 = Q_L(17/42), c_4 = Q_L(2/5), and
-    c_5 = Q_L(1/3). The exact rate-domain operation of the NAND/AND cascade is
+    The kernel evaluates the truncated odd-series approximation, built from the
+    circuit in Fig. 10 of the reference below,
 
     .. math::
 
        \mathbb{E}[y] =
-       x-c_5x^3+c_5c_4x^5-c_5c_4c_3x^7+c_5c_4c_3c_2x^9.
+       x-c_5x^3+c_5c_4x^5-c_5c_4c_3x^7+c_5c_4c_3c_2x^9,
+
+    with :math:`c_2 = 62/153`, :math:`c_3 = 17/42`, :math:`c_4 = 2/5`, and
+    :math:`c_5 = 1/3`, each quantized to the coefficient-sequence period
+    :math:`L = 2^{\lceil \log_2 timestep \rceil}`.
 
     .. rubric:: Example
 
@@ -41,7 +43,7 @@ class tanh_p1(napl_base):
 
         .. rubric:: References
 
-        K. Parhi and Y. Liu, *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2017, Fig. 10.
+        *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
 
 
@@ -68,13 +70,18 @@ class tanh_p1(napl_base):
               - **dim**: First Sobol dimension used for the four coefficient streams; the default is ``1``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
-        assert self.polarity == 'unipolar', \
-            logger.error(f'Invalid polarity: <{self.polarity}>; combinational tanh_p1 needs unipolar mode.')
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim'], polarity_required=True)
+        if self.polarity != 'unipolar':
+            message = f'Invalid polarity: <{self.polarity}>; combinational tanh_p1 needs unipolar mode.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Requested stream length used to size the coefficient sequences.
         self.timestep = config['timestep']
-        assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width of the power-of-two coefficient sequences.
         self.width = math.ceil(math.log2(self.timestep))
         #: Lowercase name of the configured number-sequence generator.

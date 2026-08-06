@@ -1,21 +1,28 @@
 import torch
 import math
-import torch.nn.functional as F
 
 from napl.sim.base import napl_base
-from loguru import logger
-# Operation imports stay inside __init__ to avoid the module-operation import cycle.
+from napl.sim.operation import decode
+from napl.sim.operation.encode import encode
+from napl.sim.module.mgu import mgu
+
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'polarity': 'bipolar',
+    'width': 8,
+    'generator': 'sobol',
+    'depth_ismul': 6,
+}
 
 
 class mgu_hub(napl_base):
     r"""Evaluate an MGU through an internal unary simulation in one call.
 
     Use this hybrid unary-binary cell when callers provide numeric tensors but
-    the MGU computation should run through spike encoders, a streaming
-    :class:`mgu`, and progressive decoding. It internally encodes ``input`` and
-    ``hx`` into spike streams, runs :class:`mgu` for ``2 ** width`` cycles, and
-    decodes the output with the ``accuracy`` metric. Its gate equations match
-    :class:`mgu_hard` with hard activations, using caller-provided weights.
+    the MGU computation should run through a full bipolar unary simulation. Gate
+    weights and biases come from the caller, and the internal cell wraps each
+    supplied tensor as a trainable parameter.
 
     The precise target is the Minimal Gated Unit recurrence
 
@@ -28,19 +35,9 @@ class mgu_hub(napl_base):
 
        h' = (1 - f) \odot n + f \odot h.
 
-    Rather than evaluating that recurrence numerically, the wrapper encodes both
-    operands into bipolar spike streams, runs the streaming :class:`mgu` cell for
-    the full period, and decodes the progressive value,
-
-    .. math::
-
-       T = 2^{\text{width}},\qquad
-       h' = \frac{2}{T}\sum_{t=1}^{T} \mathrm{mgu}\!\left(
-       \mathrm{enc}_1(x)_t,\, \mathrm{enc}_2(h)_t\right) - 1,
-
-    with the two encoders on separate RNG dimensions. The result therefore
-    carries both the saturating-adder behavior of :class:`mgu` and the
-    stochastic-computing error of a length-:math:`T` run.
+    The returned value is the decoded rate of a :math:`2^{\text{width}}`-cycle
+    unary run of :class:`mgu`, so it carries both the saturating-adder behavior
+    of that cell and the stochastic-computing error of the run length.
 
     .. rubric:: Example
 
@@ -54,6 +51,12 @@ class mgu_hub(napl_base):
                        config={"polarity": "bipolar", "width": 2,
                                "generator": "sobol"})
         hidden = cell(torch.zeros(1, 2))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uBrain: A Unary Brain Computer Interface*, ISCA, 2022.
     """
     #: Whether calls process one stream timestep; this wrapper is single-shot.
     streaming = False
@@ -61,29 +64,33 @@ class mgu_hub(napl_base):
 
     def __init__(self, input_size, hidden_size, bias=True,
                  weight_f=None, bias_f=None, weight_n=None, bias_n=None,
-                 config={'polarity': 'bipolar', 'width': 8, 'generator': 'sobol', 'depth_ismul': 6}):
+                 config=_DEFAULT_CONFIG):
         """Configure the hybrid run and attach external gate parameters.
 
-        Args:
-            input_size: Number of input features.
-            hidden_size: Number of hidden features.
-            bias: Include gate bias in the fan-in calculation. Defaults to
-                ``True``.
-            weight_f: Forget-gate weight tensor. Defaults to ``None``.
-            bias_f: Forget-gate bias tensor. Defaults to ``None``.
-            weight_n: New-gate weight tensor. Defaults to ``None``.
-            bias_n: New-gate bias tensor. Defaults to ``None``.
-            config: Configuration mapping with **polarity** (passed through as
-                ``"bipolar"`` internally), **width** (stream exponent, default
-                ``8``), **generator** (default ``"sobol"``), and
-                **depth_ismul** (non-static multiplier register-address width,
-                default ``6``). **name** is an optional instance label and
-                defaults to ``None``.
+        .. container:: api-parameter-list
 
-        A complete forward call requires compatible weight tensors; construction
-        does not create trainable parameters.
+            **Parameters:**
+
+            - **input_size** – Number of input features.
+            - **hidden_size** – Number of hidden features.
+            - **bias** – Include gate bias in the fan-in calculation when ``True``; the default is ``True``.
+            - **weight_f** – Forget-gate weight tensor shaped ``(hidden_size, hidden_size + input_size)``. Required: construction fails when it is ``None``.
+            - **bias_f** – Forget-gate bias tensor shaped ``(hidden_size,)``, or ``None`` for no bias; the default is ``None``.
+            - **weight_n** – New-gate weight tensor with the same shape as **weight_f**. Required: construction fails when it is ``None``.
+            - **bias_n** – New-gate bias tensor shaped ``(hidden_size,)``, or ``None`` for no bias; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **polarity**: Recorded stream encoding; the internal run is always bipolar. The attribute takes the value present in **config**, and stays ``None`` when the mapping omits the key.
+              - **width**: Base-two exponent of the internal stream length; the default is ``8``.
+              - **generator**: Number-sequence generator name; the default is ``"sobol"``.
+              - **depth_ismul**: Register-address width of the non-static multiplier; the default is ``6``.
+              - **name**: Optional instance label.
+
+        Both weight tensors are required. The internal cell registers each
+        supplied weight, and each supplied bias, as a trainable parameter.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features in each input vector.
         self.input_size = input_size
         #: Number of features in each hidden-state vector.
@@ -91,23 +98,38 @@ class mgu_hub(napl_base):
         #: Whether gate fan-in includes a bias term.
         self.bias = bias
         #: Base-two exponent of the internal unary stream length.
-        self.width = config.get('width', 8)
+        self.width = cfg['width']
         #: Number-sequence generator used by the internal encoders.
-        self.generator = config.get('generator', 'sobol')
+        self.generator = cfg['generator']
         #: Register-address width for the internal non-static multiplier.
-        self.depth_ismul = config.get('depth_ismul', 6)
-        #: Caller-provided forget-gate weight tensor.
+        self.depth_ismul = cfg['depth_ismul']
+        #: Forget-gate weight tensor given at construction, shared with the internal cell; rebinding it later leaves the run unchanged.
         self.weight_f = weight_f
-        #: Caller-provided forget-gate bias tensor, or ``None``.
+        #: Forget-gate bias tensor given at construction, or ``None``, shared with the internal cell; rebinding it later leaves the run unchanged.
         self.bias_f = bias_f
-        #: Caller-provided candidate-gate weight tensor.
+        #: Candidate-gate weight tensor given at construction, shared with the internal cell; rebinding it later leaves the run unchanged.
         self.weight_n = weight_n
-        #: Caller-provided candidate-gate bias tensor, or ``None``.
+        #: Candidate-gate bias tensor given at construction, or ``None``, shared with the internal cell; rebinding it later leaves the run unchanged.
         self.bias_n = bias_n
         # The inner accumulator must hold the hidden, input, and optional bias fan-in.
         entry = hidden_size + input_size + (1 if bias else 0)
         #: Accumulator width used by each internal streaming linear layer.
         self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
+
+        ts = 2 ** self.width
+        #: Encoder that converts the numeric input to spikes.
+        self.i_encoder = encode({'polarity': 'bipolar', 'timestep': ts,
+                                 'generator': self.generator, 'dim': 1})
+        #: Encoder that converts the numeric hidden state to spikes.
+        self.h_encoder = encode({'polarity': 'bipolar', 'timestep': ts,
+                                 'generator': self.generator, 'dim': 2})
+        # The cell binds its hidden value at construction; forward rebinds it per call.
+        #: Streaming MGU cell driven by the two encoders.
+        self.cell = mgu(self.weight_f, self.bias_f, self.weight_n, self.bias_n, None,
+                        {'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator,
+                         'width': self.lin_width, 'depth_ismul': self.depth_ismul})
+        #: Decoder that averages the emitted hidden-state spikes.
+        self.decoder = decode({'polarity': 'bipolar', 'timestep': ts})
 
         self.encoding_io = {}
         self.polarity_io = {}
@@ -118,8 +140,8 @@ class mgu_hub(napl_base):
     def _reset(self):
         """Reset state owned directly by the hybrid wrapper.
 
-        The wrapper creates its streaming components inside each call and has no
-        persistent local run state, so this hook returns ``None``.
+        This class has no extra local state. The inherited ``reset()`` method
+        restarts the two encoders, the streaming cell, and the decoder.
         """
         pass
 
@@ -135,25 +157,18 @@ class mgu_hub(napl_base):
         Returns:
             Decoded next-hidden tensor shaped ``(batch, hidden_size)``.
 
-        The method creates temporary encoders, cell, and accuracy metric. It does
-        not store ``hx`` and, as a single-shot module, does not advance
-        ``timestep_cur``.
+        The method restarts its encoders, cell, and decoder, and binds ``hx`` into
+        the cell for the run. It does not store ``hx`` and, as a single-shot
+        module, does not advance ``timestep_cur``.
         """
-        from napl.sim.operation.encode import encode
-        from napl.sim.metric import accuracy
-        from napl.sim.module.mgu import mgu
         if hx is None:
             hx = torch.zeros(input.size(0), self.hidden_size, dtype=input.dtype, device=input.device)
         ts = 2 ** self.width
 
-        def enc(d):
-            return encode({'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator, 'dim': d})
-        i_enc, h_enc = enc(1), enc(2)
-        cell = mgu(self.weight_f, self.bias_f, self.weight_n, self.bias_n, hx,
-                       {'polarity': 'bipolar', 'timestep': ts, 'generator': self.generator,
-                        'width': self.lin_width, 'depth_ismul': self.depth_ismul}
-                       ).to(input.device)
-        acc = accuracy({'polarity': 'bipolar'}).to(input.device)
+        self.to(input.device)
+        # The cell multiplies by a hidden value held fixed for the whole run.
+        self.cell.hx_value = hx
+        self.reset()
         for _ in range(ts):
-            acc(cell(i_enc(input), h_enc(hx)))
-        return acc.spike_value
+            self.decoder(self.cell(self.i_encoder(input), self.h_encoder(hx)))
+        return self.decoder.spike_value

@@ -8,24 +8,14 @@ class sigmoid_hard(napl_base):
     r"""
     Apply the hard-sigmoid transform to a unipolar or bipolar spike stream.
 
-    The precise target rate-domain transform is
+    The rate-domain operation is
 
     .. math::
 
        f(x) = \frac{x+1}{2}.
 
-    Let z_t = x_t + 1 be the mode-specific input to the scale-two adder.
-    With a_0 = 0, its exact carry recurrence is
-
-    .. math::
-
-       \begin{aligned}
-       \tilde a_t &= \operatorname{clip}(a_{t-1}+z_t,-8,7),\\
-       y_t &= \mathbf{1}\{\tilde a_t\geq 2\},\qquad
-       a_t = \tilde a_t-2y_t.
-       \end{aligned}
-
-    Thus the rate-domain operation is E[y] = (E[x]+1)/2.
+    Both unipolar and bipolar input streams are accepted, and the output stream
+    carries the configured polarity.
 
     .. rubric:: Example
 

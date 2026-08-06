@@ -3,7 +3,13 @@ import torch.nn.functional as F
 
 from napl.sim.base import napl_base
 from napl.sim.module._shared import _init_mgu_params
-# Operation imports stay inside __init__ to avoid the module-operation import cycle.
+from napl.sim.operation import sigmoid_hub, tanh_hub
+
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'hard': True,
+}
 
 
 class mgu_hardnua(napl_base):
@@ -26,19 +32,17 @@ class mgu_hardnua(napl_base):
 
        h' = (1 - f) \odot n + f \odot h.
 
-    The cell evaluates that recurrence with hard activations and no clamps,
+    The cell evaluates that recurrence with the hard activations
 
     .. math::
 
-       f = \sigma_h\!\left(W_f [h, x] + b_f\right),\qquad
-       n = \tanh_h\!\left(W_n [f \odot h, x] + b_n\right),\qquad
-       h' = n - f \odot n + f \odot h,
+       \sigma_h(v) = \mathrm{clip}\!\left(\frac{v}{2} + \frac{1}{2},\, 0,\, 1
+       \right),\qquad
+       \tanh_h(v) = \mathrm{clamp}(v, -1, 1)
 
-    where :math:`\sigma_h(v) = \mathrm{clip}(v/2 + 1/2, 0, 1)` and
-    :math:`\tanh_h(v) = \mathrm{clamp}(v, -1, 1)` when **hard** is ``True``, and
-    the exact ``Sigmoid`` and ``Tanh`` otherwise. Compared with
-    :class:`mgu_hard`, the forget-gate linear and the output carry no clamp, so
-    :math:`h'` may leave ``[-1, 1]``.
+    when **hard** is ``True``, and with ``Sigmoid`` and ``Tanh`` otherwise. Apart
+    from the bound that :math:`\tanh_h` places on :math:`n`, no stage carries a
+    range clamp, so :math:`h'` may leave ``[-1, 1]``.
 
     .. rubric:: Example
 
@@ -49,24 +53,34 @@ class mgu_hardnua(napl_base):
 
         cell = mgu_hardnua(2, 3)
         hidden = cell(torch.zeros(1, 2))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Simplified minimal gated unit variations for recurrent neural networks*, MWSCAS, 2017.
     """
     #: Whether calls process one stream timestep; this cell is single-shot.
     streaming = False
 
 
-    def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
+    def __init__(self, input_size, hidden_size, bias=True, config=_DEFAULT_CONFIG):
         """Construct the non-unary-aware cell and initialize its parameters.
 
-        Args:
-            input_size: Number of input features.
-            hidden_size: Number of hidden features.
-            bias: Create trainable gate biases when ``True``. Defaults to ``True``.
-            config: Configuration mapping with **hard**. ``True`` uses hard
-                sigmoid and hard tanh; ``False`` uses ``Sigmoid`` and ``Tanh``.
-                Defaults to ``True``. **name** is an optional instance label and
-                defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **input_size** – Number of input features.
+            - **hidden_size** – Number of hidden features.
+            - **bias** – Create trainable gate biases when ``True``; the default is ``True``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **hard**: Use hard sigmoid and hard tanh when ``True``, or ``Sigmoid`` and ``Tanh`` when ``False``; the default is ``True``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features in each input vector.
         self.input_size = input_size
         #: Number of features in each hidden-state vector.
@@ -74,8 +88,7 @@ class mgu_hardnua(napl_base):
         #: Whether the forget and new gates include trainable biases.
         self.bias = bias
         #: Whether the forget and new gates use hard activations.
-        self.hard = config.get('hard', True)
-        from napl.sim.operation import sigmoid_hub, tanh_hub
+        self.hard = cfg['hard']
         #: Activation applied to the forget gate.
         self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the candidate hidden state.

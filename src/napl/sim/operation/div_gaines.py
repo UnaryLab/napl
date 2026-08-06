@@ -12,28 +12,15 @@ class div_gaines(napl_base):
     quotient is needed directly from an error-integrating saturating counter.
     The output has one cycle of modeled latency.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \frac{x}{d}.
 
-    Let R_t = round(2**width G_t), where G_t is the configured number
-    sequence, and let y_t be sampled before the counter update. With d_t the
-    current divisor spike and d_{t-1} the saved divisor spike, the recurrence is
-
-    .. math::
-
-       \begin{aligned}
-       y_t &= \mathbf{1}\{scnt_t > R_t\},\\
-       i_t &= x_t,\quad \delta_t = y_t d_t
-       && (\text{unipolar}),\\
-       i_t &= 1-(d_{t-1} \oplus d_t \oplus y_t),\quad
-       \delta_t = x_t \oplus d_t
-       && (\text{bipolar}),\\
-       scnt_{t+1} &= \operatorname{clip}(scnt_t+i_t-\delta_t,
-       0, 2^{width}-1),\quad d_{t+1} = d_t.
-       \end{aligned}
+    The dividend and divisor streams must be uncorrelated, and the quotient
+    approaches the target as the counter settles, with a residual error set by
+    the counter width.
 
     .. rubric:: Example
 
@@ -51,7 +38,7 @@ class div_gaines(napl_base):
 
         .. rubric:: References
 
-        B. R. Gaines, *Stochastic Computing Systems*, Advances in Information Systems Science, vol. 2, 1969.
+        *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
 
 
@@ -77,11 +64,9 @@ class div_gaines(napl_base):
               - **width**: Counter width in bits; the default is ``5``.
               - **generator**: Number-sequence generator for quotient thresholds; the default is ``"Sobol"``.
               - **dim**: Generator dimension forwarded when the threshold sequence is built; the default is ``1``.
-              - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
-              - **taps**: Optional LFSR feedback taps used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'width', 'generator'], polarity_required=True)
+        super().__init__(config, ['polarity', 'width', 'generator'], optional_key_list=['dim'], polarity_required=True)
 
         #: Saturating quotient-counter width in bits.
         self.width = config['width']

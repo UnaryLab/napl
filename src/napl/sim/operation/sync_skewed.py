@@ -7,21 +7,14 @@ class sync_skewed(napl_base):
     r"""
     Correlate two unipolar streams with skewed synchronization.
 
-    Let x_1 and x_2 be the current spikes, c the stored skew count,
-    M = 2**width-1, and c_{-1}=0. Define
+    The first stream is retimed onto the spike positions of the second, and the
+    second passes through unchanged. Every spike of the retimed stream then
+    coincides with a spike of the second stream, which maximizes the
+    correlation of the returned pair.
 
-    .. math::
-
-       \begin{aligned}
-       d_t &= x_{1,t}-x_{2,t},\qquad m_t=|d_t|,\\
-       s_t &= \mathbf{1}\{c_{t-1}\ne0\}
-       -\bigl(\mathbf{1}\{c_{t-1}\ne0\}
-       +\mathbf{1}\{c_{t-1}\ne M\}\bigr)x_{1,t},\\
-       y_{1,t} &= x_{1,t}+m_t s_t,\qquad y_{2,t}=x_{2,t},\\
-       c_t &= \operatorname{clip}(c_{t-1}+d_t,0,M).
-       \end{aligned}
-
-    The first stream is retimed while the second stream passes through.
+    The retiming buffers up to :math:`2^{width}-1` unmatched spikes. The first
+    stream is expected to carry no higher a rate than the second; a spike that
+    arrives with the buffer already full passes straight through.
 
     .. rubric:: Example
 
@@ -40,7 +33,7 @@ class sync_skewed(napl_base):
 
         *In-Stream Stochastic Division and Square Root via Correlation*, DAC, 2019.
 
-        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design and Test, 2021.
+        *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
 
 
@@ -62,7 +55,7 @@ class sync_skewed(napl_base):
               - **width**: Counter width in bits, giving a maximum stored skew of ``2**width - 1``; the default is ``3``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['width'], polarity_required=False)
+        super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the stored stream-skew counter in bits.
         self.width=config['width']

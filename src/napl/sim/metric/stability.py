@@ -16,22 +16,12 @@ class stability(napl_base):
     approaches ``0``.
 
     Let :math:`\hat x_t` be the progressive decoded value, :math:`x` the source,
-    and :math:`\theta` the threshold. The precise target is
+    and :math:`\theta` the threshold. The target is
 
     .. math::
 
        S_T = 1 - \frac{k_T}{T},\qquad
        k_T = \max\left(\{0\}\cup\{t \leq T : |\hat x_t - x| > \theta\}\right).
-
-    The metric records :math:`k_T` as the last timestep whose absolute
-    progressive error exceeds :math:`\theta` and evaluates
-
-    .. math::
-
-       S_T = 1 - \frac{\mathrm{clamp}(k_T,\,1,\,T)}{T},
-
-    so a stream that is stable from the first timestep reports
-    :math:`1 - 1/T` rather than ``1``.
 
     .. rubric:: Example
 
@@ -139,8 +129,9 @@ class stability(napl_base):
         Return the current per-element stability.
 
         The result is a fresh tensor with the source shape and values in
-        ``[0, 1]``. Before the first timestep, it is all zeros. Reading this
-        property does not change metric state.
+        ``[0, 1]``. Before the first timestep, it is all zeros. An element that
+        never exceeds the threshold reports ``1 - 1/T`` after ``T`` timesteps
+        rather than ``1``. Reading this property does not change metric state.
 
         **Example:**
 
@@ -176,7 +167,10 @@ class stability(napl_base):
 
             value, result = metric.analyze()
         """
-        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
+        if not self.valid:
+            message = 'Metric is not valid. Please call forward() before analyze().'
+            logger.error(message)
+            raise AssertionError(message)
         stability = self.stability
         result = analyze(
             stability,

@@ -11,6 +11,9 @@ from napl.utils import (
 )
 from loguru import logger
 
+#: Mantissa bits, including the implicit bit, of each supported floating format.
+_TLUT_FP_WIDTH = {'bfloat16': 8, 'float16': 11, 'float32': 24}
+
 
 def _init_linear_params(module, in_features, out_features, bias, weight_ext, bias_ext):
     """Give ``module`` ``nn.Linear``-style trainable parameters."""
@@ -23,13 +26,58 @@ def _init_linear_params(module, in_features, out_features, bias, weight_ext, bia
     else:
         module.bias = None
     if weight_ext is not None:
-        assert tuple(weight_ext.shape) == (out_features, in_features), \
-            logger.error(f'weight_ext shape {tuple(weight_ext.shape)} != ({out_features}, {in_features}).')
+        if tuple(weight_ext.shape) != (out_features, in_features):
+            message = f'weight_ext shape {tuple(weight_ext.shape)} != ({out_features}, {in_features}).'
+            logger.error(message)
+            raise AssertionError(message)
         module.weight.data = weight_ext.clone().type(module.weight.dtype)
     if bias and bias_ext is not None:
-        assert tuple(bias_ext.shape) == (out_features,), \
-            logger.error(f'bias_ext shape {tuple(bias_ext.shape)} != ({out_features},).')
+        if tuple(bias_ext.shape) != (out_features,):
+            message = f'bias_ext shape {tuple(bias_ext.shape)} != ({out_features},).'
+            logger.error(message)
+            raise AssertionError(message)
         module.bias.data = bias_ext.clone().type(module.bias.dtype)
+
+def _init_mgu_pt_params(module, input_size, hidden_size, bias, gates):
+    """
+    Give ``module`` PyTorch-layout recurrent parameters: ``gates`` gate blocks stacked
+    row-wise in ``weight_ih`` and ``weight_hh``, with matching ``bias_ih`` and ``bias_hh``
+    when ``bias`` is set and ``None`` otherwise. Every entry is drawn from a truncated
+    normal with standard deviation ``1 / sqrt(hidden_size)``. Shared by mgu_hardpt
+    (two gates) and gru_hardnuapt (three gates).
+    """
+    module.weight_ih = torch.nn.Parameter(torch.empty(gates * hidden_size, input_size))
+    module.weight_hh = torch.nn.Parameter(torch.empty(gates * hidden_size, hidden_size))
+    if bias:
+        module.bias_ih = torch.nn.Parameter(torch.empty(gates * hidden_size))
+        module.bias_hh = torch.nn.Parameter(torch.empty(gates * hidden_size))
+    else:
+        module.register_parameter('bias_ih', None)
+        module.register_parameter('bias_hh', None)
+    stdv = 1.0 / math.sqrt(hidden_size)
+    for w in [module.weight_ih, module.weight_hh, module.bias_ih, module.bias_hh]:
+        if w is not None:
+            w.data = truncated_normal(w, 0.0, stdv)
+
+def _gaines_counter_step(cnt, delta, cnt_max, cnt_half):
+    """
+    Advance the non-scaled Gaines bipolar saturating counter by one timestep and return
+    its output spike. With ``a`` the counter and ``d`` the per-timestep increment,
+
+    .. math::
+
+       a_t = \\mathrm{clamp}(a_{t-1} + d_t,\\; 0,\\; \\mathit{cnt\\_max}),\\qquad
+       y_t = \\mathbf{1}\\{a_t > \\mathit{cnt\\_half}\\}.
+
+    The scalar initial state broadcasts out of place on the first call; matching shapes
+    update in place. Shared by linear_gaines1 and linear_gaines2.
+    """
+    if cnt.shape == delta.shape:
+        cnt.add_(delta).clamp_(0, cnt_max)
+    else:
+        expanded = cnt.add(delta).clamp(0, cnt_max).detach()
+        cnt.resize_as_(expanded).copy_(expanded)
+    return torch.gt(cnt, cnt_half)
 
 def _linear_ste_grads(ctx, grad_output):
     """
@@ -55,8 +103,10 @@ def _hub_rng_seq(width, rng='sobol'):
     legal_rngs = ('sobol', 'rc', 'tc')
     seq_len = 2 ** width
     rng = rng.lower()
-    assert rng in legal_rngs, \
-        logger.error(f'Invalid rng: <{rng}>; legal values: <{list(legal_rngs)}>.')
+    if rng not in legal_rngs:
+        message = f'Invalid rng: <{rng}>; legal values: <{list(legal_rngs)}>.'
+        logger.error(message)
+        raise AssertionError(message)
     if rng == 'tc':
         seq = torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len
     else:
@@ -69,6 +119,16 @@ def _build_hub_map(widthi, widthw, rngi, rngw, ntype):
     bitstream AND-count for an input of magnitude i_level and a weight of magnitude
     w_level, under the chosen RNGs (sign-magnitude, so cycle_max = 2**(width-1)).
     Returns (cycle_max, mapcbsg). Shared by linear_hub and conv_hub. Requires widthi==widthw.
+
+    With ``R_i`` and ``R_w`` the input and weight RNG sequences, the map counts the
+    weight spikes that survive the input-gated prefix,
+
+    .. math::
+
+       m(a) = \\sum_j \\mathbf{1}\\{a > R_{i,j}\\},\\qquad
+       \\mathrm{map}[a, b] = \\sum_{k < m(a)} \\mathbf{1}\\{b > R_{w,k}\\},
+
+    so ``map[a, b] / cycle_max`` approximates the product of the two magnitudes.
     """
     cmax = 2 ** (max(widthi, widthw) - 1)
     rngctler = _hub_rng_seq(widthi - 1, rngi)
@@ -87,6 +147,22 @@ def _tlut_decompose(mag, widtht, degree, cycle_neg, cycle_pos):
     Temporal LUT decomposition: split a truncated fixed-point magnitude tensor into a
     sum of ``degree`` ``widtht``-bit temporal digits, each clamped to the run cycle range.
     Returns the recomposed magnitude. Shared by the TLUT forward modes.
+
+    With :math:`m_0` the input magnitude, :math:`t` the digit width, :math:`D` the
+    degree, and :math:`o_0 = 0`, each digit is peeled off the low end and folded back
+    into the running value,
+
+    .. math::
+
+       q_d = m_{d-1} 2^{-t},\\qquad m_d = \\mathrm{trunc}(q_d),\\qquad
+       f_d = \\mathrm{clamp}\\!\\left(2^{t}\\,\\mathrm{frac}(q_d),\\;
+       c_- + 1,\\; c_+ - 1\\right),
+
+    .. math::
+
+       o_d = 2^{-t}\\left(f_d + o_{d-1}\\right),
+
+    and the function returns :math:`o_D`. Without the clamp the recomposition is exact.
     """
     out = torch.zeros_like(mag)
     for _ in range(degree):
@@ -125,7 +201,10 @@ class _linear_hub_fn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, cycle, mapcbsg):
         ctx.save_for_backward(input, weight, bias)
-        assert input.dim() == 2, logger.error('linear_hub input needs 2 dims (batch, in_features).')
+        if input.dim() != 2:
+            message = 'linear_hub input needs 2 dims (batch, in_features).'
+            logger.error(message)
+            raise AssertionError(message)
         buf_i = pow2_rshift(input, rshift_i).unsqueeze(1).abs().type(torch.long).clamp(0, cycle - 1)
         buf_w = pow2_rshift(weight, rshift_w).unsqueeze(0).abs().type(torch.long).clamp(0, cycle - 1)
         act_input = torch.sign(input).unsqueeze(1)
@@ -227,8 +306,6 @@ class _linear_tlut_fpfp_fn(torch.autograd.Function):
     def backward(ctx, grad_output):
         return _linear_ste_grads(ctx, grad_output) + (None,) * 7
 
-_TLUT_FP_WIDTH = {'bfloat16': 8, 'float16': 11, 'float32': 24}
-
 def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext):
     """Give ``module`` ``nn.Conv2d``-style trainable parameters."""
     kh, kw = num2tuple(kernel_size)
@@ -241,21 +318,34 @@ def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weig
     else:
         module.bias = None
     if weight_ext is not None:
-        assert tuple(weight_ext.shape) == (out_channels, in_channels, kh, kw), \
-            logger.error(f'weight_ext shape {tuple(weight_ext.shape)} != {(out_channels, in_channels, kh, kw)}.')
+        if tuple(weight_ext.shape) != (out_channels, in_channels, kh, kw):
+            message = f'weight_ext shape {tuple(weight_ext.shape)} != {(out_channels, in_channels, kh, kw)}.'
+            logger.error(message)
+            raise AssertionError(message)
         module.weight.data = weight_ext.clone().type(module.weight.dtype)
     if bias and bias_ext is not None:
-        assert tuple(bias_ext.shape) == (out_channels,), \
-            logger.error(f'bias_ext shape {tuple(bias_ext.shape)} != ({out_channels},).')
+        if tuple(bias_ext.shape) != (out_channels,):
+            message = f'bias_ext shape {tuple(bias_ext.shape)} != ({out_channels},).'
+            logger.error(message)
+            raise AssertionError(message)
         module.bias.data = bias_ext.clone().type(module.bias.dtype)
 
 def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, linear_fn):
     """
     Run a binary-domain conv2d by im2col + a 2D linear kernel + fold: unfold the input to
-    patches, apply ``linear_fn(patches_2d, weight_2d)`` through a binary linear autograd
-    Functions), then fold the result back to NCHW. Bias is added after folding. The unfold/
-    fold are differentiable, so the linear Function's STE gradient flows through to weight
-    and input.
+    patches, apply ``linear_fn(patches_2d, weight_2d)``, which is a binary linear autograd
+    Function, then fold the result back to NCHW. Bias is added after folding. The unfold
+    and fold are differentiable, so the linear Function's STE gradient flows through to
+    weight and input.
+
+    With :math:`u` the im2col patches and :math:`W_{2d}` the flattened kernel,
+
+    .. math::
+
+       y = \\mathrm{fold}\\!\\left(\\mathrm{linear\\_fn}(u, W_{2d})\\right) + b,
+
+    which equals ``conv2d(input, weight) + bias`` whenever ``linear_fn`` is an exact
+    matrix product.
     """
     out_hw = conv2d_output_shape((input.size(2), input.size(3)), kernel_size=kernel_size,
                                  dilation=dilation, pad=padding, stride=stride)

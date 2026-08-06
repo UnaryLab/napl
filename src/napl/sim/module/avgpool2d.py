@@ -1,33 +1,20 @@
 import torch
 
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, hw_params
 
 
 class avgpool2d(napl_base):
     r"""Average-pool a unary spike stream one timestep at a time.
 
-    Use this module as the unary counterpart of ``torch.nn.AvgPool2d``. It
-    accumulates each pooled spike tensor and emits spikes whose rate represents
-    the window mean for either unipolar or bipolar encoding.
-
-    The precise target is the pooling window mean,
+    Use this module as the unary counterpart of ``torch.nn.AvgPool2d``. The
+    emitted spike rate represents the pooling window mean for either unipolar or
+    bipolar encoding,
 
     .. math::
 
-       y = \mathrm{avgpool2d}(x).
+       y = \mathrm{avgpool2d}(x),
 
-    Let :math:`m_t = \mathrm{avgpool2d}(s_t)` be the pooled spike fraction for the
-    current timestep. The module integrates that fraction and emits a spike each
-    time the accumulator reaches one,
-
-    .. math::
-
-       \tilde a_t = a_{t-1} + m_t,\qquad
-       y_t = \mathbf{1}\{\tilde a_t \geq 1\},\qquad
-       a_t = \tilde a_t - y_t,
-
-    so the emitted rate tracks the target with an accumulator error below one
-    spike.
+    with a residual accumulator error below one spike.
 
     .. rubric:: Example
 
@@ -47,20 +34,20 @@ class avgpool2d(napl_base):
                  config={'polarity': 'bipolar'}):
         """Configure the pooling geometry and unary representation.
 
-        Args:
-            kernel_size: Pooling window size accepted by
-                ``torch.nn.AvgPool2d``.
-            stride: Pooling stride. Defaults to ``kernel_size`` through PyTorch.
-            padding: Implicit zero padding. Defaults to ``0``.
-            ceil_mode: Use ceiling instead of floor for output shapes when
-                ``True``. Defaults to ``False``.
-            count_include_pad: Include padded zeros in the mean when ``True``.
-                Defaults to ``True``.
-            divisor_override: Optional divisor used instead of the window size.
-                Defaults to ``None``.
-            config: Configuration mapping with **polarity**, either
-                ``"unipolar"`` or ``"bipolar"``. Defaults to ``"bipolar"``.
-                **name** is an optional instance label and defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **kernel_size** – Pooling window size accepted by ``torch.nn.AvgPool2d``.
+            - **stride** – Pooling stride, where ``None`` uses ``kernel_size``; the default is ``None``.
+            - **padding** – Implicit zero padding; the default is ``0``.
+            - **ceil_mode** – Use ceiling instead of floor for output shapes when ``True``; the default is ``False``.
+            - **count_include_pad** – Include padded zeros in the mean when ``True``; the default is ``True``.
+            - **divisor_override** – Optional divisor used instead of the window size; the default is ``None``.
+            - **config** – Configuration mapping.
+
+              - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **name**: Optional instance label.
 
         Construction initializes a scalar accumulator that expands to the pooled
         output shape on the first call.
@@ -75,7 +62,11 @@ class avgpool2d(napl_base):
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
 
-        self.encoding_io = {'output': 'rc'}
+        # Pooling and the accumulator threshold are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming pool.
+        self.hw = hw_params(pp_delay=0)
+
+        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0

@@ -1,10 +1,15 @@
 import torch
-import math
 import torch.nn.functional as F
 
-from napl.utils import truncated_normal
 from napl.sim.base import napl_base
-# Operation imports stay inside __init__ to avoid the module-operation import cycle.
+from napl.sim.operation import sigmoid_hub, tanh_hub
+from napl.sim.module._shared import _init_mgu_pt_params
+
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'hard': True,
+}
 
 
 class gru_hardnuapt(napl_base):
@@ -40,7 +45,8 @@ class gru_hardnuapt(napl_base):
        \tanh_h(v) = \mathrm{clamp}(v, -1, 1),
 
     when **hard** is ``True``, and the exact ``Sigmoid`` and ``Tanh`` otherwise.
-    No stage carries a range clamp, so :math:`h'` may leave ``[-1, 1]``.
+    Apart from the bound that :math:`\tanh_h` places on :math:`n`, no stage
+    carries a range clamp, so :math:`h'` may leave ``[-1, 1]``.
 
     .. rubric:: Example
 
@@ -56,20 +62,23 @@ class gru_hardnuapt(napl_base):
     streaming = False
 
 
-    def __init__(self, input_size, hidden_size, bias=True, config={'hard': True}):
+    def __init__(self, input_size, hidden_size, bias=True, config=_DEFAULT_CONFIG):
         """Construct the GRU cell and initialize trainable parameters.
 
-        Args:
-            input_size: Number of input features.
-            hidden_size: Number of hidden features.
-            bias: Create input-hidden and hidden-hidden biases when ``True``.
-                Defaults to ``True``.
-            config: Configuration mapping with **hard**. ``True`` uses scaled hard
-                sigmoid and hard tanh; ``False`` uses ``Sigmoid`` and ``Tanh``.
-                Defaults to ``True``. **name** is an optional instance label and
-                defaults to ``None``.
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **input_size** – Number of input features.
+            - **hidden_size** – Number of hidden features.
+            - **bias** – Create input-hidden and hidden-hidden biases when ``True``; the default is ``True``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **hard**: Use scaled hard sigmoid and hard tanh when ``True``, or ``Sigmoid`` and ``Tanh`` when ``False``; the default is ``True``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features in each input vector.
         self.input_size = input_size
         #: Number of features in each hidden-state vector.
@@ -77,8 +86,7 @@ class gru_hardnuapt(napl_base):
         #: Whether the cell includes trainable input and hidden biases.
         self.bias = bias
         #: Whether the reset, update, and new gates use hard activations.
-        self.hard = config.get('hard', True)
-        from napl.sim.operation import sigmoid_hub, tanh_hub
+        self.hard = cfg['hard']
         #: Activation applied to the reset gate.
         self.rg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the update gate.
@@ -86,22 +94,16 @@ class gru_hardnuapt(napl_base):
         #: Activation applied to the candidate hidden state.
         self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
 
-        #: Trainable input-to-gate weights in reset, update, and new-gate order.
-        self.weight_ih = torch.nn.Parameter(torch.empty(3 * hidden_size, input_size))
-        #: Trainable hidden-to-gate weights in reset, update, and new-gate order.
-        self.weight_hh = torch.nn.Parameter(torch.empty(3 * hidden_size, hidden_size))
-        if bias:
-            #: Trainable input-to-gate bias in reset, update, and new-gate order.
-            self.bias_ih = torch.nn.Parameter(torch.empty(3 * hidden_size))
-            #: Trainable hidden-to-gate bias in reset, update, and new-gate order.
-            self.bias_hh = torch.nn.Parameter(torch.empty(3 * hidden_size))
-        else:
-            self.register_parameter('bias_ih', None)
-            self.register_parameter('bias_hh', None)
-        stdv = 1.0 / math.sqrt(hidden_size)
-        for w in [self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh]:
-            if w is not None:
-                w.data = truncated_normal(w, 0.0, stdv)
+        # PyTorch's three-chunk parameter layout stores reset, update, then new rows.
+        _init_mgu_pt_params(self, input_size, hidden_size, bias, 3)
+        #: Trainable input-hidden weight shaped ``(3 * hidden_size, input_size)``, in reset, update, new row order.
+        self.weight_ih: torch.nn.Parameter
+        #: Trainable hidden-hidden weight shaped ``(3 * hidden_size, hidden_size)``, in reset, update, new row order.
+        self.weight_hh: torch.nn.Parameter
+        #: Trainable input-hidden bias shaped ``(3 * hidden_size,)``, or ``None`` when **bias** is ``False``.
+        self.bias_ih: torch.nn.Parameter
+        #: Trainable hidden-hidden bias shaped ``(3 * hidden_size,)``, or ``None`` when **bias** is ``False``.
+        self.bias_hh: torch.nn.Parameter
 
         self.encoding_io = {}
         self.polarity_io = {}

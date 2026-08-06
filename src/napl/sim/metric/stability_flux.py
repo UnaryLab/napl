@@ -16,15 +16,11 @@ class stability_flux(napl_base):
     ``inf`` or ``nan``.
 
     With :math:`S^{(1)}_T` and :math:`S^{(2)}_T` the stabilities of the two
-    streams, the precise target is their ratio
+    streams, the target is their ratio
 
     .. math::
 
        F_T = \frac{S^{(1)}_T}{S^{(2)}_T}.
-
-    The metric runs one :class:`napl.stability` monitor per stream and returns
-    the quotient of their values, so it evaluates the target exactly and leaves
-    a zero denominator as ``inf`` or ``nan``.
 
     .. rubric:: Example
 
@@ -37,6 +33,12 @@ class stability_flux(napl_base):
         for _ in range(2):
             metric(torch.ones(1), torch.ones(1))
         ratio, result = metric.analyze()
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -153,7 +155,10 @@ class stability_flux(napl_base):
 
             ratio, result = metric.analyze()
         """
-        assert self.valid, logger.error('Metric is not valid. Please call forward() before analyze().')
+        if not self.valid:
+            message = 'Metric is not valid. Please call forward() before analyze().'
+            logger.error(message)
+            raise AssertionError(message)
         stability_flux = self.stability_flux
         result = analyze(
             stability_flux,

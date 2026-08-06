@@ -8,33 +8,18 @@ class shiftreg(napl_base):
     r"""
     Delay a spike tensor with an alternating-initialized shift register.
 
-    Let R_t be the depth-row register and h_t a per-element circular index.
-    With R_0[j] = j mod 2 and h_0 = 0, each element e reads its own slot before
-    any update, so the exact recurrence is
+    The operation delays the input stream by **depth** timesteps,
 
     .. math::
 
-       \begin{aligned}
-       y_t[e] &= R_t[h_t[e], e],\\
-       R_{t+1}[h_t[e], e] &= x_t[e],\qquad
-       h_{t+1}[e] = (h_t[e]+1) \bmod depth.
-       \end{aligned}
+       y_t = x_{t-\mathit{depth}}.
 
-    After the alternating contents are emitted, each call returns the input
-    from depth timesteps earlier.
+    The first **depth** outputs come from the alternating reset contents, whose
+    entry :math:`j` holds :math:`j \bmod 2`.
 
-    An optional per-element ``mask_enable`` m_t selects which elements advance,
-    so the recurrence applies only where it is truthy,
-
-    .. math::
-
-       (R_{t+1}, h_{t+1})[e] = \begin{cases}
-       (x_t[e],\; (h_t[e]+1) \bmod depth), & m_t[e] \ne 0,\\
-       (R_t[h_t[e], e],\; h_t[e]), & \text{otherwise},
-       \end{cases}
-
-    so a held element neither stores nor advances and re-emits the same oldest
-    value on the next call.
+    An optional per-element ``mask_enable`` selects which elements advance. An
+    element whose mask entry is falsy neither stores the current input nor
+    advances, so it re-emits the same value on the next call.
 
     Both buffers take their shape from the first input, and a mid-stream
     ``state_dict`` does not load into a fresh instance.
@@ -67,11 +52,11 @@ class shiftreg(napl_base):
               - **depth**: Number of stored timesteps and output delay cycles; the default is ``1``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Number of timesteps retained by the shift register.
         self.depth = config['depth']
-        #: Alternating reset pattern and device anchor for the register.
+        #: Register holding the last :attr:`depth` timesteps, seeded with an alternating pattern.
         self.reg: torch.Tensor
         self.register_buffer('reg', torch.zeros(self.depth, dtype=self.stype))
         for i in range(self.depth):
@@ -110,12 +95,12 @@ class shiftreg(napl_base):
             input: Current spike tensor.
             mask_enable: Optional per-element enable with the same shape as ``input``.
                 Elements where it is truthy advance; the rest hold their stored
-                column. The default is ``None``, which advances every element.
+                entry. The default is ``None``, which advances every element.
 
-            Returns:
-            The oldest stored tensor. Initial calls return the alternating reset
-            pattern; later calls return prior inputs. The current input is copied
-            into the register.
+        Returns:
+            The tensor stored ``depth`` timesteps earlier, with the same shape as
+            ``input``. The first ``depth`` calls return the alternating reset
+            pattern. The current input replaces the entry that was read.
 
         **Example:**
 
@@ -137,9 +122,12 @@ class shiftreg(napl_base):
             self.reg.scatter_(0, index, input.detach().unsqueeze(0))
             self.head.add_(1).remainder_(self.depth)
         else:
-            assert mask_enable.shape == input.shape, logger.error(
-                f'Enable mask shape <{tuple(mask_enable.shape)}> does not match the '
-                f'input shape <{tuple(input.shape)}>.')
+            if mask_enable.shape != input.shape:
+                message = (
+                    f'Enable mask shape <{tuple(mask_enable.shape)}> does not match the '
+                    f'input shape <{tuple(input.shape)}>.')
+                logger.error(message)
+                raise AssertionError(message)
             enabled = mask_enable.bool()
             # Writing the value just read back into a held slot leaves it unchanged,
             # so one scatter covers both cases and the indices stay tensor-side.

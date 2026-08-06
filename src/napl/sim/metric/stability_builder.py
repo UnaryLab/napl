@@ -15,47 +15,16 @@ class stability_builder(napl_base):
     emits an unstable prefix followed by a stable tail while preserving the
     configured source value over the designed stream length.
 
-    The precise target is a stream of length :math:`L` whose normalized
-    stability equals the requested :math:`\rho` and whose rate equals the
-    encoded source probability :math:`p`,
+    The stream length :math:`L` is the configured ``timestep`` :math:`T` rounded
+    up to a power of two, :math:`L = 2^{\lceil \log_2 T \rceil}`. The target is a
+    stream of length :math:`L` whose normalized stability equals the requested
+    :math:`\rho` and whose rate equals the encoded source probability :math:`p`,
 
     .. math::
 
        N_L = \rho,\qquad \frac{1}{L}\sum_{t=1}^{L} s_t = p.
 
-    Let :math:`\theta'` be the encoded threshold, :math:`\ell` the shortest
-    unstable prefix found by the same best-case search the normalized-stability
-    metric uses, and :math:`L = 2^{\lceil \log_2 T \rceil}`. The builder splits
-    the stream into an unstable prefix of length :math:`n` and a stable tail of
-    length :math:`m`,
-
-    .. math::
-
-       m = \lceil (L - \ell)\rho \rceil,\qquad n = L - m,
-
-    assigns the prefix the extreme spike count still outside the stable band and
-    the tail the remainder,
-
-    .. math::
-
-       w_n = \begin{cases}
-       (p+\theta')(n+1), & p > 1/2,\\
-       \max\left((p-\theta')(n+1) - 1,\, 0\right), & p \leq 1/2,
-       \end{cases}
-       \qquad w_m = pL - w_n,
-
-    and emits from the two quantized segment values against the shared threshold
-    sequence :math:`q`,
-
-    .. math::
-
-       v_n = \left[\frac{w_n}{n}L\right],\quad
-       v_m = \left[\frac{w_m}{m}L\right],\qquad
-       s_t = \mathbf{1}\left\{v_{\{n \text{ or } m\}} > q_{c_t}\right\},
-
-    where :math:`[\cdot]` rounds to the nearest integer, the prefix value is
-    used while its counter :math:`c_t` is below :math:`n`, and each segment
-    advances its own counter. Rounding to the integer grid makes the realized
+    Segment lengths and spike counts land on an integer grid, so the realized
     rate and stability approximate the target.
 
     .. rubric:: Example
@@ -117,11 +86,14 @@ class stability_builder(napl_base):
               - **dim**: Sobol dimension; the default is ``1``.
               - **name**: Optional instance label; the default is ``None``.
         """
-        super().__init__(config, ['polarity', 'threshold', 'normstability', 'timestep', 'generator'], polarity_required=True)
+        super().__init__(config, ['polarity', 'threshold', 'normstability', 'timestep', 'generator'], optional_key_list=['dim'], polarity_required=True)
 
         #: Designed length of the generated spike stream in timesteps.
         self.timestep = config['timestep']
-        assert self.timestep > 0, logger.error(f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.')
+        if self.timestep <= 0:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width of the power-of-two number sequence covering :attr:`timestep`.
         self.width = math.ceil(math.log2(self.timestep))
         #: Requested ratio between realized and maximum source-value stability.
@@ -167,13 +139,13 @@ class stability_builder(napl_base):
         #: Integer threshold sequence used to emit spikes from either stream segment.
         self.num_seq: torch.Tensor
         self.register_buffer('num_seq', num_seq.mul(seq_len).floor())
-        #: Quantized source threshold used during the unstable prefix.
+        #: Quantized segment value compared against :attr:`num_seq` during the unstable prefix.
         self.src_ns: torch.Tensor
         self.register_buffer('src_ns', src_ns)
-        #: Quantized source threshold used during the stable tail.
+        #: Quantized segment value compared against :attr:`num_seq` during the stable tail.
         self.src_st: torch.Tensor
         self.register_buffer('src_st', src_st)
-        #: Number of generated spikes assigned to the unstable prefix per element.
+        #: Length in timesteps of the unstable prefix per element.
         self.new_ns_len: torch.Tensor
         self.register_buffer('new_ns_len', new_ns_len)
         #: Per-element position within the unstable-prefix number sequence.

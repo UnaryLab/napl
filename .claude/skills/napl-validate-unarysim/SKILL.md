@@ -55,7 +55,7 @@ reading the code alone: run both, compare the numbers, explain any difference.
   from UnarySim.kernel.linear import FSULinear      # or UnarySim.metric.metric, etc.
   ```
 
-  This resolves the full dependency chain (RNG/BinGen/BSGen, FSUAdd, ...), so even the heavy kernels
+  This resolves the full dependency chain (RNG/SourceGen/BSGen, FSUAdd, ...), so even the heavy kernels
   import directly - no standalone-file/`importlib` trick needed. (A `FutureWarning` about
   `torch.cuda.amp.autocast` from UnarySim is harmless.) If the clone is ever missing, fall back to the
   GitHub fetcher in Step 2.

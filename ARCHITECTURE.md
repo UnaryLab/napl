@@ -73,7 +73,9 @@ Single-shot execution is used by binary linear and convolution layers, binary re
 
 ## Package map
 
-The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/imp/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_gaines, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_gaines` also work.
+The Python simulation model lives under `src/napl/sim/` and the hardware tree under `src/napl/imp/`. `napl/__init__.py` star-imports the six `sim` subpackages (`base`, `module`, `operation`, `metric`, `structure`, `algorithm`), so every public class is importable at the top level: `from napl import linear, mul_gaines, accuracy, napl_base`. Deep imports such as `from napl.sim.operation import mul_gaines` also work. `operation` imports only `base` and `utils`, while `module`, `metric`, and `algorithm` import `operation` primitives at file top, so `napl/__init__.py` star-imports `operation` first. `module` and `algorithm` also reach into `metric` for stream measurement. All of these are absolute submodule imports, so they resolve independently of the star-import order.
+
+Every package declares `__all__`. Each of the six `sim` subpackages lists its own public classes, and `napl/__init__.py` declares a literal list holding exactly the union of those six, currently 90 names, which is the whole top-level public surface; `tests/base/test_global_config.py` asserts the two match so the literal cannot drift. `napl.sim` and `napl.utils` stay reachable as submodule attributes, so `from napl.utils import ...` works, but they are not part of the star-import surface.
 
 | Path | Responsibility | Main components |
 | --- | --- | --- |
@@ -116,7 +118,7 @@ Metrics are streaming observers. Each call consumes the current spike state, whi
 
 ### Configuration and dtypes
 
-NAPL classes accept one `config` dictionary. `napl_base.__init__(config, key_list, polarity_required)` validates required keys and initializes common fields. Common keys include:
+NAPL classes accept one `config` dictionary. `napl_base.__init__(config, key_list, optional_key_list, polarity_required)` requires every key in `key_list`, accepts the keys in `optional_key_list` plus `name`, rejects any other key present in the config, and initializes common fields. Common keys include:
 
 - `polarity`: `unipolar` or `bipolar`;
 - `timestep`: stream length or simulation horizon;

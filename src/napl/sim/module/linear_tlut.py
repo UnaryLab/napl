@@ -1,8 +1,6 @@
-import torch
 import math
 
 from napl.sim.base import napl_base
-from loguru import logger
 from napl.sim.module._shared import (
     _init_linear_params,
     _linear_tlut_fxpfxp_fn,
@@ -10,53 +8,46 @@ from napl.sim.module._shared import (
     _linear_tlut_fpfp_fn,
     _TLUT_FP_WIDTH,
 )
+from loguru import logger
+
+# Single source for every optional key: the signature default and the per-key fallback.
+_DEFAULT_CONFIG = {
+    'temporal': 'i',
+    'widtht': 4,
+    'formati': 'fxp',
+    'widthi': 8,
+    'quantilei': 1,
+    'formatw': 'fxp',
+    'widthw': 8,
+    'quantilew': 1,
+    'cycle': None,
+    'rounding': 'round',
+}
 
 
 class linear_tlut(napl_base):
     r"""Apply a temporal-LUT approximation of ``torch.nn.Linear``.
 
     Use this single-shot trainable layer to decompose either the input or weight
-    into temporal digits while retaining a numeric interface. The chosen operand
-    is decomposed into a sum of ``widtht``-bit temporal digits and accumulated,
-    while the other operand stays fixed-point or floating-point. The
-    ``(formati, formatw)`` pair selects ``fxpfxp``, ``fxpfp``, or ``fpfp`` mode.
-    The layer is single-shot, trains through a straight-through estimator, and
-    approximates ``nn.Linear`` within the temporal-decomposition bound.
-
-    The precise target is the affine map
+    into temporal digits while retaining a numeric interface. The
+    ``(formati, formatw)`` pair selects ``fxpfxp``, ``fxpfp``, or ``fpfp`` mode,
+    and the target is the affine map
 
     .. math::
 
        y = x W^{\top} + b.
 
-    The selected operand is replaced by its temporal decomposition
-    :math:`D(\cdot)`, which peels ``degree`` digits of ``widtht`` bits and
-    clamps each to the run cycle range :math:`[-c+1,\, c-1]`,
+    The operand named by **temporal** is not used exactly: it is truncated to
+    fixed point and split into ``degree`` digits of ``widtht`` bits each, with
+    digit :math:`f_k` clamped to the active cycle range,
 
     .. math::
 
-       m_k = \mathrm{trunc}\!\left(m_{k-1} 2^{-w_t}\right),\qquad
-       f_k = \mathrm{clamp}\!\left(
-       2^{w_t}\,\mathrm{frac}\!\left(m_{k-1} 2^{-w_t}\right),\,
-       -c+1,\; c-1\right),
+       x \approx \sum_{k=1}^{\text{degree}} f_k\, 2^{-k\,\text{widtht}}.
 
-    .. math::
-
-       D(m) = \sum_{k=1}^{\text{degree}} f_k\, 2^{-(\text{degree}-k+1) w_t},
-       \qquad m_0 = m.
-
-    In ``fxpfxp`` and ``fxpfp`` mode the source is first truncated to fixed
-    point, and the decomposition is rescaled by
-    :math:`2^{\,\delta + \text{width} + r}` with :math:`r` its dynamic shift; in
-    ``fpfp`` mode the mantissa from :math:`\mathrm{frexp}` is decomposed and
-    recomposed with :math:`\mathrm{ldexp}`. The layer then evaluates the target
-    on the substituted operand,
-
-    .. math::
-
-       y = \tilde x \tilde W^{\top} + b,
-
-    so the error is the discarded low-order digits plus the per-digit clamp.
+    The digits recompose the truncated value exactly, so the error is the
+    fixed-point truncation plus the clamp, which acts only when **cycle** is
+    below its cap. The layer trains through a straight-through estimator.
 
     .. rubric:: Example
 
@@ -69,6 +60,14 @@ class linear_tlut(napl_base):
                                          "formati": "fxp", "widthi": 8,
                                          "formatw": "fxp", "widthw": 8})
         output = layer(torch.zeros(1, 2))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *Carat: Unlocking Value-Level Parallelism for Multiplier-Free GEMMs*, ASPLOS, 2024.
+
+        *T-MAC: Temporal Multiplication with Accumulation*, Young Architect Workshop, 2022.
     """
     streaming = False
 
@@ -80,70 +79,61 @@ class linear_tlut(napl_base):
             bias=True,
             weight_ext=None,
             bias_ext=None,
-            config={
-                'temporal': 'i',
-                'widtht': 4,
-                'formati': 'fxp',
-                'widthi': 8,
-                'quantilei': 1,
-                'formatw': 'fxp',
-                'widthw': 8,
-                'quantilew': 1,
-                'cycle': None,
-                'rounding': 'round',
-            }
+            config=_DEFAULT_CONFIG
         ):
         """Construct the temporal-LUT layer and select its execution mode.
 
-        Args:
-            in_features: Number of input features.
-            out_features: Number of output features.
-            bias: Create a trainable bias when ``True``. Defaults to ``True``.
-            weight_ext: Optional initial weight tensor. Defaults to ``None``.
-            bias_ext: Optional initial bias tensor. Defaults to ``None``.
-            config: Configuration mapping with these keys:
+        .. container:: api-parameter-list
 
-                * **temporal** - ``"i"`` or ``"input"`` to decompose inputs;
-                  ``"w"`` or ``"weight"`` to decompose weights. Defaults to
-                  ``"i"``.
-                * **widtht** - Bits per temporal digit. Defaults to ``4``.
-                * **formati**, **formatw** - Operand formats. ``"fxp"`` selects
-                  fixed point; floating formats must be keys in the implemented
-                  width map: ``"bfloat16"``, ``"float16"``, or ``"float32"``.
-                  Both default to ``"fxp"``.
-                * **widthi**, **widthw** - Fixed-point widths. Both default to ``8``.
-                * **quantilei**, **quantilew** - Scaling quantiles. Both default
-                  to ``1``.
-                * **cycle** - Active cycles, capped at ``2 ** widtht``. ``None``
-                  selects the cap and is the default.
-                * **rounding** - Fixed-point rounding mode. Defaults to ``"round"``.
-                * **name** - Optional instance label. Defaults to ``None``.
+            **Parameters:**
+
+            - **in_features** – Number of input features.
+            - **out_features** – Number of output features.
+            - **bias** – Create a trainable bias when ``True``; the default is ``True``.
+            - **weight_ext** – Optional initial weight tensor; the default is ``None``.
+            - **bias_ext** – Optional initial bias tensor; the default is ``None``.
+            - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
+
+              - **temporal**: Operand decomposed into temporal digits, ``"i"``/``"input"`` or ``"w"``/``"weight"``; the default is ``"i"``.
+              - **widtht**: Bits per temporal digit; the default is ``4``.
+              - **formati**: Input format, ``"fxp"`` or one of ``"bfloat16"``, ``"float16"``, ``"float32"``; the default is ``"fxp"``.
+              - **widthi**: Fixed-point width for input values; the default is ``8``.
+              - **quantilei**: Input-magnitude scaling quantile; the default is ``1``.
+              - **formatw**: Weight format, with the same choices as **formati**; the default is ``"fxp"``.
+              - **widthw**: Fixed-point width for weight values; the default is ``8``.
+              - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
+              - **cycle**: Active cycles, capped at ``2 ** widtht``, where ``None`` selects the cap; the default is ``None``.
+              - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
+              - **name**: Optional instance label.
         """
-        super().__init__(config, [])
+        super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
+        cfg = {**_DEFAULT_CONFIG, **config}
         #: Number of features consumed by the layer.
         self.in_features = in_features
         #: Number of features produced by the layer.
         self.out_features = out_features
         #: Operand decomposed into temporal digits.
-        self.temporal = config.get('temporal', 'i').lower()
+        self.temporal = cfg['temporal'].lower()
         #: Number of bits represented by each temporal digit.
-        self.widtht = config.get('widtht', 4)
+        self.widtht = cfg['widtht']
         #: Numeric format used for input values.
-        self.formati = config.get('formati', 'fxp').lower()
+        self.formati = cfg['formati'].lower()
         #: Numeric format used for weight values.
-        self.formatw = config.get('formatw', 'fxp').lower()
+        self.formatw = cfg['formatw'].lower()
         #: Fixed-point width used for input values.
-        self.widthi = config.get('widthi', 8)
+        self.widthi = cfg['widthi']
         #: Fixed-point width used for weight values.
-        self.widthw = config.get('widthw', 8)
+        self.widthw = cfg['widthw']
         #: Input-magnitude quantile used to choose the scaling shift.
-        self.quantilei = config.get('quantilei', 1)
+        self.quantilei = cfg['quantilei']
         #: Weight-magnitude quantile used to choose the scaling shift.
-        self.quantilew = config.get('quantilew', 1)
-        #: Rounding mode used during fixed-point conversion.
-        self.rounding = config.get('rounding', 'round').lower()
-        assert self.temporal in ('i', 'input', 'w', 'weight'), \
-            logger.error(f"linear_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}.")
+        self.quantilew = cfg['quantilew']
+        #: Rounding mode used when choosing the scaling shift.
+        self.rounding = cfg['rounding'].lower()
+        if self.temporal not in ('i', 'input', 'w', 'weight'):
+            message = f"linear_tlut 'temporal' must be one of ['i','input','w','weight'], got {self.temporal}."
+            logger.error(message)
+            raise AssertionError(message)
 
         if self.formati == 'fxp' and self.formatw == 'fxp':
             #: Arithmetic path selected from the input and weight formats.
@@ -157,7 +147,7 @@ class linear_tlut(napl_base):
 
         #: Maximum number of temporal cycles per product.
         self.cycle_max = 2 ** self.widtht
-        cycle_cfg = config.get('cycle', None)
+        cycle_cfg = cfg['cycle']
         #: Number of temporal cycles used per product.
         self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
         #: Input magnitude width excluding its sign bit.

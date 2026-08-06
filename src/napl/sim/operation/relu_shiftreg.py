@@ -8,27 +8,16 @@ class relu_shiftreg(napl_base):
     r"""
     Apply ReLU to a bipolar rate-coded stream using a shift-register estimate.
 
-    The precise target rate-domain operation is
+    The target rate-domain operation is
 
     .. math::
 
        y = \max(x,0).
 
-    Let R_t be the depth-element register, h_t its circular head, c_t the
-    current register count, and d_t the delayed count used by the output
-    decision. After first-call initialization with R_0[j] = j mod 2, the
-    exact state update is
-
-    .. math::
-
-       \begin{aligned}
-       y_0 &= 1,\\
-       y_t &= x_t \mathbin{\lor}
-       \mathbf{1}\{d_t<depth/2\}\quad (t\geq 1),\\
-       c_{t+1} &= c_t+y_t-R_t[h_t],\qquad d_{t+1}=c_t,\\
-       R_{t+1}[h_t] &= y_t,\qquad
-       h_{t+1}=(h_t+1)\bmod depth.
-       \end{aligned}
+    A **depth**-entry shift register holds the recent output spikes, and the
+    kernel forces extra one-spikes whenever their count falls below half the
+    register depth, so the result approximates the target to the resolution of
+    the register. The input and the output are both bipolar 0/1 spike streams.
 
     .. rubric:: Example
 
@@ -37,8 +26,14 @@ class relu_shiftreg(napl_base):
         import torch
         from napl import relu_shiftreg
 
-        operation = relu_shiftreg({'depth': 8})
+        operation = relu_shiftreg({'depth': 4})
         output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -52,18 +47,17 @@ class relu_shiftreg(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **depth**: Shift-register length as an integer in ``[1, 127]``; the default is ``8``.
+              - **depth**: Shift-register length as an integer in ``[1, 127]``; the default is ``4``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['depth'], polarity_required=False)
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Number of spike-history entries retained by the ReLU register.
         self.depth = config['depth']
-        assert isinstance(self.depth, int) and 0 < self.depth <= 127, (
-            logger.error(
-                f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
-            )
-        )
+        if not isinstance(self.depth, int) or not (0 < self.depth <= 127):
+            message = f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
+            logger.error(message)
+            raise AssertionError(message)
         #: Half-depth count threshold that represents bipolar zero.
         self.depth_half = self.depth / 2
 
@@ -119,6 +113,8 @@ class relu_shiftreg(napl_base):
 
         Returns:
             Bipolar 0/1 ReLU spike tensor with the same shape as ``input``.
+            The first call after construction or :meth:`reset` returns all
+            ones.
 
         **Example:**
 
