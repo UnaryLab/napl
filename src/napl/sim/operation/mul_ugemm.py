@@ -8,10 +8,11 @@ from loguru import logger
 
 class mul_ugemm(napl_base):
     r"""
-    Multiply a spike stream by a fixed binary-domain operand.
+    Multiply a spike stream by a binary-domain operand.
 
     Use conditional spike generation when ``input_0`` arrives one timestep at a
-    time and ``input_1`` is a numeric tensor held constant for the run.
+    time and ``input_1`` is a numeric tensor. Each call reads ``input_1``, so a
+    trainable operand updated between calls takes effect immediately.
 
     The target rate-domain operation is
 
@@ -102,11 +103,6 @@ class mul_ugemm(napl_base):
             self.seq_idx_inv: torch.Tensor
             self.register_buffer('seq_idx_inv', torch.zeros(1, dtype=torch.long))
 
-        # input_1 is cached until reset.
-        #: Numeric probability tensor cached from the first multiplicand input.
-        self.in_1_prob = None
-        #: Whether the next call must cache the first multiplicand probability.
-        self.is_first_call = True
         # Output is combinational; RTL sequence-index registers reset to zero.
         #: Hardware latency and timing metadata for the combinational multiplier.
         self.hw = hw_params(pp_delay=0)
@@ -119,13 +115,11 @@ class mul_ugemm(napl_base):
 
     def _reset(self):
         """
-        Restart the enabled sequence indices and forget the cached operand.
+        Restart the enabled sequence indices.
         """
         self.seq_idx.resize_(1).zero_()
         if self.polarity == 'bipolar':
             self.seq_idx_inv.resize_(1).zero_()
-        self.in_1_prob = None
-        self.is_first_call = True
 
 
     def forward(self, input_0: torch.tensor, input_1: torch.tensor):
@@ -134,8 +128,8 @@ class mul_ugemm(napl_base):
 
         Args:
             input_0: Current 0/1 spike tensor that enables sequence progress.
-            input_1: Fixed numeric multiplier tensor. Supply it on the first call;
-                its cached value is reused until :meth:`reset`.
+            input_1: Numeric multiplier tensor, read on every call, so an update
+                between calls takes effect immediately.
 
         Returns:
             A product spike tensor with the broadcast input shape. The enabled
@@ -148,17 +142,15 @@ class mul_ugemm(napl_base):
             output = multiply(torch.tensor([1], dtype=torch.int8),
                               torch.tensor([0.5]))
         """
-        if self.is_first_call is True:
-            if input_1 is None:
-                message = 'input_1 is None, please provide a valid input_1 tensor.'
-                logger.error(message)
-                raise AssertionError(message)
-            self.in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)
-            self.is_first_call = False
+        if input_1 is None:
+            message = 'input_1 is None, please provide a valid input_1 tensor.'
+            logger.error(message)
+            raise AssertionError(message)
+        in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)
 
         # int8 inputs promote to long in the sequence-index update.
         in_0_i8 = input_0.type(torch.int8)
-        spike_csg = torch.gt(self.in_1_prob, self.num_seq[self.seq_idx])
+        spike_csg = torch.gt(in_1_prob, self.num_seq[self.seq_idx])
         path = in_0_i8 & spike_csg
         if self.seq_idx.shape == in_0_i8.shape:
             self.seq_idx.add_(in_0_i8)
@@ -169,7 +161,7 @@ class mul_ugemm(napl_base):
         if self.polarity == 'unipolar':
             return path.type(self.stype)
         else:
-            spike_csg = torch.gt(self.in_1_prob, self.num_seq[self.seq_idx_inv])
+            spike_csg = torch.gt(in_1_prob, self.num_seq[self.seq_idx_inv])
             inv_in_0_i8 = in_0_i8 ^ 1
             path_inv = inv_in_0_i8 & ~spike_csg
             if self.seq_idx_inv.shape == inv_in_0_i8.shape:

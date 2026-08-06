@@ -8,11 +8,6 @@ precision point reuses the same FP weights. Results are written to
 results/convnet_mnist_result.csv with columns: cycle, bitwidth, top1_uSys(HUB),
 top1_Fxp.
 
-For each HUB point the unary-MAC `width` is set equal to the bitwidth so the value
-map's cycle_max = 2**(width-1) equals the requested cycle (otherwise napl's conv_hub
-caps cycle at 2**(width-1)). This keeps the cycle/bitwidth pairing faithful to the
-upstream knobs.
-
 Run (from the repo root, napl env), after train_fp.py:
     conda run -n napl python zoo/usystolic/eval_sweep.py
     conda run -n napl python zoo/usystolic/eval_sweep.py --test-size 2000 --device cpu

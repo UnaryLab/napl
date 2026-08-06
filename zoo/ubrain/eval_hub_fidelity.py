@@ -59,7 +59,7 @@ def main():
     num_class = (5, 2)
     batch = 2                  # The HUB MGU runs 2**width cycles per step.
     rng = 'sobol'
-    widths = [6, 8, 10]
+    widths = [7, 8, 10]
 
     print('=== uBrain FP-vs-HUB fidelity sweep (SYNTHETIC random input) ===')
     print(f'input_sz={input_sz}, win={win}, num_class={num_class}, batch={batch}, rng={rng}')

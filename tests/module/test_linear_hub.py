@@ -26,6 +26,134 @@ def test_linear_hub_truncates_scaled_magnitudes():
     assert torch.equal(module(input), reference)
 
 
+def test_linear_hub_short_cycle_shortens_run():
+    """Verify a cycle below cycle_max sets the magnitude bitwidth like UnarySim HUBLinear."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(6, 12) * 2 - 1
+    weight_cpu = torch.rand(5, 12) * 2 - 1
+    bias_cpu = torch.rand(5) * 2 - 1
+    cycle = 32
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        module = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': cycle},
+        ).to(device)
+        # UnarySim: bitwidth = (cycle - 1).bit_length(), and the value map spans cycle levels.
+        assert module.cycle_max == 128
+        assert module.cycle_act == cycle
+        assert module.width_act == 5
+        assert tuple(module.mapcbsg.shape) == (cycle, cycle)
+
+        rshift_i, rshift_w, rshift_o = rshift_offset(input, weight, 5, 5, 'round')
+        input_index = pow2_rshift(input, rshift_i).abs().long().clamp(0, cycle - 1).unsqueeze(1)
+        weight_index = pow2_rshift(weight, rshift_w).abs().long().clamp(0, cycle - 1).unsqueeze(0)
+        products = module.mapcbsg[input_index, weight_index] * torch.sign(weight).unsqueeze(0)
+        reference = torch.sign(input).unsqueeze(1) @ products.transpose(1, 2)
+        reference = pow2_rshift(reference, rshift_o).squeeze(1) + bias
+        assert torch.equal(module(input), reference)
+
+        # The run length alone sets the resolution, so a width whose cap already equals
+        # cycle gives the same result instead of the shorter run clipping magnitudes.
+        matched = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 6, 'widthw': 6, 'cycle': cycle},
+        ).to(device)
+        assert matched.cycle_max == cycle
+        assert torch.equal(module(input), matched(input))
+    print('Test passed.')
+
+
+def test_linear_hub_non_power_of_two_cycle():
+    """Verify a non-power-of-two cycle keeps exactly cycle levels, extending UnarySim HUBLinear."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(6, 12) * 2 - 1
+    weight_cpu = torch.rand(5, 12) * 2 - 1
+    bias_cpu = torch.rand(5) * 2 - 1
+    cycle = 100
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        module = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': cycle},
+        ).to(device)
+        # Upstream HUBLinear cannot be built here at all: its map spans the next power of
+        # two and broadcasts against cycle. napl sizes the RNG sequences from the bitwidth
+        # and spans exactly cycle levels.
+        assert module.width_act == 7
+        assert module.cycle_act == cycle
+        assert tuple(module.mapcbsg.shape) == (cycle, cycle)
+
+        rshift_i, rshift_w, rshift_o = rshift_offset(input, weight, 7, 7, 'round')
+        input_index = pow2_rshift(input, rshift_i).abs().long().clamp(0, cycle - 1).unsqueeze(1)
+        weight_index = pow2_rshift(weight, rshift_w).abs().long().clamp(0, cycle - 1).unsqueeze(0)
+        products = module.mapcbsg[input_index, weight_index] * torch.sign(weight).unsqueeze(0)
+        reference = torch.sign(input).unsqueeze(1) @ products.transpose(1, 2)
+        reference = pow2_rshift(reference, rshift_o).squeeze(1) + bias
+        assert torch.equal(module(input), reference)
+
+        # The extra levels of the next power of two change the result, so the run is
+        # not rounded up to it.
+        rounded = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 128},
+        ).to(device)
+        assert not torch.equal(module(input), rounded(input))
+    print('Test passed.')
+
+
+def test_linear_hub_cycle_validation():
+    """Verify cycle takes int-valued floats and rejects fractional or non-positive values."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(6, 12) * 2 - 1
+    weight_cpu = torch.rand(5, 12) * 2 - 1
+    bias_cpu = torch.rand(5) * 2 - 1
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        as_float = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 32.0},
+        ).to(device)
+        as_int = linear_hub(
+            12, 5, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 32},
+        ).to(device)
+        assert as_float.cycle_act == 32
+        assert as_float.width_act == 5
+        assert torch.equal(as_float(input), as_int(input))
+
+        # bool is an int subclass and a string survives no arithmetic, so both are
+        # rejected as cycle values, and the check runs before the cycle_max cap.
+        for cycle in (32.5, 0, -4, True, '32', 1000.5):
+            try:
+                linear_hub(12, 5, weight_ext=weight, bias_ext=bias,
+                           config={'widthi': 8, 'widthw': 8, 'cycle': cycle})
+            except AssertionError as error:
+                assert 'Invalid cycle' in str(error), (cycle, error)
+                continue
+            raise AssertionError(f'linear_hub accepted cycle {cycle}')
+
+        # A bad widthi is reported against widthi, not against the cycle it derives.
+        for widthi in (0, True, '8'):
+            try:
+                linear_hub(12, 5, weight_ext=weight, bias_ext=bias,
+                           config={'widthi': widthi, 'widthw': widthi, 'cycle': 32})
+            except AssertionError as error:
+                assert 'Invalid widthi' in str(error), (widthi, error)
+                continue
+            raise AssertionError(f'linear_hub accepted widthi {widthi}')
+    print('Test passed.')
+
+
 def _kernel_specific_checks():
     """
     Binary-domain HUB linear (unary-multiplication value map) matches nn.Linear within
@@ -144,3 +272,6 @@ def test_linear_hub():
 if __name__ == '__main__':
     test_linear_hub()
     test_linear_hub_truncates_scaled_magnitudes()
+    test_linear_hub_short_cycle_shortens_run()
+    test_linear_hub_non_power_of_two_cycle()
+    test_linear_hub_cycle_validation()

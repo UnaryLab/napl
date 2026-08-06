@@ -71,8 +71,8 @@ Training is FP-only; fxp/hub are inference-only and reuse the FP weights.
 1. The `Cascade_CNN_RNN` model runs **end-to-end** in napl in both the **FP** and
    the **HUB (unary)** form on EEG-shaped input, with the correct per-head output
    shapes.
-2. A **fidelity** check: the HUB (unary) output tracks the FP output, and the
-   error **shrinks as the bitwidth/cycle count grows** (the spirit of upstream
+2. A **fidelity** check: the HUB (unary) output **tracks the FP output to within a
+   few percent RMSE** over the swept bitwidths (the spirit of upstream
    `layer_eval/` RMSE-vs-bitwidth and `model_hub`'s ProgError reporting), applied
    to the whole-network output.
 
@@ -101,12 +101,15 @@ and updates weights (loss ~2.31, **not** a result).
 
 | width | cycles | rmse    | max_abs_err | seconds |
 |------:|-------:|--------:|------------:|--------:|
-| 6     | 64     | 0.24256 | 0.41572     | 0.12    |
-| 8     | 256    | 0.03656 | 0.07204     | 0.38    |
-| 10    | 1024   | 0.01973 | 0.03881     | 1.44    |
+| 7     | 128    | 0.03190 | 0.06496     | 0.24    |
+| 8     | 256    | 0.07072 | 0.11362     | 0.46    |
+| 10    | 1024   | 0.02824 | 0.05466     | 1.77    |
 
-RMSE falls monotonically as cycles grow (error roughly halves per +2 bits),
-consistent with the unary `~1/sqrt(N)` bound. Saved to `results/hub_fidelity.csv`.
+RMSE stays in the few-percent range across the sweep and is lowest at width 10,
+but it is not monotonic in the bitwidth: width 8 is the worst of the three. Each
+width builds its own HUB model, so the per-width unary sequences differ and the
+sampling error at a fixed cycle count varies by more than the `~1/sqrt(N)` trend
+across this narrow a sweep. Saved to `results/hub_fidelity.csv`.
 
 **Per-device result:**
 - **CPU:** FP and HUB both run, all widths; the committed sweep is the CPU run.

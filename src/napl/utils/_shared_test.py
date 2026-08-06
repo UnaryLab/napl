@@ -161,6 +161,7 @@ _STREAMING_DEFAULTS = {
     'make_performance_values': None,
     'extra_checks': None,
     'timesteps': 256,
+    'state_timesteps': _STATE_TIMESTEPS,
     'warmup_runs': 2,
     'trials': 7,
 }
@@ -321,7 +322,7 @@ def _streaming_fidelity(cfg):
 # Check streaming reset and replay determinism.
 def _streaming_reset_replay(cfg):
     torch.manual_seed(_SEED)
-    timesteps = _STATE_TIMESTEPS
+    timesteps = cfg['state_timesteps']
     for polarity in cfg['polarities']:
         values_cpu = cfg['make_values'](polarity)
         for device in devices():

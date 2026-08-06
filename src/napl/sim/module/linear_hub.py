@@ -2,7 +2,7 @@ import torch
 
 from napl.utils import rshift_offset
 from napl.sim.base import napl_base
-from napl.sim.module._shared import _init_linear_params, _build_hub_map, _linear_hub_fn
+from napl.sim.module._shared import _init_linear_params, _build_hub_map, _check_hub_int, _linear_hub_fn
 from loguru import logger
 
 # Single source for every optional key: the signature default and the per-key fallback.
@@ -91,7 +91,7 @@ class linear_hub(napl_base):
               - **widthw**: Sign-magnitude width for weight values; the default is ``8``.
               - **rngw**: Weight RNG name, with the same choices as **rngi**; the default is ``"sobol"``.
               - **quantilew**: Weight-magnitude scaling quantile; the default is ``1``.
-              - **cycle**: Active unary cycles, capped at ``2 ** (widthi - 1)``, where ``None`` selects the cap; the default is ``None``.
+              - **cycle**: Active unary cycles, an integer of at least 1 capped at ``2 ** (widthi - 1)``, where ``None`` selects the cap. A shorter run lowers the magnitude bitwidth to ``(cycle - 1).bit_length()`` and keeps exactly ``cycle`` magnitude levels, so operands are quantized more coarsely instead of being clipped. The default is ``None``.
               - **rounding**: Dynamic-scaling rounding mode; the default is ``"round"``.
               - **name**: Optional instance label.
 
@@ -105,7 +105,7 @@ class linear_hub(napl_base):
         #: Number of features produced by the layer.
         self.out_features = out_features
         #: Quantization width used for input values.
-        self.widthi = cfg['widthi']
+        self.widthi = _check_hub_int('widthi', cfg['widthi'])
         #: Quantization width used for weight values.
         self.widthw = cfg['widthw']
         if self.widthi != self.widthw:
@@ -123,11 +123,15 @@ class linear_hub(napl_base):
         #: Rounding mode used when choosing the scaling shift.
         self.rounding = cfg['rounding'].lower()
         # Sign-magnitude encoding reserves one bit, so cycle_max is 2**(width-1).
-        #: Maximum cycle count supported by the unary product map.
-        self.cycle_max, mapcbsg = _build_hub_map(self.widthi, self.widthw, self.rngi, self.rngw, self.ntype)
+        #: Maximum cycle count supported by the configured width.
+        self.cycle_max = 2 ** (self.widthi - 1)
         cycle_cfg = cfg['cycle']
+        cycle_req = self.cycle_max if cycle_cfg is None else min(_check_hub_int('cycle', cycle_cfg), self.cycle_max)
+        width_act, cycle_act, mapcbsg = _build_hub_map(cycle_req, self.rngi, self.rngw, self.ntype)
+        #: Magnitude bitwidth carried by the active cycle count.
+        self.width_act = width_act
         #: Cycle count used for each unary product.
-        self.cycle_act = self.cycle_max if cycle_cfg is None else min(cycle_cfg, self.cycle_max)
+        self.cycle_act = cycle_act
         #: Lookup map used to evaluate unary products.
         self.mapcbsg: torch.Tensor
         self.register_buffer('mapcbsg', mapcbsg)
@@ -163,7 +167,7 @@ class linear_hub(napl_base):
         persistent state or ``timestep_cur``. Backpropagation uses a
         straight-through linear gradient.
         """
-        rshift_i, rshift_w, rshift_o = rshift_offset(input, self.weight, self.widthi - 1, self.widthw - 1,
+        rshift_i, rshift_w, rshift_o = rshift_offset(input, self.weight, self.width_act, self.width_act,
                                                      self.rounding, self.quantilei, self.quantilew)
         return _linear_hub_fn.apply(input, self.weight, self.bias,
                                     rshift_i, rshift_w, rshift_o, self.cycle_act, self.mapcbsg)

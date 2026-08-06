@@ -1,26 +1,50 @@
-# Run `conda run -n napl make test OP=<op>` with iverilog and vvp on PATH.
-# Each operation supplies RTL, a self-checking testbench, and Python golden vectors.
+# Run `conda run -n napl make test OP=<op>` (operation layer) or
+# `conda run -n napl make test MODULE=<module>` (module layer) with iverilog and
+# vvp on PATH. Each unit supplies RTL, a self-checking testbench, and Python
+# golden vectors.
 
-OP       ?= mul_gaines
+# OP defaults to the canonical example; giving MODULE= instead requires OP untouched.
+DEFAULT_OP := mul_gaines
+OP       ?= $(DEFAULT_OP)
+MODULE   ?=
 PYTHON   ?= python
 IVERILOG ?= iverilog
 VVP      ?= vvp
+
+ifneq ($(MODULE),)
+ifneq ($(OP),$(DEFAULT_OP))
+$(error set OP=<op> or MODULE=<module>, not both)
+endif
+endif
+
+ifeq ($(MODULE),)
+LAYER := operation
+UNIT  := $(OP)
+# An operation compiles from its own rtl/ only.
+LIBS  :=
+else
+LAYER := module
+UNIT  := $(MODULE)
+# A module composes operation-layer circuits; iverilog pulls each one in from the
+# operation rtl/ directories, where the file name equals the module name.
+LIBS  := $(patsubst %,-y %,$(wildcard operation/*/rtl))
+endif
 
 .PHONY: test vectors compile run clean
 
 test: run
 
 vectors:
-	$(PYTHON) operation/$(OP)/gen/gen_$(OP).py
+	$(PYTHON) $(LAYER)/$(UNIT)/gen/gen_$(UNIT).py
 
 compile: vectors
-	mkdir -p operation/$(OP)/build
-	$(IVERILOG) -g2001 -Wall -Ioperation -o operation/$(OP)/build/sim operation/$(OP)/rtl/*.v operation/$(OP)/tb/$(OP)_tb.v
+	mkdir -p $(LAYER)/$(UNIT)/build
+	$(IVERILOG) -g2001 -Wall -I$(LAYER) $(LIBS) -o $(LAYER)/$(UNIT)/build/sim $(LAYER)/$(UNIT)/rtl/*.v $(LAYER)/$(UNIT)/tb/$(UNIT)_tb.v
 
-# Testbenches resolve vec/<op>.vec relative to the operation directory.
+# Testbenches resolve vec/<unit>.vec relative to the unit directory.
 run: compile
-	cd operation/$(OP) && $(VVP) build/sim | tee build/sim.log
-	@grep -q "^PASS" operation/$(OP)/build/sim.log || { echo "*** $(OP): TEST FAILED ***"; exit 1; }
+	cd $(LAYER)/$(UNIT) && $(VVP) build/sim | tee build/sim.log
+	@grep -q "^PASS" $(LAYER)/$(UNIT)/build/sim.log || { echo "*** $(UNIT): TEST FAILED ***"; exit 1; }
 
 clean:
-	rm -rf operation/$(OP)/build operation/$(OP)/vec/*.vec
+	rm -rf $(LAYER)/$(UNIT)/build $(LAYER)/$(UNIT)/vec/*.vec $(LAYER)/$(UNIT)/vec/*_params.vh

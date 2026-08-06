@@ -84,6 +84,32 @@ def _kernel_specific_checks():
         assert err.max().item() < 0.15, f'{device}/non-scaled/bipolar: max err {err.max().item()}'
         inst.reset()
 
+    # Equal weights across input features must still spike on different timesteps,
+    # because each feature draws its own sequence.
+    w_eq = torch.full((1, 8), 0.5).type(global_config.ntype)
+    gl_eq = linear_gaines1(w_eq, None, {'polarity': 'unipolar', 'timestep': 256,
+                                        'generator': 'sobol', 'dim': 2, 'scaled': True})
+    assert torch.unique(gl_eq.w_num_seq, dim=1).shape[1] == 8, \
+        'weight sequences are shared across input features, so their bits are comonotone'
+    print('per-input-feature weight sequences are distinct.')
+
+    # A weight update must reach the spike stream, in place or by assignment.
+    for device in devices():
+        w_mut = torch.zeros(1, 4).type(global_config.ntype).to(device)
+        gl_mut = linear_gaines1(w_mut, None, {'polarity': 'unipolar', 'timestep': 64,
+                                              'generator': 'sobol', 'dim': 2, 'scaled': True}).to(device)
+        x_on = torch.ones(4).type(global_config.ntype).to(device)
+        assert gl_mut(x_on).sum().item() == 0, f'[{device}] zero weights should emit no spike'
+        with torch.no_grad():
+            gl_mut.weight.fill_(1.0)
+        assert gl_mut(x_on).sum().item() > 0, f'[{device}] in-place weight update did not take effect'
+        with torch.no_grad():
+            gl_mut.weight.copy_(torch.zeros_like(gl_mut.weight))
+        assert gl_mut(x_on).sum().item() == 0, f'[{device}] weight reset did not take effect'
+        gl_mut.weight = torch.nn.Parameter(torch.ones_like(gl_mut.weight))
+        assert gl_mut(x_on).sum().item() > 0, f'[{device}] weight reassignment did not take effect'
+    print('weight updates invalidate the cached weight probability.')
+
     # All-ones unipolar operands make the scaled output emit 1 every timestep.
     w1_cpu = torch.ones(out_features, in_features).type(global_config.ntype)
     x1_cpu = torch.ones(in_features).type(global_config.ntype)
@@ -185,6 +211,8 @@ CONFIG = {
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
+    # 16 input features need a sequence period above 16 to stay distinct.
+    'state_timesteps': 32,
     'extra_checks': _kernel_specific_checks,
 }
 

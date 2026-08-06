@@ -54,5 +54,54 @@ def test_mgu_hub():
     print('Test passed.')
 
 
+def test_mgu_hub_polarity():
+    """Verify mgu_hub rejects unipolar configuration."""
+    isz, hsz = 6, 4
+    try:
+        mgu_hub(isz, hsz, bias=True, weight_f=torch.zeros(hsz, hsz + isz), bias_f=torch.zeros(hsz),
+                weight_n=torch.zeros(hsz, hsz + isz), bias_n=torch.zeros(hsz),
+                config={'polarity': 'unipolar', 'width': 6, 'generator': 'sobol'})
+    except AssertionError:
+        print('Test passed.')
+        return
+    raise AssertionError('mgu_hub accepted a unipolar configuration')
+
+
+def test_mgu_hub_run_length():
+    """Verify mgu_hub rejects a run that does not outlast the multiplier shift register."""
+    isz, hsz = 6, 4
+    weight = torch.zeros(hsz, hsz + isz)
+    bias = torch.zeros(hsz)
+
+    def build(width, depth_ismul):
+        return mgu_hub(isz, hsz, bias=True, weight_f=weight, bias_f=bias,
+                       weight_n=weight, bias_n=bias,
+                       config={'polarity': 'bipolar', 'width': width,
+                               'generator': 'sobol', 'depth_ismul': depth_ismul})
+
+    for width in (4, 6):
+        try:
+            build(width, 6)
+        except AssertionError as error:
+            print(f'expected AssertionError at width={width}: {error}')
+        else:
+            raise AssertionError('a run that does not outlast the shift register must raise')
+
+    # A run one step longer than the shift register is legal and still produces a hidden state.
+    for device in devices():
+        cell = build(7, 6).to(device)
+        assert cell(torch.zeros(2, isz, device=device)).shape == (2, hsz)
+        assert cell.lin_width == 10
+        # The config key sets the floor of the internal accumulator width.
+        assert mgu_hub(isz, hsz, bias=True, weight_f=weight, bias_f=bias,
+                       weight_n=weight, bias_n=bias,
+                       config={'polarity': 'bipolar', 'width': 7, 'generator': 'sobol',
+                               'width_acc': 14}).lin_width == 14
+
+    print('Test passed.')
+
+
 if __name__ == '__main__':
     test_mgu_hub()
+    test_mgu_hub_polarity()
+    test_mgu_hub_run_length()

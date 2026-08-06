@@ -43,12 +43,19 @@ class butterfly_spike(napl_base):
         import torch
         from napl.sim.algorithm.fft import butterfly_spike
 
-        codec = {'polarity': 'bipolar', 'timestep': 4, 'generator': 'sobol'}
-        adder = {'polarity': 'bipolar', 'scale': 3, 'width': 3}
+        codec = {'polarity': 'bipolar', 'timestep': 64, 'generator': 'sobol'}
+        adder = {'polarity': 'bipolar', 'scale': 3, 'width': 4}
         operation = butterfly_spike(codec, codec, adder, {'polarity': 'bipolar'})
-        inputs = tuple(torch.zeros(1) for _ in range(6))
-        for _ in range(4):
-            y0r, y0i, y1r, y1i = operation(*inputs)
+        x0 = (torch.tensor([0.5]), torch.tensor([0.25]))
+        x1 = (torch.tensor([0.5]), torch.tensor([-0.25]))
+        w = (torch.tensor([0.5]), torch.tensor([0.5]))
+        for _ in range(64):
+            y0r, y0i, y1r, y1i = operation(*x0, *x1, *w)
+        print([round(y.item(), 4) for y in (y0r, y0i, y1r, y1i)])
+        # [0.2812, 0.125, 0.0312, 0.0312]
+
+    With :math:`w x_1 = (0.375, 0.125)`, the exact scaled outputs are
+    :math:`y_0 / 3 = (0.2917, 0.125)` and :math:`y_1 / 3 = (0.0417, 0.0417)`.
     """
 
 
@@ -205,7 +212,7 @@ class butterfly_spike(napl_base):
 
             operation.reset()
             for _ in range(4):
-                outputs = operation(*inputs)
+                outputs = operation(*x0, *x1, *w)
         """
         x_stack, w_stack, sign, bias0, bias1, b = self._stacks(x0r, x0i, x1r, x1i, wr, wi)
 

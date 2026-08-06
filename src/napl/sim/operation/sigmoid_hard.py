@@ -45,15 +45,16 @@ class sigmoid_hard(napl_base):
             - **config** – Configuration mapping.
 
               - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
+              - **width**: Signed accumulator width in bits of the internal scaled adder; the default is ``4``.
               - **name**: Optional module name.
         """
-        super().__init__(config, ['polarity'], polarity_required=True)
+        super().__init__(config, ['polarity'], optional_key_list=['width'], polarity_required=True)
 
         #: Scaled unary adder that implements the affine sigmoid transform.
         self.scaled_add = add_any({
             'polarity': self.polarity,
             'scale' : 2,
-            'width' : 4,
+            'width' : config.get('width', 4),
             })
         #: Hardware latency and timing metadata for the composed hard sigmoid.
         self.hw = hw_params(pp_delay=0)

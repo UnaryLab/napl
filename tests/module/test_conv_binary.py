@@ -58,6 +58,127 @@ def test_conv_unarysim_quantization_semantics():
     assert torch.equal(hub(input_hub), _binary_conv_reference(hub, input_hub, hub_reference))
 
 
+def test_conv_hub_short_cycle_shortens_run():
+    """Verify a cycle below cycle_max sets the magnitude bitwidth like UnarySim HUBConv2d."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(2, 2, 6, 6) * 2 - 1
+    weight_cpu = torch.rand(3, 2, 3, 3) * 2 - 1
+    bias_cpu = torch.rand(3) * 2 - 1
+    cycle = 32
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        module = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': cycle},
+        ).to(device)
+        # UnarySim: bitwidth = (cycle - 1).bit_length(), and the value map spans cycle levels.
+        assert module.cycle_max == 128
+        assert module.cycle_act == cycle
+        assert module.width_act == 5
+        assert tuple(module.mapcbsg.shape) == (cycle, cycle)
+
+        rshift_i, rshift_w, rshift_o = rshift_offset(input, weight, 5, 5, 'round')
+
+        def hub_reference(patches, weight_2d):
+            input_index = pow2_rshift(patches, rshift_i).abs().long().clamp(0, cycle - 1).unsqueeze(1)
+            weight_index = pow2_rshift(weight_2d, rshift_w).abs().long().clamp(0, cycle - 1).unsqueeze(0)
+            products = module.mapcbsg[input_index, weight_index] * torch.sign(weight_2d).unsqueeze(0)
+            output = torch.sign(patches).unsqueeze(1) @ products.transpose(1, 2)
+            return pow2_rshift(output, rshift_o).squeeze(1)
+
+        assert torch.equal(module(input), _binary_conv_reference(module, input, hub_reference))
+
+        # The run length alone sets the resolution, so a width whose cap already equals
+        # cycle gives the same result instead of the shorter run clipping magnitudes.
+        matched = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 6, 'widthw': 6, 'cycle': cycle},
+        ).to(device)
+        assert matched.cycle_max == cycle
+        assert torch.equal(module(input), matched(input))
+    print('Test passed.')
+
+
+def test_conv_hub_non_power_of_two_cycle():
+    """Verify a non-power-of-two cycle keeps exactly cycle levels, extending UnarySim HUBConv2d."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(2, 2, 6, 6) * 2 - 1
+    weight_cpu = torch.rand(3, 2, 3, 3) * 2 - 1
+    bias_cpu = torch.rand(3) * 2 - 1
+    cycle = 100
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        module = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': cycle},
+        ).to(device)
+        # Upstream HUBConv2d cannot be built here at all: its map spans the next power of
+        # two and broadcasts against cycle. napl sizes the RNG sequences from the bitwidth
+        # and spans exactly cycle levels.
+        assert module.width_act == 7
+        assert module.cycle_act == cycle
+        assert tuple(module.mapcbsg.shape) == (cycle, cycle)
+
+        rshift_i, rshift_w, rshift_o = rshift_offset(input, weight, 7, 7, 'round')
+
+        def hub_reference(patches, weight_2d):
+            input_index = pow2_rshift(patches, rshift_i).abs().long().clamp(0, cycle - 1).unsqueeze(1)
+            weight_index = pow2_rshift(weight_2d, rshift_w).abs().long().clamp(0, cycle - 1).unsqueeze(0)
+            products = module.mapcbsg[input_index, weight_index] * torch.sign(weight_2d).unsqueeze(0)
+            output = torch.sign(patches).unsqueeze(1) @ products.transpose(1, 2)
+            return pow2_rshift(output, rshift_o).squeeze(1)
+
+        assert torch.equal(module(input), _binary_conv_reference(module, input, hub_reference))
+
+        # The extra levels of the next power of two change the result, so the run is
+        # not rounded up to it.
+        rounded = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 128},
+        ).to(device)
+        assert not torch.equal(module(input), rounded(input))
+    print('Test passed.')
+
+
+def test_conv_hub_cycle_validation():
+    """Verify cycle takes int-valued floats and rejects fractional or non-positive values."""
+    torch.manual_seed(0)
+    input_cpu = torch.rand(2, 2, 6, 6) * 2 - 1
+    weight_cpu = torch.rand(3, 2, 3, 3) * 2 - 1
+    bias_cpu = torch.rand(3) * 2 - 1
+
+    for device in devices():
+        input = input_cpu.to(device)
+        weight = weight_cpu.to(device)
+        bias = bias_cpu.to(device)
+        as_float = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 32.0},
+        ).to(device)
+        as_int = conv_hub(
+            2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+            config={'widthi': 8, 'widthw': 8, 'cycle': 32},
+        ).to(device)
+        assert as_float.cycle_act == 32
+        assert as_float.width_act == 5
+        assert torch.equal(as_float(input), as_int(input))
+
+        for cycle in (32.5, 0, -4):
+            try:
+                conv_hub(2, 3, 3, padding=1, weight_ext=weight, bias_ext=bias,
+                         config={'widthi': 8, 'widthw': 8, 'cycle': cycle})
+            except AssertionError:
+                continue
+            raise AssertionError(f'conv_hub accepted cycle {cycle}')
+    print('Test passed.')
+
+
 def _kernel_specific_checks():
     """
     Binary-domain conv variants (fxp/hub/tlut) match nn.Conv2d within their quantization
@@ -189,3 +310,6 @@ def test_conv_binary():
 if __name__ == '__main__':
     test_conv_binary()
     test_conv_unarysim_quantization_semantics()
+    test_conv_hub_short_cycle_shortens_run()
+    test_conv_hub_non_power_of_two_cycle()
+    test_conv_hub_cycle_validation()

@@ -67,10 +67,10 @@ The scripts use sibling imports (`from model import ...`), so run them as shown
 ## Cycle / bitwidth pairing
 
 The upstream knob relationship is `cycle = 2**(bitwidth-1)`. The sweep uses the same
-pairs: (cycle 32, bw 6), (64, 7), (128, 8), (256, 9), (512, 10), (1024, 11). For each
-HUB point the unary-MAC `width` is set equal to the bitwidth so the value map's
-`cycle_max = 2**(width-1)` equals the requested cycle; otherwise napl's `conv_hub`
-silently caps `cycle` at `2**(width-1)`.
+pairs: (cycle 32, bw 6), (64, 7), (128, 8), (256, 9), (512, 10), (1024, 11). `eval_sweep`
+passes `width=bw` for each HUB point so the value map's `cycle_max = 2**(width-1)` equals
+the requested cycle: a cycle above `2**(width-1)` is silently capped at that maximum, so
+`cycle=1000` with `widthi=8` runs 128 cycles.
 
 ## Caveats
 

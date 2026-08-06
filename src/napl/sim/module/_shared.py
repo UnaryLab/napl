@@ -113,12 +113,30 @@ def _hub_rng_seq(width, rng='sobol'):
         seq = torch.quasirandom.SobolEngine(1).draw(seq_len)[:, 0].view(seq_len) * seq_len
     return seq.floor()
 
-def _build_hub_map(widthi, widthw, rngi, rngw, ntype):
+def _check_hub_int(key, value):
+    """
+    Return ``value`` as an int, raising when it is not an integer value of at least 1.
+    Int-valued floats are accepted; bool, which is an int subclass, and every other
+    type are rejected. The message names ``key`` so the failing configuration key is
+    the one reported. Shared by the HUB value-map configuration checks.
+    """
+    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value == int(value) and value >= 1
+    if not ok:
+        message = f'Invalid {key}: <{value}>; legal values: an integer greater than 0.'
+        logger.error(message)
+        raise AssertionError(message)
+    return int(value)
+
+def _build_hub_map(cycle, rngi, rngw, ntype):
     """
     Build the HUB unary-multiplication value map: mapcbsg[i_level, w_level] is the
     bitstream AND-count for an input of magnitude i_level and a weight of magnitude
-    w_level, under the chosen RNGs (sign-magnitude, so cycle_max = 2**(width-1)).
-    Returns (cycle_max, mapcbsg). Shared by linear_hub and conv_hub. Requires widthi==widthw.
+    w_level, under the chosen RNGs. The run length sets the magnitude resolution:
+    the effective magnitude bitwidth is ``(cycle - 1).bit_length()``, which sizes the
+    RNG sequences, while the map spans exactly ``cycle`` levels per operand, so a
+    shorter run quantizes more coarsely rather than clipping large magnitudes.
+    ``cycle`` must be an integer value of at least 1; int-valued floats are accepted.
+    Returns (width_act, cycle_act, mapcbsg). Shared by linear_hub and conv_hub.
 
     With ``R_i`` and ``R_w`` the input and weight RNG sequences, the map counts the
     weight spikes that survive the input-gated prefix,
@@ -128,19 +146,20 @@ def _build_hub_map(widthi, widthw, rngi, rngw, ntype):
        m(a) = \\sum_j \\mathbf{1}\\{a > R_{i,j}\\},\\qquad
        \\mathrm{map}[a, b] = \\sum_{k < m(a)} \\mathbf{1}\\{b > R_{w,k}\\},
 
-    so ``map[a, b] / cycle_max`` approximates the product of the two magnitudes.
+    so ``map[a, b] / cycle`` approximates the product of the two magnitudes.
     """
-    cmax = 2 ** (max(widthi, widthw) - 1)
-    rngctler = _hub_rng_seq(widthi - 1, rngi)
-    rngctlee = _hub_rng_seq(widthw - 1, rngw)
-    levels = torch.arange(cmax, dtype=torch.float).unsqueeze(1)
-    ctler_bit = torch.gt(levels.expand(cmax, cmax), rngctler.unsqueeze(0))
+    cycle = _check_hub_int('cycle', cycle)
+    width_act = (cycle - 1).bit_length()
+    rngctler = _hub_rng_seq(width_act, rngi)
+    rngctlee = _hub_rng_seq(width_act, rngw)
+    levels = torch.arange(cycle, dtype=torch.float).unsqueeze(1)
+    ctler_bit = torch.gt(levels, rngctler.unsqueeze(0))
     mapctler = torch.sum(ctler_bit, 1).type(torch.long)
-    ctlee_bit = torch.gt(levels.expand(cmax, cmax), rngctlee.unsqueeze(0))
-    mapcbsg = torch.empty(cmax, cmax, dtype=torch.long)
-    for c in range(cmax):
+    ctlee_bit = torch.gt(levels, rngctlee.unsqueeze(0))
+    mapcbsg = torch.empty(cycle, cycle, dtype=torch.long)
+    for c in range(cycle):
         mapcbsg[c] = torch.sum(ctlee_bit[:, 0:mapctler[c]], 1)
-    return cmax, mapcbsg.type(ntype)
+    return width_act, cycle, mapcbsg.type(ntype)
 
 def _tlut_decompose(mag, widtht, degree, cycle_neg, cycle_pos):
     """
@@ -358,6 +377,16 @@ def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, 
     if bias is not None:
         out = out + bias.view(1, -1, 1, 1)
     return out
+
+def _mgu_run_outlasts_ismul(timestep, depth_ismul):
+    """
+    Whether a run of ``timestep`` timesteps outlasts the flush of the ``depth_ismul``
+    shift register inside the MGU gate multiplier. Flushing that register consumes
+    ``2 ** depth_ismul`` timesteps, so a run of exactly that length leaves nothing
+    behind. Shared by mgu and mgu_hub, which state the same rule in timestep and in
+    width units respectively.
+    """
+    return timestep > 2 ** depth_ismul
 
 def _init_mgu_params(module, input_size, hidden_size, bias):
     """MGU forget/new-gate weights/biases, truncated-normal init."""

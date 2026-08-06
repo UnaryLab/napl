@@ -86,46 +86,18 @@ def test_mutable_input_delay(values, expected):
         assert outputs == expected
 
 
-def test_masked_hold():
-    """Verify a masked-off element re-emits its stored value while an enabled element shifts."""
-    # The first phase gives the held lane a distinct value per slot: a lane holding only
-    # zeros cannot tell holding from zeroing, and one holding equal values cannot tell a
-    # frozen index from an advancing one.
-    phases = (
-        ([1, 1], [(1, 1), (0, 0)]),
-        ([0, 1], [(0, 0), (0, 1), (0, 0)]),
-    )
+def test_float_input_delay():
+    """Verify a float spike tensor delays like an stype one instead of raising a dtype error."""
     for device in devices():
         operation = shiftreg({'depth': _DEPTH}).to(device)
-        # The enabled lane must track a plain unmasked register fed the same stream.
-        reference = shiftreg({'depth': _DEPTH}).to(device)
-        held_outputs = []
-        for enable, stream in phases:
-            mask_enable = torch.tensor(enable, dtype=global_config.stype, device=device)
-            for held, shifting in stream:
-                output = operation(
-                    torch.tensor([held, shifting], dtype=global_config.stype, device=device),
-                    mask_enable=mask_enable,
-                )
-                expected = reference(
-                    torch.tensor([shifting], dtype=global_config.stype, device=device)
-                )
-                assert output[1].item() == expected.item(), \
-                    f'[{device}] enabled lane did not delay like an unmasked register'
-                if not enable[0]:
-                    held_outputs.append(output[0].item())
-        assert held_outputs == [1, 1, 1], \
-            f'[{device}] held lane emitted {held_outputs} instead of re-emitting its stored one'
-
-
-def test_masked_shape_mismatch():
-    """Reject an enable mask whose shape differs from the input."""
-    operation = shiftreg({'depth': _DEPTH})
-    with pytest.raises(AssertionError):
-        operation(
-            torch.zeros(2, dtype=global_config.stype),
-            mask_enable=torch.ones(3, dtype=global_config.stype),
-        )
+        outputs = []
+        for value in (1.0, 1.0, 1.0, 0.0):
+            output = operation(torch.tensor([value], dtype=global_config.ntype, device=device))
+            assert output.dtype == global_config.stype, \
+                f'[{device}] float input produced output dtype {output.dtype}'
+            outputs.append(output.item())
+        assert outputs == [0, 1, 1, 1], \
+            f'[{device}] float input delayed incorrectly: {outputs}'
 
 
 if __name__ == '__main__':
@@ -134,8 +106,7 @@ if __name__ == '__main__':
     # handle that skip, so the script decides for itself whether to call it.
     if len(devices()) > 1:
         test_device_migration()
-    test_masked_hold()
-    test_masked_shape_mismatch()
+    test_float_input_delay()
     test_mutable_input_delay([1, 1, 1, 0], [0, 1, 1, 1])
     test_mutable_input_delay([0, 0, 1, 1], [0, 1, 0, 0])
     print('Test passed.')

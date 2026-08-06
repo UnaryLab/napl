@@ -1,3 +1,6 @@
+# Simulation class -> RTL module bindings, read by napl/syn/translate.py.
+# Keys, the allowed `layer` values and its default, the expression language, and
+# the generator self-check contract are documented in RULE_IMP.md ("mapping.yaml").
 - rtl_module: add_any_bipolar
   layer: operation
   sim_module: sim/operation/add_any.py
@@ -604,3 +607,61 @@
     output: o_out
   parameters:
     WIDTH: "config['width']"
+
+- rtl_module: avgpool2d
+  layer: module
+  sim_module: sim/module/avgpool2d.py
+  inputs:
+    input_spike: i_input_spike
+  outputs:
+    output: o_out
+  parameters:
+    KERNEL_AREA: "area(config['kernel_size'])"
+    DIVISOR: "get(config, 'divisor_override') if get(config, 'divisor_override') is not None else KERNEL_AREA"
+    LANES: "config['lanes']"
+  requires:
+    - "get(config, 'padding', 0) in (0, (0, 0))"
+    - "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']"
+    - "get(config, 'ceil_mode', False) == False"
+    - "get(config, 'count_include_pad', True) == True"
+    - "DIVISOR >= KERNEL_AREA"
+
+- rtl_module: linear_ugemm_bipolar
+  layer: module
+  sim_module: sim/module/linear_ugemm.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+
+- rtl_module: linear_ugemm_unipolar
+  layer: module
+  sim_module: sim/module/linear_ugemm.py
+  inputs:
+    input_spike: i_input_spike
+    weight: i_weight
+    bias: i_bias
+  outputs:
+    output: o_out
+  parameters:
+    IN_FEATURES: "shape(config['weight'])[1]"
+    LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
+    WIDTH: "get(config['config'], 'width', 12)"
+    HAS_BIAS: "int(get(config, 'bias') is not None)"
+    SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
+  requires:
+    - "shape(config['weight'])[0] == config['lanes']"
+    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"

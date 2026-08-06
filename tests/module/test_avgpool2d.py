@@ -5,11 +5,15 @@ import torch.nn.functional as F
 
 from napl.sim.base import global_config
 from napl.sim.module import avgpool2d
-from napl.utils._shared_test import streaming_suite
+from napl.sim.operation import decode, encode
+from napl.utils._shared_test import clone_inputs, devices, streaming_suite
 
 
 _KERNEL_SIZE = 2
 _SHAPE = (4, 3, 8, 8)
+_PAD_SHAPE = (2, 3, 5, 5)
+_PADDING = 1
+_TIMESTEPS = 256
 
 
 def make_operation(polarity, timestep, device):
@@ -45,6 +49,42 @@ def known_answer_case(polarity):
     return (value,), torch.full((1, 1, 2, 2), 0.5), 0.0
 
 
+def check_padding():
+    """Pool a padded stream and compare with zero-padded F.avg_pool2d."""
+    torch.manual_seed(0)
+    tolerance = 4.0 / math.sqrt(_TIMESTEPS)
+    for polarity in ['unipolar', 'bipolar']:
+        # Padding stays inactive at padding=0, so those results are untouched.
+        assert avgpool2d(_KERNEL_SIZE, config={'polarity': polarity}).pad_bipolar is False
+        low = 0.0 if polarity == 'unipolar' else -1.0
+        values_cpu = torch.linspace(
+            low, 1.0, math.prod(_PAD_SHAPE), dtype=global_config.ntype,
+        ).reshape(_PAD_SHAPE)
+        reference = F.avg_pool2d(values_cpu, _KERNEL_SIZE, padding=_PADDING)
+        for device in devices():
+            values, = clone_inputs((values_cpu,), device)
+            codec = {'polarity': polarity, 'timestep': _TIMESTEPS,
+                     'generator': 'sobol', 'dim': 1}
+            enc = encode(codec).to(device)
+            pool = avgpool2d(
+                _KERNEL_SIZE, padding=_PADDING, config={'polarity': polarity},
+            ).to(device)
+            dec = decode(codec).to(device)
+            for _ in range(_TIMESTEPS):
+                dec(pool(enc(values)))
+            result = dec.spike_value.detach().cpu()
+            assert result.shape == reference.shape
+            rmse = (result - reference).pow(2).mean().sqrt().item()
+            assert rmse <= tolerance, (
+                f'[{device}][{polarity}] padding={_PADDING} rmse={rmse:.6f}, '
+                f'bound={tolerance:.6f}'
+            )
+            print(
+                f'[{device}][{polarity}] padding={_PADDING}, seed=0, '
+                f'N={_TIMESTEPS}, rmse={rmse:.6f}, bound={tolerance:.6f}'
+            )
+
+
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
     'tolerance_scale': 4.0,
@@ -53,11 +93,12 @@ CONFIG = {
     'make_performance_values': make_performance_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
+    'extra_checks': check_padding,
 }
 
 
 def test_avgpool2d():
-    """Verify avgpool2d against analytic and known-answer streams, including reset and timing."""
+    """Verify avgpool2d against analytic and known-answer streams, including padding, reset, and timing."""
     streaming_suite(CONFIG)
 
 

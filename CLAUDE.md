@@ -33,7 +33,7 @@ Do not run the full sweep (`tests/sweep_test.py`) without explicit user approval
 - `conv` bipolar zero-padding uses a *decorrelated rate-0.5 pad stream* (a separate pad encoder), not a deterministic 0/1 toggle (which would correlate with the Sobol weight stream).
 ## RTL implementation (`src/napl/imp/`)
 
-The Verilog-2001 hardware counterpart of `sim/operation/` lives under `src/napl/imp/`. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory RTL design and verification rules plus the layout and commands.
+The Verilog-2001 hardware counterpart of `sim/operation/` lives under `src/napl/imp/operation/`, and of `sim/module/` under `src/napl/imp/module/`. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory RTL design and verification rules plus the layout and commands.
 
 ## Git
 

@@ -116,7 +116,38 @@ def _kernel_specific_checks():
         print(f'[{device}] perf: conv_ugemm {t_ugemm.seconds*1e3:.1f}ms vs conv {t_full.seconds*1e3:.1f}ms '
               f'(ratio {t_full.seconds/max(t_ugemm.seconds,1e-9):.2f}x)')
 
+    _weight_update_check()
+
     print('Test passed.')
+
+
+def _weight_update_check():
+    """A weight update between calls takes effect instead of reusing a stale probability.
+
+    Bipolar only: the unipolar probability is the weight itself, so the check needs the
+    bipolar (w + 1) / 2 conversion to tell a live read from a stale copy.
+    """
+    in_channels, out_channels, k, phase = 2, 3, 3, 16
+    # Both phases advance the same conditional sequence, so it must span them.
+    cfg = {'polarity': 'bipolar', 'timestep': 2 * phase, 'generator': 'sobol', 'width': 12}
+    for device in devices():
+        input_spike = torch.ones(1, in_channels, k, k).type(global_config.ntype).to(device)
+        layer = conv_ugemm(torch.full((out_channels, in_channels, k, k), -1.0), None,
+                           stride=1, padding=0, config=cfg).to(device)
+
+        for _ in range(phase):
+            output_spike = layer(input_spike)
+        assert output_spike.sum().item() == 0, \
+            f'[{device}] minimum weights should emit no output spike, got {output_spike}'
+
+        # An optimizer step updates the parameter in place, without a reset().
+        with torch.no_grad():
+            layer.weight.fill_(1.0)
+        for _ in range(phase):
+            output_spike = layer(input_spike)
+        assert torch.equal(output_spike, torch.ones_like(output_spike)), \
+            f'[{device}] updated weights ignored, got {output_spike}'
+        print(f'[{device}] weight update takes effect without reset.')
 
 
 def make_operation(polarity, timestep, _device):

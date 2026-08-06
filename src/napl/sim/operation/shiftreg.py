@@ -1,5 +1,4 @@
 import torch
-from loguru import logger
 
 from napl.sim.base import napl_base, hw_params
 
@@ -16,10 +15,6 @@ class shiftreg(napl_base):
 
     The first **depth** outputs come from the alternating reset contents, whose
     entry :math:`j` holds :math:`j \bmod 2`.
-
-    An optional per-element ``mask_enable`` selects which elements advance. An
-    element whose mask entry is falsy neither stores the current input nor
-    advances, so it re-emits the same value on the next call.
 
     Both buffers take their shape from the first input, and a mid-stream
     ``state_dict`` does not load into a fresh instance.
@@ -87,15 +82,12 @@ class shiftreg(napl_base):
         self.head.resize_(()).zero_()
 
 
-    def forward(self, input: torch.tensor, mask_enable: torch.tensor=None):
+    def forward(self, input: torch.tensor):
         """
         Push one input timestep through the shift register.
 
         Args:
             input: Current spike tensor.
-            mask_enable: Optional per-element enable with the same shape as ``input``.
-                Elements where it is truthy advance; the rest hold their stored
-                entry. The default is ``None``, which advances every element.
 
         Returns:
             The tensor stored ``depth`` timesteps earlier, with the same shape as
@@ -116,22 +108,9 @@ class shiftreg(napl_base):
                 self.reg[i].fill_(i%2)
             self.head.resize_(input.shape).zero_()
 
+        input_stype = input.type(self.stype)
         index = self.head.unsqueeze(0)
         output = self.reg.gather(0, index).squeeze(0)
-        if mask_enable is None:
-            self.reg.scatter_(0, index, input.detach().unsqueeze(0))
-            self.head.add_(1).remainder_(self.depth)
-        else:
-            if mask_enable.shape != input.shape:
-                message = (
-                    f'Enable mask shape <{tuple(mask_enable.shape)}> does not match the '
-                    f'input shape <{tuple(input.shape)}>.')
-                logger.error(message)
-                raise AssertionError(message)
-            enabled = mask_enable.bool()
-            # Writing the value just read back into a held slot leaves it unchanged,
-            # so one scatter covers both cases and the indices stay tensor-side.
-            stored = torch.where(enabled, input.detach(), output)
-            self.reg.scatter_(0, index, stored.unsqueeze(0))
-            self.head.copy_(torch.where(enabled, (self.head + 1) % self.depth, self.head))
+        self.reg.scatter_(0, index, input_stype.detach().unsqueeze(0))
+        self.head.add_(1).remainder_(self.depth)
         return output

@@ -1,10 +1,13 @@
 import torch
 import math
 
+from loguru import logger
+
 from napl.sim.base import napl_base
 from napl.sim.operation import decode
 from napl.sim.operation.encode import encode
 from napl.sim.module.mgu import mgu
+from napl.sim.module._shared import _mgu_run_outlasts_ismul
 
 
 # Single source for every optional key: the signature default and the per-key fallback.
@@ -13,6 +16,7 @@ _DEFAULT_CONFIG = {
     'width': 8,
     'generator': 'sobol',
     'depth_ismul': 6,
+    'width_acc': 10,
 }
 
 
@@ -48,7 +52,7 @@ class mgu_hub(napl_base):
 
         cell = mgu_hub(2, 3, weight_f=torch.zeros(3, 5), bias_f=torch.zeros(3),
                        weight_n=torch.zeros(3, 5), bias_n=torch.zeros(3),
-                       config={"polarity": "bipolar", "width": 2,
+                       config={"polarity": "bipolar", "width": 7,
                                "generator": "sobol"})
         hidden = cell(torch.zeros(1, 2))
 
@@ -80,10 +84,11 @@ class mgu_hub(napl_base):
             - **bias_n** – New-gate bias tensor shaped ``(hidden_size,)``, or ``None`` for no bias; the default is ``None``.
             - **config** – Configuration mapping. Omitted keys fall back to the same defaults.
 
-              - **polarity**: Recorded stream encoding; the internal run is always bipolar. The attribute takes the value present in **config**, and stays ``None`` when the mapping omits the key.
-              - **width**: Base-two exponent of the internal stream length; the default is ``8``.
+              - **polarity**: Stream encoding, which must be ``"bipolar"``; the default is ``"bipolar"``. The attribute takes the value present in **config**, and stays ``None`` when the mapping omits the key.
+              - **width**: Base-two exponent of the internal stream length; the default is ``8``. It must be greater than **depth_ismul**, so the run outlasts the multiplier's shift-register flush; construction fails otherwise.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **depth_ismul**: Register-address width of the non-static multiplier; the default is ``6``.
+              - **width_acc**: Lower bound on the accumulator width of each internal streaming linear layer; the default is ``10``.
               - **name**: Optional instance label.
 
         Both weight tensors are required. The internal cell registers each
@@ -91,6 +96,10 @@ class mgu_hub(napl_base):
         """
         super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
         cfg = {**_DEFAULT_CONFIG, **config}
+        if cfg['polarity'] != 'bipolar':
+            message = f'Invalid polarity: <{cfg["polarity"]}>; legal values: <[\'bipolar\']>.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Number of features in each input vector.
         self.input_size = input_size
         #: Number of features in each hidden-state vector.
@@ -103,6 +112,13 @@ class mgu_hub(napl_base):
         self.generator = cfg['generator']
         #: Register-address width for the internal non-static multiplier.
         self.depth_ismul = cfg['depth_ismul']
+        if not _mgu_run_outlasts_ismul(2 ** self.width, self.depth_ismul):
+            message = (f'Invalid width: <{self.width}>; legal values: an integer greater than depth_ismul '
+                       f'<{self.depth_ismul}>, since flushing the multiplier shift register consumes '
+                       f'<{2 ** self.depth_ismul}> timesteps and leaves nothing behind in a run of exactly '
+                       f'that length, but width <{self.width}> gives <{2 ** self.width}>.')
+            logger.error(message)
+            raise AssertionError(message)
         #: Forget-gate weight tensor given at construction, shared with the internal cell; rebinding it later leaves the run unchanged.
         self.weight_f = weight_f
         #: Forget-gate bias tensor given at construction, or ``None``, shared with the internal cell; rebinding it later leaves the run unchanged.
@@ -114,7 +130,7 @@ class mgu_hub(napl_base):
         # The inner accumulator must hold the hidden, input, and optional bias fan-in.
         entry = hidden_size + input_size + (1 if bias else 0)
         #: Accumulator width used by each internal streaming linear layer.
-        self.lin_width = max(12, math.ceil(math.log2(entry)) + 2)
+        self.lin_width = max(cfg['width_acc'], math.ceil(math.log2(entry)) + 2)
 
         ts = 2 ** self.width
         #: Encoder that converts the numeric input to spikes.

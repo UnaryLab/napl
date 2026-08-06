@@ -73,8 +73,8 @@ class conv_ugemm(napl_base):
               - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > fan_in + has_bias``; the default is ``12``.
               - **name**: Optional instance label.
 
-        The weight is held as a numeric buffer and converted to spike
-        probabilities by the conditional spike generator on its first call.
+        Weight and bias are trainable parameters. Each timestep reads their
+        current values, so an update between calls takes effect immediately.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['scale', 'width'], polarity_required=True)
 
@@ -127,17 +127,10 @@ class conv_ugemm(napl_base):
         #: Power-of-two period of the conditional-generator sequence.
         self.len = self.mul.len
 
-        #: Flattened numeric weight used by conditional generation.
-        self.w_flat: torch.Tensor
-        self.register_buffer(
-            'w_flat',
-            weight.reshape(self.out_channels, -1).type(self.ntype).detach(),
-        )
-        if self.has_bias:
-            b_prob = (bias + 1) / 2 if self._is_bipolar else bias
-            #: Numeric bias probabilities used to generate the bias spike stream.
-            self.b_prob: torch.Tensor
-            self.register_buffer('b_prob', b_prob.type(self.ntype).detach())
+        #: Trainable numeric weight tensor converted to spike probabilities on use.
+        self.weight = torch.nn.Parameter(weight)
+        #: Optional trainable numeric bias converted to spike probabilities on use.
+        self.bias = torch.nn.Parameter(bias) if bias is not None else None
 
         #: Streaming unary adder that reduces each convolution product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
@@ -200,12 +193,13 @@ class conv_ugemm(napl_base):
 
         # The patch spike broadcasts over output channels, so each patch position
         # keeps one sequence index shared by the whole weight row.
-        product = self.mul(inp.unsqueeze(1), self.w_flat)
+        product = self.mul(inp.unsqueeze(1), self.weight.reshape(self.out_channels, -1))
         psum = product.type(self.ntype).sum(-1)
 
         if self.has_bias:
             # The bias stream advances once per timestep on the shared RNG.
-            psum += torch.gt(self.b_prob,
+            b_prob = ((self.bias + 1) / 2 if self._is_bipolar else self.bias).type(self.ntype)
+            psum += torch.gt(b_prob,
                              self.mul.num_seq[(self.timestep_cur - 1) % self.len]).type(self.ntype)
 
         acc = self.acc(psum, entry=self.entry, dim=None)

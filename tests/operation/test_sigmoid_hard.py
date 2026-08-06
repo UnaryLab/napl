@@ -117,6 +117,13 @@ def test_sigmoid_hard_uses_inclusive_carry_sequence():
         assert torch.equal(output, expected.view(-1, 1, 1).expand_as(output))
 
 
+def test_sigmoid_hard_width_drives_accumulator():
+    """Verify the optional width key sets the internal adder width and defaults to 4."""
+    assert sigmoid_hard({'polarity': 'bipolar'}).scaled_add.width == 4
+    assert sigmoid_hard({'polarity': 'bipolar', 'width': 12}).scaled_add.width == 12
+
+
 if __name__ == '__main__':
     test_sigmoid_hard()
     test_sigmoid_hard_uses_inclusive_carry_sequence()
+    test_sigmoid_hard_width_drives_accumulator()

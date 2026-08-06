@@ -72,6 +72,8 @@ CONFIG = {
     'known_answer_case': known_answer_case,
     'encoder_dims': [1, 2],
     'timesteps': TIMESTEPS,
+    # The default depth_ismul-6 multiplier needs more than 64 timesteps to flush.
+    'state_timesteps': 128,
     'extra_checks': check_bipolar_only,
 }
 
@@ -81,5 +83,43 @@ def test_mgu():
     streaming_suite(CONFIG)
 
 
+def test_mgu_width_drives_every_adder():
+    """Verify the width key sets the forget-gate sigmoid adder as well as the output adder."""
+    ref = _reference_cell()
+    cell = mgu(ref.weight_f.data, ref.bias_f.data, ref.weight_n.data, ref.bias_n.data, _hx_value(),
+               {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'width': 9,
+                'depth_ismul': 3})
+    assert cell.fg_sigmoid.scaled_add.width == 9
+    assert cell.hy_add.width == 9
+    print('Test passed.')
+
+
+def test_mgu_run_length():
+    """Verify mgu rejects a run that does not outlast the multiplier shift register."""
+    ref = _reference_cell()
+
+    def build(timestep, depth_ismul):
+        return mgu(ref.weight_f.data, ref.bias_f.data, ref.weight_n.data, ref.bias_n.data,
+                   _hx_value(),
+                   {'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol',
+                    'depth_ismul': depth_ismul})
+
+    for timestep, depth_ismul in ((16, 6), (64, 6), (4, 2)):
+        try:
+            build(timestep, depth_ismul)
+        except AssertionError as error:
+            print(f'expected AssertionError at timestep={timestep}, '
+                  f'depth_ismul={depth_ismul}: {error}')
+        else:
+            raise AssertionError('a run that does not outlast the shift register must raise')
+
+    # A run one step longer than the shift register is legal and still emits spikes.
+    cell = build(5, 2)
+    assert cell(torch.ones(BATCH, ISZ), torch.ones(BATCH, HSZ)).shape == (BATCH, HSZ)
+    print('Test passed.')
+
+
 if __name__ == '__main__':
     test_mgu()
+    test_mgu_width_drives_every_adder()
+    test_mgu_run_length()

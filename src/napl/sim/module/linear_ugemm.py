@@ -80,9 +80,8 @@ class linear_ugemm(napl_base):
               - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > in_features + has_bias``; the default is ``12``.
               - **name**: Optional instance label.
 
-        Weight and bias are trainable parameters. The conditional spike
-        generator caches the weight probability on its first call and drops it
-        on ``reset()``.
+        Weight and bias are trainable parameters. Each timestep reads their
+        current values, so an update between calls takes effect immediately.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
 
@@ -153,7 +152,7 @@ class linear_ugemm(napl_base):
 
         This class has no extra local state. The inherited ``reset()`` method
         restarts the conditional spike generator, which owns the per-input
-        sequence indices and the cached weight probability, and the unary adder.
+        sequence indices, and the unary adder.
         """
         pass
 
@@ -169,7 +168,8 @@ class linear_ugemm(napl_base):
             Output spike tensor with last dimension ``out_features``.
 
         The call advances the per-feature conditional RNG indices, the unary
-        adder, and ``timestep_cur``. Stored spike probabilities are unchanged.
+        adder, and ``timestep_cur``. Weight and bias spike probabilities are
+        recomputed from the current parameters on every call.
         """
         # The input spike broadcasts over output features, so each input feature
         # keeps one sequence index shared by the whole weight column.

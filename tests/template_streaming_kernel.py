@@ -65,9 +65,10 @@ CONFIG = {
     # ),
     # Callable run after the four suite checks pass.
     # 'extra_checks': extra_checks,
-    # Stream length for the known-answer, fidelity, and performance checks;
-    # reset and replay always uses a short fixed stream.
+    # Stream length for the known-answer, fidelity, and performance checks.
     # 'timesteps': 256,
+    # Stream length for the reset-and-replay check.
+    # 'state_timesteps': 16,
     # Untimed runs before timing each device.
     # 'warmup_runs': 2,
     # Timed runs per device; the median is reported.

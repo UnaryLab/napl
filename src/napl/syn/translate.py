@@ -15,6 +15,9 @@ import yaml
 
 _MAPPING_PATH = Path(__file__).resolve().parents[1] / "imp" / "mapping.yaml"
 
+#: Mapping-entry layers, each the `imp/` subdirectory holding that RTL.
+_LAYERS = {"operation", "module"}
+
 
 class TranslationError(ValueError):
     """Raised when a graph node cannot be mapped to an RTL operation."""
@@ -211,6 +214,8 @@ def _select_entry(mapping, class_name, config, requested_rtl=None):
         return matches[0]
 
     polarity = config.get("polarity")
+    if polarity is None and isinstance(config.get("config"), Mapping):
+        polarity = config["config"].get("polarity")
     if polarity is not None:
         expected = f"{class_name}_{polarity}"
         matches = [entry for entry in entries if entry.get("rtl_module") == expected]
@@ -314,6 +319,9 @@ def _make_eval_context(node, config, entry):
         "SEGMENT": segment,
     }
     context.update(config)
+    # A module node carries the class's own `config` mapping under an __init__
+    # argument of that name, so the node config keeps the bare name.
+    context["config"] = config
     if context["input"] is None:
         context.pop("input")
     return context
@@ -323,6 +331,30 @@ def _safe_len(value):
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return len(value)
+
+
+def _safe_get(container, key, default=None):
+    """Return ``container[key]``, or ``default`` when the key is absent."""
+    if not isinstance(container, Mapping):
+        raise TypeError(f"get() expects a mapping, got {type(container).__name__}")
+    return container.get(key, default)
+
+
+def _safe_shape(value):
+    """Return the shape tuple of a tensor, sequence, or shape-like value."""
+    shape = _shape_from_value(value)
+    if shape is None:
+        raise TypeError(f"value {value!r} has no shape")
+    return shape
+
+
+def _safe_area(value):
+    """Element count of a window size given as an int or a per-axis sequence."""
+    if isinstance(value, bool):
+        raise TypeError("window size must not be a boolean")
+    if isinstance(value, int):
+        return value * value
+    return math.prod(int(item) for item in value)
 
 
 class _RestrictedEvaluator:
@@ -337,13 +369,28 @@ class _RestrictedEvaluator:
         ast.Mod: operator.mod,
         ast.Pow: operator.pow,
     }
-    _unary = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+    _unary = {ast.UAdd: operator.pos, ast.USub: operator.neg, ast.Not: operator.not_}
+    _compare = {
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+        ast.Is: operator.is_,
+        ast.IsNot: operator.is_not,
+        ast.In: lambda left, right: left in right,
+        ast.NotIn: lambda left, right: left not in right,
+    }
     _functions = {
         "ceil": math.ceil,
         "floor": math.floor,
         "log2": math.log2,
         "len": _safe_len,
         "int": int,
+        "get": _safe_get,
+        "shape": _safe_shape,
+        "area": _safe_area,
     }
 
     def __init__(self, names):
@@ -390,6 +437,35 @@ class _RestrictedEvaluator:
             return self._binary[type(node.op)](self._visit(node.left), self._visit(node.right))
         if isinstance(node, ast.UnaryOp) and type(node.op) in self._unary:
             return self._unary[type(node.op)](self._visit(node.operand))
+        if isinstance(node, ast.Compare):
+            left = self._visit(node.left)
+            for op, comparator in zip(node.ops, node.comparators):
+                if type(op) not in self._compare:
+                    raise TypeError(f"comparison {type(op).__name__} is not allowed")
+                right = self._visit(comparator)
+                if not self._compare[type(op)](left, right):
+                    return False
+                left = right
+            return True
+        if isinstance(node, ast.BoolOp):
+            values = [self._visit(value) for value in node.values]
+            if isinstance(node.op, ast.And):
+                result = True
+                for value in values:
+                    result = value
+                    if not value:
+                        break
+                return result
+            result = False
+            for value in values:
+                result = value
+                if value:
+                    break
+            return result
+        if isinstance(node, ast.IfExp):
+            if self._visit(node.test):
+                return self._visit(node.body)
+            return self._visit(node.orelse)
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in self._functions:
                 if node.keywords:
@@ -420,7 +496,21 @@ def _resolve_parameters(entry, node, config):
             ) from exc
         parameters[name] = value
         evaluator.names[name] = value
+    _check_requires(entry, evaluator)
     return parameters
+
+
+def _check_requires(entry, evaluator):
+    """Reject a configuration the RTL module does not implement."""
+    conditions = entry.get("requires") or []
+    if isinstance(conditions, str):
+        conditions = [conditions]
+    for condition in conditions:
+        if not evaluator.evaluate(condition):
+            raise TranslationError(
+                f"RTL module {entry.get('rtl_module')!r} does not support this "
+                f"configuration: {condition} is false"
+            )
 
 
 def _resolve_rtl_file(mapping_path, entry):
@@ -428,16 +518,22 @@ def _resolve_rtl_file(mapping_path, entry):
     rtl_module = entry.get("rtl_module")
     if not isinstance(rtl_module, str) or not rtl_module:
         raise TranslationError("RTL mapping entry has no rtl_module")
-    candidates = sorted(root.glob(f"operation/*/rtl/{rtl_module}.v"))
+    layer = entry.get("layer") or "operation"
+    if layer not in _LAYERS:
+        raise TranslationError(
+            f"RTL mapping entry {rtl_module!r} has layer {entry.get('layer')!r}; "
+            f"'layer' must be one of {sorted(_LAYERS)}"
+        )
+    candidates = sorted(root.glob(f"{layer}/*/rtl/{rtl_module}.v"))
     if len(candidates) == 1:
         return candidates[0]
     sim_name = _name_from_sim_module(entry.get("sim_module", ""))
-    direct = root / "operation" / sim_name / "rtl" / f"{rtl_module}.v"
+    direct = root / layer / sim_name / "rtl" / f"{rtl_module}.v"
     if direct.is_file():
         return direct
     if not candidates:
         raise TranslationError(
-            f"RTL file for module {rtl_module!r} is not present under {root / 'operation'}"
+            f"RTL file for module {rtl_module!r} is not present under {root / layer}"
         )
     raise TranslationError(
         f"RTL module {rtl_module!r} has multiple candidate files: {candidates}"

@@ -42,12 +42,14 @@ SPECIAL_CASES = {
               'scale': None, 'width': 12}),
     'conv_ugemm': ([WEIGHT_4D, None, 1, 0, 1],
                    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
-    # mgu is bipolar only and holds its hidden value as a buffer, so it needs a tensor.
+    # mgu is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
+    # its run must outlast the depth_ismul multiplier shift register.
     'mgu': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
-            {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
-    # mgu_hub builds its streaming cell at construction, so the gate tensors must fit.
+            {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'depth_ismul': 3}),
+    # mgu_hub builds its streaming cell at construction, so the gate tensors must fit,
+    # and it is bipolar only with width greater than depth_ismul.
     'mgu_hub': ([2, 2, True, torch.zeros(2, 4), torch.zeros(2), torch.zeros(2, 4), torch.zeros(2)],
-                {'polarity': 'bipolar', 'width': 2, 'generator': 'sobol', 'depth_ismul': 6}),
+                {'polarity': 'bipolar', 'width': 7, 'generator': 'sobol', 'depth_ismul': 6}),
 }
 
 # butterfly_spike takes four separate configuration mappings instead of one.
