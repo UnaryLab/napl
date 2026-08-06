@@ -157,7 +157,7 @@ Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Onl
 
 `src/napl/imp/operation/` mirrors only concrete operations with implemented RTL. Each operation folder contains its RTL, testbench, Python golden-vector generator, generated vectors, and build output. One Python `forward()` timestep corresponds to one `posedge i_clk`; active-low `i_rst_n` corresponds to Python `reset()`.
 
-`src/napl/imp/module/` mirrors `sim/module` classes whose RTL is a lane replication of operation circuits; `avgpool2d` is implemented. Linear, convolution, recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory design and verification contract and the folder layout and commands.
+`src/napl/imp/module/` mirrors `sim/module` classes whose RTL is a lane replication of operation circuits; `avgpool2d`, `linear`, `linear_pc`, `linear_ugemm`, `conv`, `conv_pc`, and `conv_ugemm` are implemented. Recurrent, metric, and algorithm classes do not currently have matching RTL trees in this repository. Follow [RULE_IMP.md](RULE_IMP.md) for the mandatory design and verification contract and the folder layout and commands.
 
 ## Incomplete boundaries
 
@@ -168,6 +168,6 @@ Every operation with generated RTL sets `self.hw = hw_params(pp_delay=...)`. Onl
 | FFT | `butterfly_spike` and `butterfly_binary` are implemented; `fft` is a placeholder. |
 | Spike components | `wta` and `inhibit` are placeholders. |
 | Biological structure | `napl.sim.structure` files are empty placeholders. |
-| RTL coverage | Hardware counterparts exist for the concrete operation folders under `src/napl/imp/operation/` and for `avgpool2d` under `src/napl/imp/module/`. |
+| RTL coverage | Hardware counterparts exist for the concrete operation folders under `src/napl/imp/operation/` and for the seven module folders under `src/napl/imp/module/`. |
 
 Treat these as package boundaries that are not yet implemented, not as completed interfaces.

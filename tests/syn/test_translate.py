@@ -207,9 +207,9 @@ def linear_node(class_name, polarity, lanes=8, width=12):
                        "lanes": lanes}}
 
 
-def conv_node(polarity, in_channels=2, lanes=108, width=12):
-    """One conv node over a 3x2x3x3 weight and a 1x2x6x6 input."""
-    return {"class": "conv",
+def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv"):
+    """One conv or conv_pc node over a 3x2x3x3 weight and a 1x2x6x6 input."""
+    return {"class": class_name,
             "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
                        "stride": 1, "padding": 1, "dilation": 1,
                        "config": dict(LAYER_CONFIG, polarity=polarity, width=width),
@@ -246,6 +246,10 @@ def rejection_cases():
              linear_node("linear", polarity, lanes=4)),
             (f"linear_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
              linear_node("linear", polarity, width=4)),
+            # linear_pc drops the accumulator, so it carries the lane clause but
+            # no accumulator-width one.
+            (f"linear_pc_{polarity}", "shape(config['weight'])[0] == config['lanes']",
+             linear_node("linear_pc", polarity, lanes=4)),
             (f"linear_ugemm_{polarity}", "shape(config['weight'])[0] == config['lanes']",
              linear_node("linear_ugemm", polarity, lanes=4)),
             (f"linear_ugemm_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
@@ -259,6 +263,25 @@ def rejection_cases():
             (f"conv_{polarity}",
              "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)",
              conv_node(polarity, lanes=28)),
+            # conv_ugemm generates its weight and bias streams in hardware, so it
+            # carries conv's clauses plus the add_any width cap its lanes inherit.
+            (f"conv_ugemm_{polarity}", "shape(config['weight'])[1] == input.size(1)",
+             conv_node(polarity, in_channels=4, class_name="conv_ugemm")),
+            (f"conv_ugemm_{polarity}",
+             "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS",
+             conv_node(polarity, width=4, class_name="conv_ugemm")),
+            (f"conv_ugemm_{polarity}",
+             "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)",
+             conv_node(polarity, lanes=28, class_name="conv_ugemm")),
+            (f"conv_ugemm_{polarity}", "WIDTH <= 30",
+             conv_node(polarity, width=31, class_name="conv_ugemm")),
+            # conv_pc drops the accumulator, so it carries the geometry clauses
+            # but no accumulator-width one.
+            (f"conv_pc_{polarity}", "shape(config['weight'])[1] == input.size(1)",
+             conv_node(polarity, in_channels=4, class_name="conv_pc")),
+            (f"conv_pc_{polarity}",
+             "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)",
+             conv_node(polarity, lanes=28, class_name="conv_pc")),
         ]
     return cases
 
@@ -299,6 +322,13 @@ def test_reserved_name_shadows_a_config_key_of_the_same_name():
 def test_bindings_match_rtl_module_headers():
     """Check resolved parameters and directional ports against real RTL headers."""
     nodes = module_nodes() + [
+        # conv_ugemm holds its own weight and bias encoders, so its header carries
+        # SEQ_WIDTH on top of conv's parameters and no pad port.
+        {"class": "conv_ugemm",
+         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
+                    "stride": 1, "padding": 1, "dilation": 1,
+                    "config": LAYER_CONFIG, "lanes": 108},
+         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
         {
             "class": "add_any",
             "config": {"polarity": "bipolar", "scale": 2, "width": 8},
