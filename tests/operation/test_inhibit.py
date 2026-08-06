@@ -28,9 +28,9 @@ class napl_inhibit(napl_base):
 
 
     @napl_sim_timesteps
-    def forward(self, input_0, input_1, timesteps=256):
-        i_spike0 = self.encoder0(input_0)
-        i_spike1 = self.encoder1(input_1)
+    def forward(self, input_data, input_inhibit, timesteps=256):
+        i_spike0 = self.encoder0(input_data)
+        i_spike1 = self.encoder1(input_inhibit)
         o_spike = self.inhibit(i_spike0, i_spike1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
@@ -55,17 +55,17 @@ def _kernel_specific_checks():
     }
     inhibit_config={'polarity': codec_config1['polarity']}
 
-    input_0_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
-    input_1_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
+    input_data_cpu = gen_rand_tensor(codec_config1['polarity'], shape=(10000,), width=math.log2(codec_config1['timestep'])).type(global_config.ntype)
+    input_inhibit_cpu = gen_rand_tensor(codec_config2['polarity'], shape=(10000,), width=math.log2(codec_config2['timestep'])).type(global_config.ntype)
 
     for device in devices():
-        input_0 = input_0_cpu.to(device)
-        input_1 = input_1_cpu.to(device)
+        input_data = input_data_cpu.to(device)
+        input_inhibit = input_inhibit_cpu.to(device)
         inhibit_inst = napl_inhibit(codec_config1, codec_config2, inhibit_config).to(device)
         with timer(device) as elapsed:
-            inhibit_inst(input_0, input_1, timesteps=codec_config1['timestep'])
+            inhibit_inst(input_data, input_inhibit, timesteps=codec_config1['timestep'])
 
-        r_value = _inhibit_reference(input_0, input_1, codec_config1['polarity'])
+        r_value = _inhibit_reference(input_data, input_inhibit, codec_config1['polarity'])
         error, _ = inhibit_inst.accuracy.analyze(r_value, verbose=True)
         rmse = error.pow(2).mean().sqrt()
         assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config1['timestep']), rmse

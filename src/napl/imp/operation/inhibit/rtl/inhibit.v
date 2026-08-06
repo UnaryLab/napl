@@ -6,36 +6,41 @@
 // RTL counterpart of napl.sim.operation.inhibit (src/napl/sim/operation/inhibit.py).
 // No polarity variants and no sizing configuration, so a single bare module.
 //
-//   s_t = s_{t-1} | (i_input_0 & ~i_input_1)      sticky inhibition latch
-//   o_out = i_input_0 | s_t
+//   set = i_input_data & ~i_input_inhibit                  set-dominant latch input
+//   latch_q holds 1 once set has been high; cleared only by !i_rst_n
+//   o_out = i_input_data | latch_q
 //
-// Both inputs are consumed combinationally in their arrival cycle, so the output
-// is available the same cycle (pp_delay = 0); the latch only carries state
-// forward. i_rst_n (active-low) maps to the Python reset(): s <- 0.
+// The latch is level-sensitive and clockless: set propagates into latch_q as soon
+// as the inputs arrive, so the output is available in the arrival cycle
+// (pp_delay = 0). i_rst_n (active-low) asynchronously clears the latch and maps to
+// the Python reset(): s <- 0.
+//
+// This deliberately deviates from the project's lint-clean rule that forbids
+// inferred latches: the missing else in the always @* block infers the latch on
+// purpose, because this is asynchronous race logic rather than clocked datapath.
 //
 // Verify from src/napl/imp/: conda run -n napl make test OP=inhibit
 //==============================================================================
 
 
 module inhibit (
-    input  wire i_clk,       // one posedge == one Python forward() timestep
-    input  wire i_rst_n,     // active-low; maps to Python reset()
-    input  wire i_input_0,   // data temporal stream
-    input  wire i_input_1,   // inhibiting temporal stream
-    output wire o_out        // data spike held high by the inhibition latch
+    input  wire i_clk,             // unused: clockless race logic, kept for interface consistency
+    input  wire i_rst_n,           // active-low; maps to Python reset()
+    input  wire i_input_data,      // data temporal stream
+    input  wire i_input_inhibit,   // inhibiting temporal stream
+    output wire o_out              // data spike held high by the inhibition latch
 );
     reg  latch_q;
 
-    wire blocked = i_input_0 & ~i_input_1;
-    wire latch_d = latch_q | blocked;
+    wire set = i_input_data & ~i_input_inhibit;
 
-    assign o_out = i_input_0 | latch_d;
+    assign o_out = i_input_data | latch_q;
 
-    always @(posedge i_clk or negedge i_rst_n) begin
+    always @* begin
         if (!i_rst_n)
-            latch_q <= 1'b0;
-        else
-            latch_q <= latch_d;
+            latch_q = 1'b0;
+        else if (set)
+            latch_q = 1'b1;
     end
 endmodule
 `default_nettype wire

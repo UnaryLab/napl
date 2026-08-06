@@ -33,7 +33,7 @@ class inhibit(napl_base):
     carries it on a falling rather than a rising edge. Complementing both inputs
     and the output recovers the paper's rising-edge gate exactly, so the pass
     condition :math:`x_0 \le x_1` above is the paper's :math:`j \le i` with no
-    mirroring, ``input_0`` being the data signal :math:`j` and ``input_1`` the
+    mirroring, ``input_data`` being the data signal :math:`j` and ``input_inhibit`` the
     inhibiting signal :math:`i`. This is the paper's Fig. 3(c) synchronous form,
     in which a simultaneous arrival passes, rather than the Fig. 3(d)
     asynchronous latch realizing strict :math:`j < i`.
@@ -85,7 +85,7 @@ class inhibit(napl_base):
         #: Hardware latency and timing metadata for the combinational INHIBIT output.
         self.hw = hw_params(pp_delay=0)
 
-        self.encoding_io = {'input_0': 'tc', 'input_1': 'tc', 'output': 'tc'}
+        self.encoding_io = {'input_data': 'tc', 'input_inhibit': 'tc', 'output': 'tc'}
         self.polarity_io = {}
         self.correlation_i = {}
         self.stability_flux = 1.0
@@ -98,13 +98,13 @@ class inhibit(napl_base):
         self.latch.resize_(1).zero_()
 
 
-    def forward(self, input_0, input_1):
+    def forward(self, input_data, input_inhibit):
         """
         Compute one timestep of the temporal-code INHIBIT gate.
 
         Args:
-            input_0: Current 0/1 tensor from the data temporal stream.
-            input_1: Current 0/1 tensor from the inhibiting temporal stream.
+            input_data: Current 0/1 tensor from the data temporal stream.
+            input_inhibit: Current 0/1 tensor from the inhibiting temporal stream.
 
         Returns:
             The data spike held high by the inhibition latch. The latch is set
@@ -119,9 +119,9 @@ class inhibit(napl_base):
             output = gate(torch.tensor([1], dtype=torch.int8),
                           torch.tensor([0], dtype=torch.int8))
         """
-        in_0 = input_0.type(torch.int8)
-        in_1 = input_1.type(torch.int8)
-        blocked = in_0 & (in_1 ^ 1)
+        in_data = input_data.type(torch.int8)
+        in_inhibit = input_inhibit.type(torch.int8)
+        blocked = in_data & (in_inhibit ^ 1)
 
         if self.latch.shape == blocked.shape:
             self.latch.bitwise_or_(blocked)
@@ -129,5 +129,5 @@ class inhibit(napl_base):
             updated = self.latch | blocked
             self.latch.resize_as_(updated).copy_(updated.detach())
 
-        output = in_0 | self.latch
+        output = in_data | self.latch
         return output.type(self.stype)

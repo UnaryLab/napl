@@ -11,10 +11,11 @@ resets also exercise recovery from a dirtied latch.
 
 Output: ../vec/inhibit.vec, one line per cycle:
 
-    <rst_n> <in_0> <in_1> <out>      (each 0/1, space-separated)
+    <rst_n> <in_data> <in_inhibit> <out>      (each 0/1, space-separated)
 
-A line with rst_n==0 is a reset pulse: in_0/in_1/out are don't-care (0) and the
-TB asserts i_rst_n low for that cycle instead of checking the output.
+A line with rst_n==0 is a reset pulse: in_data/in_inhibit/out are don't-care (0) and the
+TB asserts i_rst_n low for that cycle instead of checking the output. The RTL latch is
+level-sensitive and clockless, so i_rst_n low clears it directly.
 
 inhibit has no polarity branch (polarity_required=False) and no sizing config, so
 there is a single bare module inhibit and no parameter header.
@@ -41,7 +42,7 @@ CODEC1 = {"polarity": "bipolar", "timestep": 256, "generator": "temporal", "dim"
 def main():
     model = inhibit(config={})
 
-    rows = []  # (rst_n, in_0, in_1, out)
+    rows = []  # (rst_n, in_data, in_inhibit, out)
     for pair in rep_pairs("bipolar", "bipolar"):
         model.reset()
         rows.append((0, 0, 0, 0))

@@ -225,8 +225,8 @@
   layer: operation
   sim_module: sim/operation/inhibit.py
   inputs:
-    input_0: i_input_0
-    input_1: i_input_1
+    input_data: i_input_data
+    input_inhibit: i_input_inhibit
   outputs:
     output: o_out
   parameters: {}
