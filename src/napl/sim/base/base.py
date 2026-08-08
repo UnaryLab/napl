@@ -34,25 +34,6 @@ _GLOBAL_CONFIG_FILE = os.path.join(_GLOBAL_ROOT_PATH, 'sim/base/global_config.ya
 
 @dataclass
 class global_config_check:
-    """Load and validate the process-wide tensor dtypes used by NAPL.
-
-    Use this class when inspecting or validating the global configuration. Most
-    applications use the module-level ``global_config`` instance instead of
-    constructing another instance.
-
-    The YAML ``global_config`` mapping must define **spike_type** as
-    ``torch.float``, ``torch.bfloat16``, or ``torch.int8`` and
-    **non_spike_type** as ``torch.float`` or ``torch.bfloat16``.
-
-    .. rubric:: Example
-
-    .. code-block:: python
-
-        from napl import global_config_check
-
-        config = global_config_check()
-        print(config.stype, config.ntype)
-    """
     #: Installed NAPL package directory used to locate shared data files.
     root_path: str = field(default_factory=lambda: _GLOBAL_ROOT_PATH)
     #: YAML file that defines the process-wide spike and non-spike dtypes.
@@ -84,19 +65,6 @@ global_config = global_config_check()
 
 @dataclass(frozen=True)
 class pvt_corner:
-    """Describe one process, voltage, temperature, RC, and mode scenario.
-
-    Use this immutable value as a key in :class:`hw_params` timing maps when a
-    hardware implementation has been characterized at multiple sign-off corners.
-
-    .. rubric:: Example
-
-    .. code-block:: python
-
-        from napl import pvt_corner
-
-        corner = pvt_corner("asap7", "ss", 0.63, 125.0, rc="cworst")
-    """
     #: Technology-node identifier, such as ``"asap7"``.
     node: str
     #: Process corner or standard-cell library set, such as ``"ss"``.
@@ -113,20 +81,6 @@ class pvt_corner:
 
 @dataclass
 class timing:
-    """Store non-overlapping timing segments for one hardware module.
-
-    Use this value for pre-synthesis path estimates or to attach characterized
-    nanosecond delays to a :class:`pvt_corner`. Segment delays add across module
-    boundaries without double counting.
-
-    .. rubric:: Example
-
-    .. code-block:: python
-
-        from napl import timing
-
-        path = timing(cp_delay=0.42, ir_delay=0.08, or_delay=0.05)
-    """
     #: Worst internal combinational delay in nanoseconds.
     cp_delay: float = 0.0
     #: Input-port-to-first-register delay in nanoseconds.
@@ -137,25 +91,9 @@ class timing:
 
 @dataclass
 class hw_params:
-    """Describe the latency and characterized timing of a NAPL hardware block.
-
-    Use this contract when connecting a functional simulation class to generated
-    RTL or when balancing reconvergent paths. ``pp_delay`` affects stream timing;
-    entries in ``timing`` record implementation measurements and do not change
-    functional results.
-
-    .. rubric:: Example
-
-    .. code-block:: python
-
-        from napl import hw_params, pvt_corner, timing
-
-        corner = pvt_corner("asap7", "tt", 0.70, 25.0)
-        hw = hw_params(pp_delay=1, timing={corner: timing(cp_delay=0.35)})
-    """
     #: Input-to-output pipeline latency in clock cycles.
     pp_delay: int = 0
-    #: Timing data indexed by :class:`pvt_corner`.
+    #: Timing data indexed by ``pvt_corner``.
     timing: dict = field(default_factory=dict)
 
 
@@ -165,6 +103,26 @@ class napl_base(torch.nn.Module):
     Use this class as the base of a new NAPL simulation module. Streaming
     subclasses advance ``timestep_cur`` once per call. Single-shot subclasses set
     ``streaming = False`` and leave the timestep at ``0``.
+
+    Every module takes its tensor dtypes from the module-level ``global_config``
+    instance of ``global_config_check``, which loads them from the YAML
+    ``global_config`` mapping in ``sim/base/global_config.yaml``. That mapping
+    must define **spike_type** as ``torch.float``, ``torch.bfloat16``, or
+    ``torch.int8`` and **non_spike_type** as ``torch.float`` or
+    ``torch.bfloat16``. Most applications read that module-level instance rather
+    than constructing another one.
+
+    The ``hw`` attribute holds a ``hw_params`` value describing the module's
+    hardware counterpart, the contract to use when connecting a functional
+    simulation class to generated RTL or when balancing reconvergent paths. Its
+    ``pp_delay`` is the input-to-output pipeline latency in clock cycles and
+    affects stream timing; its ``timing`` map records implementation
+    measurements and does not change functional results. Each key of that map is
+    a ``pvt_corner``, one immutable process, voltage, temperature, RC, and mode
+    scenario, and each value is a ``timing`` value holding nanosecond delays for
+    pre-synthesis path estimates or characterized sign-off numbers. Timing
+    segments do not overlap, so segment delays add across module boundaries
+    without double counting.
 
     .. rubric:: Example
 
@@ -204,7 +162,7 @@ class napl_base(torch.nn.Module):
                 Defaults to ``False``.
 
         The constructor sets ``timestep_cur`` to ``0`` and initializes ``hw`` to
-        a zero-latency :class:`hw_params` value.
+        a zero-latency ``hw_params`` value.
         """
         super().__init__()
         #: PyTorch dtype used for spike tensors in this module.

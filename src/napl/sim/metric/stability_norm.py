@@ -2,7 +2,7 @@ import torch
 
 from napl.sim.base import napl_base
 from napl.sim.metric._shared import analyze
-from napl.sim.metric.stability import stability
+from .stability import stability
 from loguru import logger
 
 

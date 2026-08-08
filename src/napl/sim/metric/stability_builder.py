@@ -3,8 +3,8 @@ import math
 
 from loguru import logger
 from napl.sim.base import napl_base
-from napl.sim.metric.stability_norm import search_max_stab
-from napl.sim.operation.encode import gen_num_seq
+from .stability_norm import search_max_stab
+from napl.sim.operation import encode
 
 
 class stability_builder(napl_base):
@@ -135,7 +135,8 @@ class stability_builder(napl_base):
         src_ns = (new_ns_one / new_ns_len).mul(seq_len).round()
         src_st = (new_st_one / new_st_len).mul(seq_len).round()
 
-        num_seq = gen_num_seq(config={'width': self.width, 'generator': config['generator'], 'dim': config.get('dim', 1)})
+        num_seq = encode({'polarity': self.polarity, 'timestep': seq_len,
+                          'generator': config['generator'], 'dim': config.get('dim', 1)}).num_seq
         #: Integer threshold sequence used to emit spikes from either stream segment.
         self.num_seq: torch.Tensor
         self.register_buffer('num_seq', num_seq.mul(seq_len).floor())

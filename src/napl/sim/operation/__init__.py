@@ -1,53 +1,55 @@
-from .decode import *
-from .encode import *
 from .add_any import *
+from .add_any_dyn import *
 from .add_gaines import *
 from .add_ugemm import *
 from .bi2uni import *
+from .decode import *
 from .dff import *
-from .sync_skewed import *
-from .sync_skewed_int import *
-from .signabs import *
-from .signabs_interleave import *
-from .signabs_shiftreg import *
+from .div_cordiv import *
+from .div_gaines import *
+from .div_iscb import *
+from .encode import *
+from .exp_n1 import *
+from .exp_n2g import *
+from .gt_rc import *
 from .inhibit import *
 from .jkff import *
-from .mul_ugemm import *
-from .mul_ugemm_sr import *
+from .lt_rc import *
+from .max_rc import *
+from .max_tc import *
+from .min_rc import *
+from .min_tc import *
 from .mul_gaines import *
+from .mul_ugemm import *
+from .mul_ugemm_dyn import *
 from .relu_cnt import *
+from .relu_hub import *
 from .relu_sat import *
 from .relu_shiftreg import *
 from .relu_tc import *
-from .relu_hub import *
+from .shiftreg import *
 from .sigmoid_hard import *
 from .sigmoid_hub import *
+from .signabs import *
+from .signabs_interleave import *
+from .signabs_shiftreg import *
+from .sqrt_emit import *
+from .sqrt_gaines import *
+from .sqrt_traceiscb import *
+from .sqrt_tracejkff import *
 from .square_dff import *
+from .sync_skewed import *
+from .sync_skewed_int import *
 from .tanh_hard import *
 from .tanh_hub import *
 from .tanh_p1 import *
 from .tanh_pn import *
 from .uni2bi import *
-from .shiftreg import *
-from .div_cordiv import *
-from .div_iscb import *
-from .div_gaines import *
-from .sqrt_tracejkff import *
-from .sqrt_traceiscb import *
-from .sqrt_emit import *
-from .sqrt_gaines import *
-from .min_rc import *
-from .max_rc import *
-from .lt_rc import *
-from .gt_rc import *
-from .min_tc import *
-from .max_tc import *
-from .round_fxp import *
-from .exp_n1 import *
-from .exp_n2g import *
+from .wta import *
 
 __all__ = [
     'add_any',
+    'add_any_dyn',
     'add_gaines',
     'add_ugemm',
     'bi2uni',
@@ -59,12 +61,8 @@ __all__ = [
     'encode',
     'exp_n1',
     'exp_n2g',
-    'gen_num_seq',
-    'get_lfsr_seq',
-    'get_sysrand_seq',
     'gt_rc',
     'inhibit',
-    'input_scale',
     'jkff',
     'lt_rc',
     'max_rc',
@@ -73,14 +71,12 @@ __all__ = [
     'min_tc',
     'mul_gaines',
     'mul_ugemm',
-    'mul_ugemm_sr',
+    'mul_ugemm_dyn',
     'relu_cnt',
     'relu_hub',
     'relu_sat',
     'relu_shiftreg',
     'relu_tc',
-    'round_fxp',
-    'round_ste',
     'shiftreg',
     'sigmoid_hard',
     'sigmoid_hub',
@@ -99,4 +95,5 @@ __all__ = [
     'tanh_p1',
     'tanh_pn',
     'uni2bi',
+    'wta',
 ]

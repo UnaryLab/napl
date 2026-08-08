@@ -2,7 +2,7 @@ import torch
 
 from napl.sim.base import napl_base
 from napl.sim.metric._shared import analyze
-from napl.sim.metric.accuracy import accuracy
+from .accuracy import accuracy
 from loguru import logger
 
 
