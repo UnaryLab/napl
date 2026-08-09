@@ -151,7 +151,7 @@ def test_reset_lifecycle():
 
 
 def test_reset_hook_format():
-    """Verify every concrete NAPL simulation class defines its own reset hook."""
+    """Verify every concrete streaming NAPL class defines its own reset hook."""
     classes = {
         value
         for value in vars(napl).values()
@@ -160,7 +160,11 @@ def test_reset_hook_format():
         and value is not napl_base
         and value.__module__.startswith('napl.sim.')
     }
-    missing = sorted(cls.__name__ for cls in classes if '_reset' not in cls.__dict__)
+    missing = sorted(
+        cls.__name__
+        for cls in classes
+        if cls.streaming and '_reset' not in cls.__dict__
+    )
     assert missing == []
 
 

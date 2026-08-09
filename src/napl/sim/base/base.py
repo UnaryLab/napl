@@ -274,9 +274,9 @@ class napl_base(torch.nn.Module):
         The base implementation has no additional local state and returns
         ``None``; callers use :meth:`reset` instead.
 
-        Every subclass defines this hook. A subclass that owns no reset state
-        gives it a ``pass`` body whose docstring states that the class owns no
-        reset state.
+        Every streaming subclass defines this hook. A streaming subclass with
+        no local mutable state uses a documented ``pass``. A single-shot
+        subclass may inherit this no-op implementation.
         """
         pass
 

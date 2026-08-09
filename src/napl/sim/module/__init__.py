@@ -1,48 +1,25 @@
-from .linear import *
-from .linear_pc import *
-from .linear_fxp import *
-from .linear_hub import *
-from .linear_tlut import *
-from .conv import *
+from .avgpool2d_ugemm import *
 from .conv_fxp import *
-from .conv_hub import *
-from .conv_tlut import *
-from .conv_pc import *
-from .mgu import *
+from .conv_mix import *
+from .conv_ugemm import *
+from .linear_fxp import *
+from .linear_gaines import *
+from .linear_mix import *
+from .linear_ugemm import *
 from .mgu_hard import *
 from .mgu_hardfxp import *
-from .mgu_hub import *
-from .wta import *
-from .linear_ugemm import *
-from .linear_gaines1 import *
-from .linear_gaines2 import *
-from .conv_ugemm import *
-from .avgpool2d import *
-from .mgu_hardnua import *
-from .mgu_hardpt import *
-from .gru_hardnuapt import *
+from .round_fxp import *
 
 __all__ = [
-    'avgpool2d',
-    'conv',
+    'avgpool2d_ugemm',
     'conv_fxp',
-    'conv_hub',
-    'conv_pc',
-    'conv_tlut',
+    'conv_mix',
     'conv_ugemm',
-    'gru_hardnuapt',
-    'linear',
     'linear_fxp',
-    'linear_gaines1',
-    'linear_gaines2',
-    'linear_hub',
-    'linear_pc',
-    'linear_tlut',
+    'linear_gaines',
+    'linear_mix',
     'linear_ugemm',
-    'mgu',
     'mgu_hard',
     'mgu_hardfxp',
-    'mgu_hardnua',
-    'mgu_hardpt',
-    'mgu_hub',
+    'round_fxp',
 ]

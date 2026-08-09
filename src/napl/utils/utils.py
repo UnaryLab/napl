@@ -492,44 +492,6 @@ def pow2_rshift(input, shift):
     return input / (2.0 ** shift)
 
 
-def rshift_offset(input, weight, widthi, widthw, rounding="round", quantilei=1, quantilew=1):
-    """
-    Dynamic fixed-point scaling: return the right-shift offsets that bring `input` and
-    `weight` into a `widthi`/`widthw`-bit range (from their quantile-clipped magnitude),
-    plus the output offset that undoes both.
-    """
-    def _mag(x, q):
-        # q=1 bypasses torch.quantile, which rejects tensors larger than 2**24 elements.
-        if q == 1:
-            return x.abs().max()
-        lower = torch.quantile(x, 0.5 + q / 2)
-        upper = torch.quantile(x, 0.5 - q / 2)
-        return torch.max(lower.abs(), upper.abs())
-
-    with torch.no_grad():
-        imax_int = _mag(input, quantilei).log2()
-        wmax_int = _mag(weight, quantilew).log2()
-
-        if rounding == "round":
-            imax_int = imax_int.round()
-            wmax_int = wmax_int.round()
-        elif rounding == "floor":
-            imax_int = imax_int.floor()
-            wmax_int = wmax_int.floor()
-        elif rounding == "ceil":
-            imax_int = imax_int.ceil()
-            wmax_int = wmax_int.ceil()
-
-        # Zero-magnitude operands map log2(0) to a zero offset, keeping results finite.
-        imax_int = torch.nan_to_num(imax_int, nan=0.0, neginf=0.0, posinf=0.0)
-        wmax_int = torch.nan_to_num(wmax_int, nan=0.0, neginf=0.0, posinf=0.0)
-
-        rshift_i = imax_int - widthi
-        rshift_w = wmax_int - widthw
-        rshift_o = max(widthi, widthw) - imax_int - wmax_int
-        return rshift_i, rshift_w, rshift_o
-
-
 def num2tuple(num):
     """Return num as a 2-tuple: a scalar becomes (num, num), a tuple passes through."""
     return num if isinstance(num, tuple) else (num, num)

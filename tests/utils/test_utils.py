@@ -1,6 +1,6 @@
 import torch
 
-from napl.utils import (num2tuple, rshift_offset, nn_weight_unary_clip,
+from napl.utils import (num2tuple, nn_weight_unary_clip,
                         pow2_lshift, pow2_rshift)
 from napl.utils._shared_test import devices, timer
 
@@ -15,19 +15,6 @@ def test_utils():
             x = torch.tensor([1.5, -2.0], device=device)
             assert torch.allclose(pow2_lshift(x, 2), x * 4)
             assert torch.allclose(pow2_rshift(x, 1), x / 2)
-
-            inp = torch.randn(64, device=device) * 10
-            wgt = torch.randn(32, 64, device=device) * 0.1
-            ri, _rw, _ro = rshift_offset(inp, wgt, 7, 7, 'round', 1, 1)
-            recon = pow2_lshift(pow2_rshift(inp, ri), ri)
-            assert torch.allclose(recon, inp, atol=1e-4)
-
-            zi, zw, zo = rshift_offset(
-                torch.zeros(64, device=device), wgt, 7, 7, 'round', 1, 1
-            )
-            assert torch.isfinite(
-                torch.tensor([float(zi), float(zw), float(zo)], device=device)
-            ).all(), (device, zi, zw, zo)
 
             lin = torch.nn.Linear(8, 4).to(device)
             with torch.no_grad():

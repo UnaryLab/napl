@@ -2,17 +2,40 @@ import math
 import torch
 
 from napl.utils import (
-    conv2d_output_shape,
     num2tuple,
-    pow2_lshift,
     pow2_rshift,
-    rshift_offset,
     truncated_normal,
 )
 from loguru import logger
 
-#: Mantissa bits, including the implicit bit, of each supported floating format.
-_TLUT_FP_WIDTH = {'bfloat16': 8, 'float16': 11, 'float32': 24}
+
+def _check_acc_width(name, width, entry, scale, polarity):
+    """
+    Check the signed accumulator width of the streaming unary adder in module ``name``
+    and return it. Before thresholding, the accumulator holds the largest sub-threshold
+    residue (scale - grid) plus one timestep's step, which the bipolar offset
+    (entry - scale)/2 halves. For scale < entry the accumulator drains by at most scale
+    per timestep, so the width also carries a burst-headroom floor that absorbs one
+    worst-case timestep.
+    """
+    if not isinstance(width, int):
+        message = f'{name} accumulator width must be int: got <{width}>.'
+        logger.error(message)
+        raise AssertionError(message)
+    delta_max = (entry + scale) / 2 if polarity == 'bipolar' else entry
+    grid = 0.5 if polarity == 'bipolar' and (entry - scale) % 2 else 1
+    if (2 ** (width - 1) - 1 < (scale - grid) + delta_max
+            or (scale < entry and 2 ** (width - 1) <= entry)):
+        message = (
+            f'{name} accumulator width <{width}> too small for fan-in <{entry}> '
+            f'and scale <{scale}>: 2**(width-1) - 1 must be >= (scale - grid) + '
+            f'delta_max, with grid <{grid}> and delta_max <{delta_max}> for '
+            f'<{polarity}>, and 2**(width-1) must be > entry when scale < entry, '
+            f'or partial sums saturate. Increase width.'
+        )
+        logger.error(message)
+        raise AssertionError(message)
+    return width
 
 
 def _init_linear_params(module, in_features, out_features, bias, weight_ext, bias_ext):
@@ -38,26 +61,6 @@ def _init_linear_params(module, in_features, out_features, bias, weight_ext, bia
             raise AssertionError(message)
         module.bias.data = bias_ext.clone().type(module.bias.dtype)
 
-def _init_mgu_pt_params(module, input_size, hidden_size, bias, gates):
-    """
-    Give ``module`` PyTorch-layout recurrent parameters: ``gates`` gate blocks stacked
-    row-wise in ``weight_ih`` and ``weight_hh``, with matching ``bias_ih`` and ``bias_hh``
-    when ``bias`` is set and ``None`` otherwise. Every entry is drawn from a truncated
-    normal with standard deviation ``1 / sqrt(hidden_size)``. Shared by mgu_hardpt
-    (two gates) and gru_hardnuapt (three gates).
-    """
-    module.weight_ih = torch.nn.Parameter(torch.empty(gates * hidden_size, input_size))
-    module.weight_hh = torch.nn.Parameter(torch.empty(gates * hidden_size, hidden_size))
-    if bias:
-        module.bias_ih = torch.nn.Parameter(torch.empty(gates * hidden_size))
-        module.bias_hh = torch.nn.Parameter(torch.empty(gates * hidden_size))
-    else:
-        module.register_parameter('bias_ih', None)
-        module.register_parameter('bias_hh', None)
-    stdv = 1.0 / math.sqrt(hidden_size)
-    for w in [module.weight_ih, module.weight_hh, module.bias_ih, module.bias_hh]:
-        if w is not None:
-            w.data = truncated_normal(w, 0.0, stdv)
 
 def _gaines_counter_step(cnt, delta, cnt_max, cnt_half):
     """
@@ -79,6 +82,7 @@ def _gaines_counter_step(cnt, delta, cnt_max, cnt_half):
         cnt.resize_as_(expanded).copy_(expanded)
     return torch.gt(cnt, cnt_half)
 
+
 def _linear_ste_grads(ctx, grad_output):
     """
     Straight-through gradient shared by the binary-domain linear kernels: the forward is
@@ -95,102 +99,56 @@ def _linear_ste_grads(ctx, grad_output):
         grad_bias = grad_output.sum(0)
     return grad_input, grad_weight, grad_bias
 
-def _hub_rng_seq(width, rng='sobol'):
+
+def rshift_offset(input, weight, widthi, widthw, rounding="round", quantilei=1, quantilew=1):
     """
-    Integer RNG sequence of length 2**width in [0, 2**width).
-    Used to build the HUB unary-multiplication value map.
+    Dynamic fixed-point scaling: return the right-shift offsets that bring `input` and
+    `weight` into a `widthi`/`widthw`-bit range (from their quantile-clipped magnitude),
+    plus the output offset that undoes both.
     """
-    legal_rngs = ('sobol', 'rc', 'tc')
-    seq_len = 2 ** width
-    rng = rng.lower()
-    if rng not in legal_rngs:
-        message = f'Invalid rng: <{rng}>; legal values: <{list(legal_rngs)}>.'
-        logger.error(message)
-        raise AssertionError(message)
-    if rng == 'tc':
-        seq = torch.tensor([x / seq_len for x in range(seq_len)]) * seq_len
-    else:
-        seq = torch.quasirandom.SobolEngine(1).draw(seq_len)[:, 0].view(seq_len) * seq_len
-    return seq.floor()
+    def _mag(x, q):
+        # q=1 bypasses torch.quantile, which rejects tensors larger than 2**24 elements.
+        if q == 1:
+            return x.abs().max()
+        lower = torch.quantile(x, 0.5 + q / 2)
+        upper = torch.quantile(x, 0.5 - q / 2)
+        return torch.max(lower.abs(), upper.abs())
 
-def _check_hub_int(key, value):
+    with torch.no_grad():
+        imax_int = _mag(input, quantilei).log2()
+        wmax_int = _mag(weight, quantilew).log2()
+
+        if rounding == "round":
+            imax_int = imax_int.round()
+            wmax_int = wmax_int.round()
+        elif rounding == "floor":
+            imax_int = imax_int.floor()
+            wmax_int = wmax_int.floor()
+        elif rounding == "ceil":
+            imax_int = imax_int.ceil()
+            wmax_int = wmax_int.ceil()
+
+        # Zero-magnitude operands map log2(0) to a zero offset, keeping results finite.
+        imax_int = torch.nan_to_num(imax_int, nan=0.0, neginf=0.0, posinf=0.0)
+        wmax_int = torch.nan_to_num(wmax_int, nan=0.0, neginf=0.0, posinf=0.0)
+
+        rshift_i = imax_int - widthi
+        rshift_w = wmax_int - widthw
+        rshift_o = max(widthi, widthw) - imax_int - wmax_int
+        return rshift_i, rshift_w, rshift_o
+
+
+def _shift_round_clamp(x, rshift, lo, hi):
     """
-    Return ``value`` as an int, raising when it is not an integer value of at least 1.
-    Int-valued floats are accepted; bool, which is an int subclass, and every other
-    type are rejected. The message names ``key`` so the failing configuration key is
-    the one reported. Shared by the HUB value-map configuration checks.
+    Quantize ``x`` to the grid ``rshift`` places up: right-shift by ``rshift``, round to
+    the nearest integer, then clamp to ``[lo, hi]``. ``rshift`` may be negative, which
+    shifts left. ``pow2_rshift`` returns a fresh tensor, so the in-place rounding and
+    clamping cannot modify ``x``.
     """
-    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value == int(value) and value >= 1
-    if not ok:
-        message = f'Invalid {key}: <{value}>; legal values: an integer greater than 0.'
-        logger.error(message)
-        raise AssertionError(message)
-    return int(value)
-
-def _build_hub_map(cycle, rngi, rngw, ntype):
-    """
-    Build the HUB unary-multiplication value map: mapcbsg[i_level, w_level] is the
-    bitstream AND-count for an input of magnitude i_level and a weight of magnitude
-    w_level, under the chosen RNGs. The run length sets the magnitude resolution:
-    the effective magnitude bitwidth is ``(cycle - 1).bit_length()``, which sizes the
-    RNG sequences, while the map spans exactly ``cycle`` levels per operand, so a
-    shorter run quantizes more coarsely rather than clipping large magnitudes.
-    ``cycle`` must be an integer value of at least 1; int-valued floats are accepted.
-    Returns (width_act, cycle_act, mapcbsg). Shared by linear_hub and conv_hub.
-
-    With ``R_i`` and ``R_w`` the input and weight RNG sequences, the map counts the
-    weight spikes that survive the input-gated prefix,
-
-    .. math::
-
-       m(a) = \\sum_j \\mathbf{1}\\{a > R_{i,j}\\},\\qquad
-       \\mathrm{map}[a, b] = \\sum_{k < m(a)} \\mathbf{1}\\{b > R_{w,k}\\},
-
-    so ``map[a, b] / cycle`` approximates the product of the two magnitudes.
-    """
-    cycle = _check_hub_int('cycle', cycle)
-    width_act = (cycle - 1).bit_length()
-    rngctler = _hub_rng_seq(width_act, rngi)
-    rngctlee = _hub_rng_seq(width_act, rngw)
-    levels = torch.arange(cycle, dtype=torch.float).unsqueeze(1)
-    ctler_bit = torch.gt(levels, rngctler.unsqueeze(0))
-    mapctler = torch.sum(ctler_bit, 1).type(torch.long)
-    ctlee_bit = torch.gt(levels, rngctlee.unsqueeze(0))
-    mapcbsg = torch.empty(cycle, cycle, dtype=torch.long)
-    for c in range(cycle):
-        mapcbsg[c] = torch.sum(ctlee_bit[:, 0:mapctler[c]], 1)
-    return width_act, cycle, mapcbsg.type(ntype)
-
-def _tlut_decompose(mag, widtht, degree, cycle_neg, cycle_pos):
-    """
-    Temporal LUT decomposition: split a truncated fixed-point magnitude tensor into a
-    sum of ``degree`` ``widtht``-bit temporal digits, each clamped to the run cycle range.
-    Returns the recomposed magnitude. Shared by the TLUT forward modes.
-
-    With :math:`m_0` the input magnitude, :math:`t` the digit width, :math:`D` the
-    degree, and :math:`o_0 = 0`, each digit is peeled off the low end and folded back
-    into the running value,
-
-    .. math::
-
-       q_d = m_{d-1} 2^{-t},\\qquad m_d = \\mathrm{trunc}(q_d),\\qquad
-       f_d = \\mathrm{clamp}\\!\\left(2^{t}\\,\\mathrm{frac}(q_d),\\;
-       c_- + 1,\\; c_+ - 1\\right),
-
-    .. math::
-
-       o_d = 2^{-t}\\left(f_d + o_{d-1}\\right),
-
-    and the function returns :math:`o_D`. Without the clamp the recomposition is exact.
-    """
-    out = torch.zeros_like(mag)
-    for _ in range(degree):
-        mag = pow2_rshift(mag, widtht)
-        frac = torch.frac(mag)
-        mag = torch.trunc(mag)
-        frac = pow2_lshift(frac, widtht).clamp(cycle_neg + 1, cycle_pos - 1)
-        out = pow2_rshift(frac, widtht) + pow2_rshift(out, widtht)
+    out = pow2_rshift(x, rshift)
+    out.round_().clamp_(lo, hi)
     return out
+
 
 class _linear_fxp_fn(torch.autograd.Function):
     @staticmethod
@@ -199,12 +157,10 @@ class _linear_fxp_fn(torch.autograd.Function):
         ctx.save_for_backward(input, weight, bias)
         bot_i = -max_abs_i if full_signed_range else 1 - max_abs_i
         top_i = max_abs_i - 1
-        i_round = pow2_rshift(input, rshift_i)
-        i_round.round_().clamp_(bot_i, top_i)
+        i_round = _shift_round_clamp(input, rshift_i, bot_i, top_i)
         bot_w = -max_abs_w if full_signed_range else 1 - max_abs_w
         top_w = max_abs_w - 1
-        w_round = pow2_rshift(weight, rshift_w)
-        w_round.round_().clamp_(bot_w, top_w)
+        w_round = _shift_round_clamp(weight, rshift_w, bot_w, top_w)
         output = torch.matmul(i_round, w_round.t())
         output = pow2_rshift(output, rshift_o)
         if bias is not None:
@@ -216,114 +172,25 @@ class _linear_fxp_fn(torch.autograd.Function):
     def backward(ctx, grad_output):
         return _linear_ste_grads(ctx, grad_output) + (None,) * (len(ctx.needs_input_grad) - 3)
 
-class _linear_hub_fn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, bias, rshift_i, rshift_w, rshift_o, cycle, mapcbsg):
-        ctx.save_for_backward(input, weight, bias)
-        if input.dim() != 2:
-            message = 'linear_hub input needs 2 dims (batch, in_features).'
-            logger.error(message)
-            raise AssertionError(message)
-        buf_i = pow2_rshift(input, rshift_i).unsqueeze(1).abs().type(torch.long).clamp(0, cycle - 1)
-        buf_w = pow2_rshift(weight, rshift_w).unsqueeze(0).abs().type(torch.long).clamp(0, cycle - 1)
-        act_input = torch.sign(input).unsqueeze(1)
-        act_wght = torch.sign(weight).unsqueeze(0)
-        prod = mapcbsg[buf_i, buf_w].type(act_wght.dtype) * act_wght
-        output = torch.matmul(act_input, prod.transpose(1, 2))
-        output = pow2_rshift(output, rshift_o).squeeze(1)
-        if bias is not None:
-            output = output + bias.unsqueeze(0).expand_as(output)
-        return output
+
+def conv2d_output_shape(h_w, kernel_size=1, stride=1, pad=0, dilation=1):
+    """Spatial (H, W) of a conv2d output."""
+    h_w, kernel_size, stride, pad, dilation = num2tuple(h_w), \
+        num2tuple(kernel_size), num2tuple(stride), num2tuple(pad), num2tuple(dilation)
+    pad = num2tuple(pad[0]), num2tuple(pad[1])
+    h = math.floor((h_w[0] + sum(pad[0]) - dilation[0] * (kernel_size[0] - 1) - 1) / stride[0] + 1)
+    w = math.floor((h_w[1] + sum(pad[1]) - dilation[1] * (kernel_size[1] - 1) - 1) / stride[1] + 1)
+    return h, w
 
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        return _linear_ste_grads(ctx, grad_output) + (None, None, None, None, None)
+def conv2d_get_padding(h_w_in, h_w_out, kernel_size=1, stride=1, dilation=1):
+    """Padding (as (top,bottom),(left,right)) to map h_w_in to h_w_out."""
+    h_w_in, h_w_out, kernel_size, stride, dilation = num2tuple(h_w_in), num2tuple(h_w_out), \
+        num2tuple(kernel_size), num2tuple(stride), num2tuple(dilation)
+    p_h = ((h_w_out[0] - 1) * stride[0] - h_w_in[0] + dilation[0] * (kernel_size[0] - 1) + 1)
+    p_w = ((h_w_out[1] - 1) * stride[1] - h_w_in[1] + dilation[1] * (kernel_size[1] - 1) + 1)
+    return (math.floor(p_h / 2), math.ceil(p_h / 2)), (math.floor(p_w / 2), math.ceil(p_w / 2))
 
-class _linear_tlut_fxpfxp_fn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, bias, temporal, widthi, widthw, widtht, degree, delta,
-                cycle_pos, cycle_neg, rounding, quantilei, quantilew):
-        ctx.save_for_backward(input, weight, bias)
-        in_fp = input.detach().clone().to(torch.float)
-        w_fp = weight.detach().clone().to(torch.float)
-        rshift_i, rshift_w, _ = rshift_offset(in_fp, w_fp, widthi, widthw, rounding, quantilei, quantilew)
-        in_fp = torch.trunc(pow2_rshift(in_fp, rshift_i).clamp(-2 ** widthi + 1, 2 ** widthi - 1))
-        w_fp = torch.trunc(pow2_rshift(w_fp, rshift_w).clamp(-2 ** widthw + 1, 2 ** widthw - 1))
-        if temporal in ('i', 'input'):
-            in_new = _tlut_decompose(in_fp, widtht, degree, cycle_neg, cycle_pos)
-            input_new = pow2_lshift(in_new, delta + widthi + rshift_i).type(weight.dtype)
-            weight_new = pow2_lshift(w_fp, rshift_w).type(weight.dtype)
-        else:
-            w_new = _tlut_decompose(w_fp, widtht, degree, cycle_neg, cycle_pos)
-            input_new = pow2_lshift(in_fp, rshift_i).type(input.dtype)
-            weight_new = pow2_lshift(w_new, delta + widthw + rshift_w).type(input.dtype)
-        output = torch.matmul(input_new, weight_new.t())
-        if bias is not None:
-            output = output + bias.unsqueeze(0).expand_as(output)
-        return output
-
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return _linear_ste_grads(ctx, grad_output) + (None,) * 11
-
-class _linear_tlut_fxpfp_fn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, bias, temporal, width, widtht, degree, delta,
-                cycle_pos, cycle_neg, rounding, quantilei, quantilew):
-        ctx.save_for_backward(input, weight, bias)
-        in_fp = input.detach().clone().to(torch.float)
-        w_fp = weight.detach().clone().to(torch.float)
-        rshift_i, rshift_w, _ = rshift_offset(in_fp, w_fp, width, width, rounding, quantilei, quantilew)
-        if temporal in ('i', 'input'):
-            in_fp = torch.trunc(pow2_rshift(in_fp, rshift_i).clamp(-2 ** width + 1, 2 ** width - 1))
-            in_new = _tlut_decompose(in_fp, widtht, degree, cycle_neg, cycle_pos)
-            input_new = pow2_lshift(in_new, delta + width + rshift_i).type(weight.dtype)
-            weight_new = weight
-        else:
-            w_fp = torch.trunc(pow2_rshift(w_fp, rshift_w).clamp(-2 ** width + 1, 2 ** width - 1))
-            w_new = _tlut_decompose(w_fp, widtht, degree, cycle_neg, cycle_pos)
-            input_new = input
-            weight_new = pow2_lshift(w_new, delta + width + rshift_w).type(input.dtype)
-        output = torch.matmul(input_new, weight_new.t())
-        if bias is not None:
-            output = output + bias.unsqueeze(0).expand_as(output)
-        return output
-
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return _linear_ste_grads(ctx, grad_output) + (None,) * 10
-
-class _linear_tlut_fpfp_fn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, weight, bias, temporal, width, widtht, degree, delta, cycle_pos, cycle_neg):
-        ctx.save_for_backward(input, weight, bias)
-        dtype = input.dtype
-        src = (input if temporal in ('i', 'input') else weight).detach().clone().to(torch.float)
-        try:
-            mantissa, exponent = torch.frexp(src)
-        except NotImplementedError:
-            # MPS lacks frexp; CPU results are bit-exact after transfer back.
-            mantissa, exponent = torch.frexp(src.cpu())
-            mantissa, exponent = mantissa.to(src.device), exponent.to(src.device)
-        mantissa = _tlut_decompose(pow2_lshift(mantissa, width), widtht, degree, cycle_neg, cycle_pos)
-        mantissa = pow2_lshift(mantissa, delta)
-        recomposed = torch.ldexp(mantissa, exponent).type(dtype)
-        if temporal in ('i', 'input'):
-            input_new, weight_new = recomposed, weight
-        else:
-            input_new, weight_new = input, recomposed
-        output = torch.matmul(input_new, weight_new.t())
-        if bias is not None:
-            output = output + bias.unsqueeze(0).expand_as(output)
-        return output
-
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return _linear_ste_grads(ctx, grad_output) + (None,) * 7
 
 def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weight_ext, bias_ext):
     """Give ``module`` ``nn.Conv2d``-style trainable parameters."""
@@ -348,6 +215,7 @@ def _init_conv_params(module, in_channels, out_channels, kernel_size, bias, weig
             logger.error(message)
             raise AssertionError(message)
         module.bias.data = bias_ext.clone().type(module.bias.dtype)
+
 
 def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, linear_fn):
     """
@@ -378,6 +246,7 @@ def _conv2d_binary(input, weight, bias, kernel_size, stride, padding, dilation, 
         out = out + bias.view(1, -1, 1, 1)
     return out
 
+
 def _mgu_run_outlasts_ismul(timestep, depth_ismul):
     """
     Whether a run of ``timestep`` timesteps outlasts the flush of the ``depth_ismul``
@@ -387,6 +256,7 @@ def _mgu_run_outlasts_ismul(timestep, depth_ismul):
     width units respectively.
     """
     return timestep > 2 ** depth_ismul
+
 
 def _init_mgu_params(module, input_size, hidden_size, bias):
     """MGU forget/new-gate weights/biases, truncated-normal init."""
