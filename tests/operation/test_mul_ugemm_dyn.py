@@ -3,7 +3,7 @@ import math
 import torch
 
 from napl.sim.base import global_config
-from napl.sim.operation import mul_ugemm_sr
+from napl.sim.operation import mul_ugemm_dyn
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import streaming_suite
 
@@ -12,7 +12,7 @@ TIMESTEPS = 256
 
 
 def make_operation(polarity, timestep, device):
-    return mul_ugemm_sr(
+    return mul_ugemm_dyn(
         {
             'polarity': polarity,
             'width': 4,
@@ -71,10 +71,10 @@ CONFIG = {
 }
 
 
-def test_mul_ugemm_sr():
-    """Verify mul_ugemm_sr against analytic and known-answer streams, including reset and timing."""
+def test_mul_ugemm_dyn():
+    """Verify mul_ugemm_dyn against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':
-    test_mul_ugemm_sr()
+    test_mul_ugemm_dyn()

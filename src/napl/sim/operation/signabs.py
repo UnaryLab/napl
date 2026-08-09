@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class signabs(napl_base):
@@ -72,7 +72,7 @@ class signabs(napl_base):
         self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(self.acc_med))
         #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}

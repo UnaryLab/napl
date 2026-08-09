@@ -1,7 +1,7 @@
 import torch
 from loguru import logger
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class sync_skewed_int(napl_base):
@@ -68,7 +68,7 @@ class sync_skewed_int(napl_base):
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
         #: Hardware latency and timing metadata for the combinational synchronizer.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_2': 'rc'}
         self.polarity_io = {'input_1': 'unipolar', 'input_2': 'unipolar'}

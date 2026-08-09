@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 
 
 class sqrt_gaines(napl_base):
@@ -80,11 +80,11 @@ class sqrt_gaines(napl_base):
                                    'generator': config['generator'],
                                    'dim': config.get('dim', 1)})
         scaled = self.reference_encode.num_seq.mul(2**self.width)
-        assert torch.allclose(scaled, scaled.round(), atol=1e-9), \
+        assert torch.allclose(scaled, scaled.round(), rtol=0, atol=1e-9), \
             f'Sequence value off the 1/{2**self.width} grid; the counter-scale view would not be exact.'
         #: Counter-scale view of the encoder sequence, read by the RTL generator.
         self.rand_seq: torch.Tensor
-        self.register_buffer('rand_seq', scaled.round())
+        self.register_buffer('rand_seq', scaled)
 
         # The half-scale scalar counter broadcasts to the input shape on first use.
         #: Saturating error counter that controls square-root spike generation.
@@ -95,7 +95,7 @@ class sqrt_gaines(napl_base):
         self.out_d: torch.Tensor
         self.register_buffer('out_d', torch.zeros(1, dtype=torch.int8))
         #: Hardware latency and timing metadata for the registered square-root output.
-        self.hw = hw_params(pp_delay=1)
+        self.hw.pp_delay = 1
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}

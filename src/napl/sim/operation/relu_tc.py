@@ -1,8 +1,8 @@
 import torch
 
 from loguru import logger
-from napl.sim.base import hw_params, napl_base
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 
 
 class relu_tc(napl_base):
@@ -75,7 +75,7 @@ class relu_tc(napl_base):
             'generator': 'temporal',
         })
         #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'tc', 'output': 'tc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}

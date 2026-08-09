@@ -1,7 +1,11 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import uni2bi, bi2uni, signabs, sync_skewed, div_cordiv
+from napl.sim.base import napl_base
+from .uni2bi import uni2bi
+from .bi2uni import bi2uni
+from .signabs import signabs
+from .sync_skewed import sync_skewed
+from .div_cordiv import div_cordiv
 
 
 class div_iscb(napl_base):
@@ -84,7 +88,7 @@ class div_iscb(napl_base):
             #: Converter from the unipolar magnitude quotient back to bipolar form.
             self.uni2bi_quotient = uni2bi({'width': 3})
         #: Hardware latency and timing metadata for the composed divider.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}

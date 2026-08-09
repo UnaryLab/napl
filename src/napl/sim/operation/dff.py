@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class dff(napl_base):
@@ -57,10 +57,8 @@ class dff(napl_base):
         self.buf = None
         #: Whether the delay queue must be allocated for the next input shape.
         self.is_first_call = True
-        #: Circular index of the oldest delayed tensor to emit and replace.
-        self.head = 0
         #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
-        self.hw = hw_params(pp_delay=self.depth)
+        self.hw.pp_delay = self.depth
 
         self.encoding_io = {}
         self.polarity_io = {}
@@ -70,11 +68,10 @@ class dff(napl_base):
 
     def _reset(self):
         """
-        Discard the local delay queue and restore its initial position.
+        Discard the local delay queue so the next call reallocates it.
         """
         self.buf = None
         self.is_first_call = True
-        self.head = 0
 
 
     def forward(self, input: torch.tensor):
@@ -100,9 +97,7 @@ class dff(napl_base):
             self.is_first_call = False
 
         # Emit the oldest row before replacing it with the current input snapshot.
-        output = self.buf[self.head]
-        self.buf[self.head] = input.detach().clone()
-        self.head += 1
-        if self.head == self.depth:
-            self.head = 0
+        head = (self.timestep_cur - 1) % self.depth
+        output = self.buf[head]
+        self.buf[head] = input.detach().clone()
         return output

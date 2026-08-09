@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class jkff(napl_base):
@@ -59,7 +59,7 @@ class jkff(napl_base):
         self.q_b: torch.Tensor
         self.register_buffer('q_b', torch.zeros(1, dtype=torch.bool))
         #: Hardware latency and timing metadata for the registered flip-flop output.
-        self.hw = hw_params(pp_delay=1)
+        self.hw.pp_delay = 1
 
         self.encoding_io = {}
         self.polarity_io = {}

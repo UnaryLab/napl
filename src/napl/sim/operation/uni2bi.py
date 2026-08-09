@@ -1,7 +1,7 @@
 import torch
 from loguru import logger
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class uni2bi(napl_base):
@@ -74,7 +74,7 @@ class uni2bi(napl_base):
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
         #: Hardware latency and timing metadata for the combinational converter.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'unipolar', 'output': 'bipolar'}

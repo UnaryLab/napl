@@ -2,7 +2,7 @@ import torch
 import math
 import numpy as np
 
-from napl.sim.base import napl_base, global_config, hw_params
+from napl.sim.base import napl_base, global_config
 from loguru import logger
 from pylfsr import LFSR
 
@@ -103,6 +103,8 @@ def gen_num_seq(config={
         # Rate coding uses the requested Sobol dimension.
         dim = config.get('dim', 1)
         num_seq = torch.quasirandom.SobolEngine(dim).draw(seq_len)[:, dim-1].view(seq_len)
+        # Unscrambled Sobol's first 2**width points lie on the 2**-width grid; the floor holds num_seq to that grid.
+        num_seq = num_seq.mul(seq_len).floor().div(seq_len)
     elif (generator == 'tc') or (generator == 'temporal'):
         # Ascending thresholds make temporal streams emit ones then zeros, with the
         # falling edge later for larger values.
@@ -113,28 +115,6 @@ def gen_num_seq(config={
         num_seq = get_sysrand_seq(width=width, seed=config.get('seed', None))
 
     return num_seq.type(global_config.ntype)
-
-
-def require_seeded_sys(*configs):
-    """Reject a `sys`-generator config that carries no seed.
-
-    An unseeded ``sys`` sequence is drawn fresh per instance, so two objects built
-    from one configuration hold different sequences and cannot be compared against
-    each other or against a hardware counterpart. ``encode`` applies this to its
-    own configuration; a caller building a model from a configuration that never
-    reaches an encoder applies it directly.
-    """
-    for config in configs:
-        if config is None:
-            continue
-        if str(config.get('generator', '')).lower() == 'sys' and config.get('seed') is None:
-            message = (
-                f"generator 'sys' needs a seed to be reproducible; config {config} has none. "
-                'An unseeded sys sequence differs per instance, so a separately constructed '
-                'model or hardware counterpart draws a different sequence.'
-            )
-            logger.error(message)
-            raise ValueError(message)
 
 
 def input_scale(input, quantile=1):
@@ -227,9 +207,8 @@ class encode(napl_base):
                   Defaults to ``"sobol"``.
                 * **dim** - One-based Sobol dimension. Defaults to ``1``.
                 * **seed** - Integer seed for the ``lfsr`` and ``sys``
-                  generators. Defaults to ``None``, and is required with the
-                  ``sys`` generator: an unseeded ``sys`` sequence differs between
-                  instances, so construction raises without it.
+                  generators. Defaults to ``None``; an unseeded ``sys`` sequence
+                  is drawn fresh per instance.
                 * **taps** - Optional non-empty LFSR feedback-tap list. Defaults
                   to ``None``.
                 * **name** - Optional instance label. Defaults to ``None``.
@@ -237,8 +216,6 @@ class encode(napl_base):
         Construction generates and stores the complete number sequence.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'dim', 'seed', 'taps'], polarity_required=True)
-
-        require_seeded_sys(config)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
@@ -263,7 +240,7 @@ class encode(napl_base):
 
         self._prob_cache = None
 
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
         self.encoding_io = {'spike': 'tc' if self.generator in ('tc', 'temporal') else 'rc'}
         self.polarity_io = {'spike': self.polarity}
         self.correlation_i = {}

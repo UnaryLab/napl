@@ -1,8 +1,8 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation.encode import gen_num_seq
+from napl.sim.base import napl_base
+from .encode import encode
 from loguru import logger
 
 
@@ -106,8 +106,9 @@ class mul_ugemm(napl_base):
         self.num_seq: torch.Tensor
         self.register_buffer(
             'num_seq',
-            gen_num_seq(config={'width': self.width,
-                                'generator': self.generator}),
+            encode({'polarity': self.polarity,
+                    'timestep': self.len,
+                    'generator': self.generator}).num_seq,
         )
 
         #: Per-element index of the next number-sequence value for input-one events.
@@ -120,7 +121,7 @@ class mul_ugemm(napl_base):
 
         # Output is combinational; RTL sequence-index registers reset to zero.
         #: Hardware latency and timing metadata for the combinational multiplier.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}

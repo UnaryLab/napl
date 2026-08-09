@@ -53,11 +53,6 @@ class relu_hub(napl_base):
         #: Upper bound applied to the clipped output tensor.
         self.scale = config.get('scale', 1.0)
 
-        self.encoding_io = {}
-        self.polarity_io = {}
-        self.correlation_i = {}
-        self.stability_flux = 1.0
-
 
     def _reset(self):
         """

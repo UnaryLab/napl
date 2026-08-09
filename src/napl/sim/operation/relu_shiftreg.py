@@ -1,7 +1,7 @@
 import torch
 
 from loguru import logger
-from napl.sim.base import hw_params, napl_base
+from napl.sim.base import napl_base
 
 
 class relu_shiftreg(napl_base):
@@ -74,12 +74,10 @@ class relu_shiftreg(napl_base):
         #: Previous timestep's register count used by the output decision.
         self.count_delayed: torch.Tensor
         self.register_buffer('count_delayed', torch.zeros(1, dtype=torch.long))
-        #: Circular index of the register row replaced on the next call.
-        self.head = 0
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
@@ -89,14 +87,13 @@ class relu_shiftreg(napl_base):
 
     def _reset(self):
         """
-        Restore the alternating register seed, counters, head, and first-call flag.
+        Restore the alternating register seed, counters, and first-call flag.
         """
         self.reg.resize_(self.depth)
         for index in range(self.depth):
             self.reg[index].fill_(index % 2)
         self.count.resize_(1).zero_()
         self.count_delayed.resize_(1).zero_()
-        self.head = 0
         self.is_first_call = True
 
 
@@ -105,8 +102,8 @@ class relu_shiftreg(napl_base):
         Process one timestep of a bipolar rate-coded stream.
 
         The first call expands and seeds the register for the input shape. Each
-        call then replaces the oldest register entry, updates the running count,
-        and advances the circular head.
+        call then replaces the register entry selected by ``timestep_cur`` and
+        updates the running count.
 
         Args:
             input: Tensor of current 0/1 input spikes.
@@ -140,8 +137,8 @@ class relu_shiftreg(napl_base):
             self.count_delayed.copy_(self.count.detach())
         else:
             self.count_delayed.resize_as_(self.count).copy_(self.count.detach())
-        removed = self.reg[self.head].clone()
-        self.reg[self.head].copy_(output.detach())
+        head = (self.timestep_cur - 1) % self.depth
+        removed = self.reg[head].clone()
+        self.reg[head].copy_(output.detach())
         self.count.add_(output).sub_(removed)
-        self.head = (self.head + 1) % self.depth
         return output

@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class sync_skewed(napl_base):
@@ -67,7 +67,7 @@ class sync_skewed(napl_base):
         #: Whether :attr:`cnt` must be expanded for the first input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational synchronizer.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_1': 'rc', 'input_2': 'rc', 'output_1': 'rc'}
         self.polarity_io = {'input_1': 'unipolar', 'input_2': 'unipolar', 'output_1': 'unipolar'}

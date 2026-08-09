@@ -1,7 +1,7 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 from loguru import logger
 
 
@@ -69,7 +69,7 @@ class decode(napl_base):
         self.spike_count: torch.Tensor
         self.register_buffer('spike_count', torch.zeros(1, dtype=self.ntype))
 
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {}
         self.polarity_io = {'spike': self.polarity}

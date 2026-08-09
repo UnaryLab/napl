@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import dff
+from napl.sim.base import napl_base
+from .dff import dff
 
 
 class square_dff(napl_base):
@@ -66,7 +66,7 @@ class square_dff(napl_base):
         # Bitwise operands remain int8; floating spike types are cast to int8.
         self._spike_is_int8 = (self.stype == torch.int8)
         #: Hardware latency and timing metadata for the combinational square output.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'out': 'rc'}
         self.polarity_io = {'input': self.polarity, 'out': self.polarity}

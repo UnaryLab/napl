@@ -1,5 +1,5 @@
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import add_any
+from napl.sim.base import napl_base
+from .add_any import add_any
 
 
 class relu_sat(napl_base):
@@ -53,7 +53,7 @@ class relu_sat(napl_base):
         #: Bipolar saturating adder that performs the second ReLU transform stage.
         self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
         #: Hardware latency and timing metadata for the composed ReLU path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}

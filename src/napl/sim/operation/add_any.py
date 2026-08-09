@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 from loguru import logger
 
 
@@ -39,7 +39,6 @@ class add_any(napl_base):
 
         .. rubric:: References
 
-        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 
@@ -67,6 +66,13 @@ class add_any(napl_base):
         """
         super().__init__(config, ['polarity', 'scale', 'width'], polarity_required=True)
 
+        # For scale >= entry the static bound
+        # 2 ** (width - 1) - 1 >= (scale - grid) + delta_max keeps the accumulator clear of
+        # saturation for every input, where delta_max is the largest per-timestep step
+        # (entry when unipolar, (entry + scale) / 2 when bipolar) and grid is the accumulator
+        # step, 0.5 for a bipolar half-integer accumulator (odd entry - scale) and 1 otherwise.
+        # Callers that fix entry at construction additionally require 2 ** (width - 1) > entry,
+        # which is a minimum burst-headroom floor rather than a safety bound.
         #: Signed accumulator width in bits.
         self.width = config['width']
         #: Largest value retained by the signed accumulator.
@@ -91,7 +97,7 @@ class add_any(napl_base):
         #: Whether the next call must infer input-dependent state.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational adder.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
@@ -146,6 +152,10 @@ class add_any(napl_base):
         else:
             acc_delta = torch.sum(input, dim, dtype=self.ntype)
             acc_delta.sub_(self.offset)
+        # For scale < entry no static width is sufficient: at most one spike is emitted per
+        # timestep, so the accumulator drains by at most scale per step while the inflow can
+        # exceed that. Correctness is then conditional on the long-run mean inflow staying
+        # below scale, width supplies burst headroom, and the clamp below is the backstop.
         # The scalar initial state broadcasts out of place; matching shapes update in place.
         if self.accumulator.shape == acc_delta.shape:
             self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)

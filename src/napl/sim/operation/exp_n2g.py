@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class exp_n2g(napl_base):
@@ -75,7 +75,7 @@ class exp_n2g(napl_base):
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype).fill_(2**(self.depth - 1)))
         # Output uses the counter state before the current update, giving one-cycle latency.
         #: Hardware latency and timing metadata for the registered output.
-        self.hw = hw_params(pp_delay=1)
+        self.hw.pp_delay = 1
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'unipolar'}

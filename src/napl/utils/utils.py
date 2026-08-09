@@ -3,7 +3,6 @@ import sys
 import yaml
 import json
 import torch
-import math
 import numpy as np
 import importlib.util
 
@@ -450,45 +449,6 @@ def call_func_from_cfg(cfg: dict, header: str, func_name: str, py_path: str, **k
     return module_py.create(cfg, **kwargs)
 
 
-def check_config(config: dict, key_list: list, optional_key_list: list = []):
-    """
-    Check if all key in the key_list exists in the config.
-
-    Keys in the optional_key_list may be absent; any other key is rejected.
-    """
-    for key in key_list:
-        if key not in config:
-            message = f'Missing key <{key}> in the input configuration.'
-            logger.error(message)
-            raise AssertionError(message)
-    accepted = set(key_list) | set(optional_key_list) | {'name'}
-    for key in config:
-        if key not in accepted:
-            message = (f'Unknown key <{key}> in the input configuration; '
-                       f'accepted keys: <{sorted(accepted)}>.')
-            logger.error(message)
-            raise AssertionError(message)
-
-
-def check_polarity(config: dict):
-    """
-    Check if polarity is legal.
-    """
-    polarity = config.get('polarity', None)
-    if polarity is not None:
-        if not isinstance(polarity, str):
-            message = f'Invalid polarity: <{polarity}>; polarity should be a string.'
-            logger.error(message)
-            raise AssertionError(message)
-        polarity = polarity.lower()
-        legal_polarity = ['unipolar', 'bipolar']
-        if polarity not in legal_polarity:
-            message = f'Invalid polarity: <{polarity}>; legal values: <{str(legal_polarity)}>.'
-            logger.error(message)
-            raise AssertionError(message)
-    return polarity
-
-
 def gen_rand_tensor(polarity: str = 'unipolar', shape: tuple = (1,), width: int = 8):
     """
     Generate a random fraction in the range [0, 1).
@@ -575,25 +535,6 @@ def num2tuple(num):
     return num if isinstance(num, tuple) else (num, num)
 
 
-def conv2d_output_shape(h_w, kernel_size=1, stride=1, pad=0, dilation=1):
-    """Spatial (H, W) of a conv2d output."""
-    h_w, kernel_size, stride, pad, dilation = num2tuple(h_w), \
-        num2tuple(kernel_size), num2tuple(stride), num2tuple(pad), num2tuple(dilation)
-    pad = num2tuple(pad[0]), num2tuple(pad[1])
-    h = math.floor((h_w[0] + sum(pad[0]) - dilation[0] * (kernel_size[0] - 1) - 1) / stride[0] + 1)
-    w = math.floor((h_w[1] + sum(pad[1]) - dilation[1] * (kernel_size[1] - 1) - 1) / stride[1] + 1)
-    return h, w
-
-
-def conv2d_get_padding(h_w_in, h_w_out, kernel_size=1, stride=1, dilation=1):
-    """Padding (as (top,bottom),(left,right)) to map h_w_in to h_w_out."""
-    h_w_in, h_w_out, kernel_size, stride, dilation = num2tuple(h_w_in), num2tuple(h_w_out), \
-        num2tuple(kernel_size), num2tuple(stride), num2tuple(dilation)
-    p_h = ((h_w_out[0] - 1) * stride[0] - h_w_in[0] + dilation[0] * (kernel_size[0] - 1) + 1)
-    p_w = ((h_w_out[1] - 1) * stride[1] - h_w_in[1] + dilation[1] * (kernel_size[1] - 1) + 1)
-    return (math.floor(p_h / 2), math.ceil(p_h / 2)), (math.floor(p_w / 2), math.ceil(p_w / 2))
-
-
 def truncated_normal(t, mean=0.0, std=0.01):
     """Return a normal draw truncated to +/-2 std (rejection-sampled). `t` seeds the
     shape/dtype/device; assign the return value -- out-of-bound resampling rebinds it."""
@@ -607,7 +548,7 @@ def truncated_normal(t, mean=0.0, std=0.01):
     return t
 
 
-class NN_SC_Weight_Clipper(object):
+class nn_weight_unary_clip(object):
     """
     Clipper for NN weights/bias into the stochastic-computing range: 'norm' rescales to
     the full range on the first call, then 'clip' clamps on subsequent calls; both
@@ -639,7 +580,7 @@ class NN_SC_Weight_Clipper(object):
             elif self.method == "clip":
                 w.clamp_(0.0, 1.0).mul_(self.scale).round_().clamp_(0.0, self.scale).div_(self.scale)
             else:
-                raise TypeError(f"unknown method '{self.method}' in NN_SC_Weight_Clipper, expected 'clip' or 'norm'")
+                raise TypeError(f"unknown method '{self.method}' in nn_weight_unary_clip, expected 'clip' or 'norm'")
         elif self.mode == "bipolar":
             if self.method == "norm":
                 w.sub_(torch.min(w)).div_(torch.max(w) - torch.min(w)).mul_(2).sub_(1) \
@@ -647,20 +588,6 @@ class NN_SC_Weight_Clipper(object):
             elif self.method == "clip":
                 w.clamp_(-1.0, 1.0).mul_(self.scale / 2).round_().clamp_(-self.scale / 2, self.scale / 2).div_(self.scale / 2)
             else:
-                raise TypeError(f"unknown method '{self.method}' in NN_SC_Weight_Clipper, expected 'clip' or 'norm'")
+                raise TypeError(f"unknown method '{self.method}' in nn_weight_unary_clip, expected 'clip' or 'norm'")
         else:
-            raise TypeError(f"unknown mode '{self.mode}' in NN_SC_Weight_Clipper, expected 'unipolar' or 'bipolar'")
-
-
-def check_name(config: dict):
-    """
-    Check if name is available.
-    """
-    name = config.get('name', None)
-    if name is not None:
-        if not isinstance(name, str):
-            message = f'Invalid name: <{name}>; name should be a string.'
-            logger.error(message)
-            raise AssertionError(message)
-        name = name.lower()
-    return name
+            raise TypeError(f"unknown mode '{self.mode}' in nn_weight_unary_clip, expected 'unipolar' or 'bipolar'")

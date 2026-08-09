@@ -1,5 +1,8 @@
 import torch
 
+from napl.sim.module import linear_fxp
+from napl.sim.operation import mul_gaines
+from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import (
     _multirank_inputs,
     timer,
@@ -137,12 +140,10 @@ def test_benchmark():
 
 
 def _mul_gaines_operation(polarity, timestep, device):
-    from napl.sim.operation import mul_gaines
     return mul_gaines({'polarity': polarity})
 
 
 def _mul_gaines_values(polarity):
-    from napl.utils import gen_rand_tensor
     return (
         gen_rand_tensor(polarity, shape=(128,), width=6),
         gen_rand_tensor(polarity, shape=(128,), width=6),
@@ -181,7 +182,6 @@ def test_streaming_suite():
 
 
 def _fxp_pair():
-    from napl.sim.module import linear_fxp
     torch.manual_seed(1)
     in_features, out_features = 8, 4
     reference = torch.nn.Linear(in_features, out_features)

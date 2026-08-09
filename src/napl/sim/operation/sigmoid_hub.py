@@ -57,11 +57,6 @@ class sigmoid_hub(napl_base):
         #: Input multiplier applied before the hard sigmoid.
         self.scale = config.get('scale', 3)
 
-        self.encoding_io = {}
-        self.polarity_io = {}
-        self.correlation_i = {}
-        self.stability_flux = 1.0
-
 
     def _reset(self):
         """

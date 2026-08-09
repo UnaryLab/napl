@@ -4,7 +4,7 @@ import torch
 
 from loguru import logger
 from dataclasses import dataclass, field
-from napl.utils import check_config, check_name, check_polarity, read_yaml
+from napl.utils import read_yaml
 from functools import wraps
 
 
@@ -26,6 +26,59 @@ torch_dtype_map = {
     'torch.uint8': torch.uint8,
     'torch.bool': torch.bool,
 }
+
+
+def check_config(config: dict, key_list: list, optional_key_list: list = []):
+    """
+    Check if all key in the key_list exists in the config.
+
+    Keys in the optional_key_list may be absent; any other key is rejected.
+    """
+    for key in key_list:
+        if key not in config:
+            message = f'Missing key <{key}> in the input configuration.'
+            logger.error(message)
+            raise AssertionError(message)
+    accepted = set(key_list) | set(optional_key_list) | {'name'}
+    for key in config:
+        if key not in accepted:
+            message = (f'Unknown key <{key}> in the input configuration; '
+                       f'accepted keys: <{sorted(accepted)}>.')
+            logger.error(message)
+            raise AssertionError(message)
+
+
+def check_polarity(config: dict):
+    """
+    Check if polarity is legal.
+    """
+    polarity = config.get('polarity', None)
+    if polarity is not None:
+        if not isinstance(polarity, str):
+            message = f'Invalid polarity: <{polarity}>; polarity should be a string.'
+            logger.error(message)
+            raise AssertionError(message)
+        polarity = polarity.lower()
+        legal_polarity = ['unipolar', 'bipolar']
+        if polarity not in legal_polarity:
+            message = f'Invalid polarity: <{polarity}>; legal values: <{str(legal_polarity)}>.'
+            logger.error(message)
+            raise AssertionError(message)
+    return polarity
+
+
+def check_name(config: dict):
+    """
+    Check if name is available.
+    """
+    name = config.get('name', None)
+    if name is not None:
+        if not isinstance(name, str):
+            message = f'Invalid name: <{name}>; name should be a string.'
+            logger.error(message)
+            raise AssertionError(message)
+        name = name.lower()
+    return name
 
 
 _GLOBAL_ROOT_PATH = os.path.dirname(os.path.abspath(napl.__file__))
@@ -219,8 +272,11 @@ class napl_base(torch.nn.Module):
         """Reset state owned directly by the base class.
 
         The base implementation has no additional local state and returns
-        ``None``. Subclasses override this hook for their own mutable state;
-        callers use :meth:`reset` instead.
+        ``None``; callers use :meth:`reset` instead.
+
+        Every subclass defines this hook. A subclass that owns no reset state
+        gives it a ``pass`` body whose docstring states that the class owns no
+        reset state.
         """
         pass
 

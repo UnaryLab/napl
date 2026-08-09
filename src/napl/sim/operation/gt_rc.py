@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import sync_skewed
+from napl.sim.base import napl_base
+from .sync_skewed import sync_skewed
 
 
 class gt_rc(napl_base):
@@ -53,7 +53,7 @@ class gt_rc(napl_base):
         #: Skew synchronizer that correlates the two input streams before comparison.
         self.sync = sync_skewed({'width': 2})
         #: Hardware latency and timing metadata for the registered comparator output.
-        self.hw = hw_params(pp_delay=1)
+        self.hw.pp_delay = 1
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc'}
         self.polarity_io = {}

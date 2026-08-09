@@ -90,7 +90,7 @@ def _kernel_specific_checks():
             assert err < bound, f'{device}/{polarity}/scaled: rmse {err} >= {bound}'
             assert inst.add_gaines.timestep_cur == timestep
             inst.reset()
-            assert inst.add_gaines.idx == 0
+            assert inst.add_gaines.timestep_cur == 0
 
             # Identical rows pass through the MUX for every select value.
             mux = add_gaines(dict(add_config)).to(device)

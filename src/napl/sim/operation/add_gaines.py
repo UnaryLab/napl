@@ -1,8 +1,8 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 from loguru import logger
 
 
@@ -102,12 +102,9 @@ class add_gaines(napl_base):
                                        'taps': config.get('taps', None)})
             # Python scalar indices avoid device synchronization on each timestep.
             #: Periodic input indices selected by the configured number sequence.
-            self.sel_seq = torch.floor(
-                reference_encode.num_seq.mul(self.entry)).type(torch.long).tolist()
-            #: Current position in :attr:`sel_seq`, advanced after each scaled call.
-            self.idx = 0
+            self.sel_seq = reference_encode.num_seq.mul(self.entry).type(torch.long).tolist()
         #: Hardware latency and timing metadata for the Gaines adder.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
@@ -117,9 +114,9 @@ class add_gaines(napl_base):
 
     def _reset(self):
         """
-        Restart the local MUX selection sequence at its first value.
+        Reset no local state; the kernel has no class-owned mutable state.
         """
-        self.idx = 0
+        pass
 
 
     def forward(self, input: torch.Tensor, dim: int = 0):
@@ -132,7 +129,8 @@ class add_gaines(napl_base):
 
         Returns:
             The selected spike in scaled mode or the elementwise OR reduction
-            in non-scaled mode. Scaled calls advance the selection sequence.
+            in non-scaled mode. Scaled mode indexes the selection sequence by
+            ``timestep_cur``.
 
         **Example:**
 
@@ -145,8 +143,7 @@ class add_gaines(napl_base):
                 message = f'Input size <{input.size(dim)}> along dim <{dim}> != configured entry <{self.entry}>.'
                 logger.error(message)
                 raise AssertionError(message)
-            output = input.select(dim, self.sel_seq[self.idx])
-            self.idx = (self.idx + 1) % len(self.sel_seq)
+            output = input.select(dim, self.sel_seq[(self.timestep_cur - 1) % len(self.sel_seq)])
         else:
             # For 0/1 spikes, max reduction is unipolar OR and preserves stype.
             output = torch.amax(input, dim)

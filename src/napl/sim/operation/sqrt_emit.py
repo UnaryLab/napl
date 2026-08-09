@@ -1,7 +1,9 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import bi2uni, add_any, shiftreg
+from napl.sim.base import napl_base
+from .bi2uni import bi2uni
+from .add_any import add_any
+from .shiftreg import shiftreg
 
 
 class sqrt_emit(napl_base):
@@ -79,7 +81,7 @@ class sqrt_emit(napl_base):
         #: Whether the next call must expand :attr:`emit_out` to the input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the composed square-root path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}

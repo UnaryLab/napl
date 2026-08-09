@@ -1,7 +1,7 @@
 import torch
 
 from loguru import logger
-from napl.sim.base import hw_params, napl_base
+from napl.sim.base import napl_base
 
 
 class signabs_interleave(napl_base):
@@ -74,7 +74,7 @@ class signabs_interleave(napl_base):
             torch.full((1,), self.acc_half, dtype=self.ntype),
         )
         #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}

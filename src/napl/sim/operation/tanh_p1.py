@@ -1,9 +1,9 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
-from napl.sim.operation.dff import dff
+from napl.sim.base import napl_base
+from .encode import encode
+from .dff import dff
 from loguru import logger
 
 
@@ -123,7 +123,7 @@ class tanh_p1(napl_base):
         self.n_1_dff_3 = dff({'depth': 1})
         # DFF delay lines decorrelate the combinational path without adding output latency.
         #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'out': 'rc'}
         self.polarity_io = {'input': 'unipolar', 'out': 'unipolar'}

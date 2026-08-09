@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class tanh_hard(napl_base):
@@ -43,7 +43,7 @@ class tanh_hard(napl_base):
         """
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational hard tanh.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {}

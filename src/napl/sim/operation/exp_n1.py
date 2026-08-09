@@ -1,8 +1,8 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 from loguru import logger
 
 
@@ -127,7 +127,7 @@ class exp_n1(napl_base):
         self.register_buffer('input_d4', torch.zeros(1).type(self.stype))
         # DFF taps decorrelate the combinational NAND path without adding output latency.
         #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'unipolar', 'output': 'unipolar'}

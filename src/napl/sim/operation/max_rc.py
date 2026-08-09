@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import sync_skewed
+from napl.sim.base import napl_base
+from .sync_skewed import sync_skewed
 
 
 class max_rc(napl_base):
@@ -53,7 +53,7 @@ class max_rc(napl_base):
         #: Skew synchronizer that correlates the two input streams before selection.
         self.sync = sync_skewed({'width': 2})
         #: Hardware latency and timing metadata for the combinational maximum output.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {}

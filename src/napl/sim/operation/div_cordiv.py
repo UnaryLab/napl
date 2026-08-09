@@ -1,8 +1,8 @@
 import torch
 import math
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 from loguru import logger
 
 
@@ -89,12 +89,10 @@ class div_cordiv(napl_base):
         #: Periodic tensor of quotient-history row selections.
         self.rand_seq: torch.Tensor
         self.register_buffer('rand_seq',
-            torch.floor(reference_encode.num_seq.mul(self.depth)).type(torch.long))
+            reference_encode.num_seq.mul(self.depth).type(torch.long))
         # Python scalar indices avoid device synchronization on each timestep.
         #: Python-list view of :attr:`rand_seq` used for per-timestep indexing.
         self.rand_seq_idx = self.rand_seq.tolist()
-        #: Current position in :attr:`rand_seq_idx`.
-        self.idx = 0
 
         #: Recent quotient history, updated only where the divisor spikes.
         self.buffer_q: torch.Tensor
@@ -103,7 +101,7 @@ class div_cordiv(napl_base):
         #: Whether :attr:`buffer_q` must be expanded to the input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the correlated divider.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'quotient': 'rc'}
         self.polarity_io = {'dividend': 'unipolar', 'divisor': 'unipolar', 'quotient': 'unipolar'}
@@ -113,9 +111,8 @@ class div_cordiv(napl_base):
 
     def _reset(self):
         """
-        Clear the quotient history and restart its selection sequence.
+        Clear the quotient history and restore its initial shape and values.
         """
-        self.idx = 0
         self.buffer_q.resize_(self.depth)
         for row in range(self.depth):
             self.buffer_q[row].fill_(row % 2)
@@ -133,8 +130,8 @@ class div_cordiv(napl_base):
 
         Returns:
             A quotient spike tensor with the broadcast shape of the inputs. The
-            call updates the sampled quotient history and advances its sequence
-            index.
+            call updates the quotient history, whose sampled row is given by
+            ``rand_seq_idx`` indexed by ``timestep_cur``.
             The history shape is fixed by the first call after ``reset()``; a
             different input shape requires ``reset()``.
 
@@ -153,8 +150,7 @@ class div_cordiv(napl_base):
             self.is_first_call = False
 
         divisor_eq_1 = torch.eq(divisor, 1)
-        rand_q = self.buffer_q[self.rand_seq_idx[self.idx]]
-        self.idx = (self.idx + 1) % self.depth
+        rand_q = self.buffer_q[self.rand_seq_idx[(self.timestep_cur - 1) % self.depth]]
 
         quotient = torch.where(divisor_eq_1, dividend, rand_q)
 

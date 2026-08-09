@@ -1,7 +1,7 @@
 import torch
 
 from loguru import logger
-from napl.sim.base import hw_params, napl_base
+from napl.sim.base import napl_base
 
 
 class signabs_shiftreg(napl_base):
@@ -76,12 +76,10 @@ class signabs_shiftreg(napl_base):
         #: Number of one-spikes currently stored in :attr:`reg`.
         self.count: torch.Tensor
         self.register_buffer('count', torch.zeros(1, dtype=torch.long))
-        #: Circular index of the register row replaced on the next call.
-        self.head = 0
         #: Whether register state must be expanded for the first input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational outputs.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}
@@ -91,13 +89,12 @@ class signabs_shiftreg(napl_base):
 
     def _reset(self):
         """
-        Restore the alternating register seed, count, head, and first-call flag.
+        Restore the alternating register seed, count, and first-call flag.
         """
         self.reg.resize_(self.depth)
         for index in range(self.depth):
             self.reg[index].fill_(index % 2)
         self.count.resize_(1).zero_()
-        self.head = 0
         self.is_first_call = True
 
 
@@ -106,8 +103,8 @@ class signabs_shiftreg(napl_base):
         Process one timestep of a bipolar rate-coded stream.
 
         The sign is computed from the register count before the current input is
-        inserted. The call then replaces the oldest entry, updates the count,
-        and advances the circular head.
+        inserted. The call then replaces the register entry selected by
+        ``timestep_cur`` and updates the count.
 
         Args:
             input: Tensor of current 0/1 bipolar input spikes.
@@ -133,9 +130,9 @@ class signabs_shiftreg(napl_base):
         sign = torch.lt(self.count, self.depth_half).type(torch.int8)
         magnitude = sign ^ input.type(torch.int8)
 
-        removed = self.reg[self.head].clone()
-        self.reg[self.head].copy_(input_stype.detach())
+        head = (self.timestep_cur - 1) % self.depth
+        removed = self.reg[head].clone()
+        self.reg[head].copy_(input_stype.detach())
         self.count.add_(input_stype).sub_(removed)
-        self.head = (self.head + 1) % self.depth
 
         return sign.type(self.stype), magnitude.type(self.stype)

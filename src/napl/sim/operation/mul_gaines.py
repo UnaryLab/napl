@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class mul_gaines(napl_base):
@@ -57,7 +57,7 @@ class mul_gaines(napl_base):
         super().__init__(config, ['polarity'], polarity_required=True)
         # The unipolar AND and bipolar XNOR paths are combinational.
         #: Hardware latency and timing metadata for the combinational Gaines multiplier.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}

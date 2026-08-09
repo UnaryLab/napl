@@ -20,6 +20,7 @@ CONFIG = {
     'widtht': 4, 'formati': 'fxp', 'formatw': 'fxp', 'threshold': 0.05,
     'intwidth': 3, 'fracwidth': 4, 'depth_ismul': 6, 'entry_bit': 2,
     'normstability': 0.5, 'acc': 'scaled', 'entry_cnt': 4, 'static': True,
+    'scale_max': 2,
 }
 
 WEIGHT_4D = torch.zeros(4, 2, 3, 3)
@@ -37,19 +38,17 @@ ARGUMENT_SHAPES = [
 
 # Classes whose configuration shape the generic probe cannot reach.
 SPECIAL_CASES = {
-    'conv': ([WEIGHT_4D, None, 1, 0, 1],
+    # avgpool2d_ugemm needs an accumulator width satisfying 2 ** (width - 1) - 1 >= 2 * kernel_area - 1.
+    'avgpool2d_ugemm': ([2], {'polarity': 'bipolar', 'width': 12}),
+    'conv_mix': ([WEIGHT_4D, None, 1, 0, 1],
              {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2,
               'scale': None, 'width': 12}),
     'conv_ugemm': ([WEIGHT_4D, None, 1, 0, 1],
                    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
-    # mgu is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
+    # mgu_hard is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
     # its run must outlast the depth_ismul multiplier shift register.
-    'mgu': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
+    'mgu_hard': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
             {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'depth_ismul': 3}),
-    # mgu_hub builds its streaming cell at construction, so the gate tensors must fit,
-    # and it is bipolar only with width greater than depth_ismul.
-    'mgu_hub': ([2, 2, True, torch.zeros(2, 4), torch.zeros(2), torch.zeros(2, 4), torch.zeros(2)],
-                {'polarity': 'bipolar', 'width': 7, 'generator': 'sobol', 'depth_ismul': 6}),
 }
 
 # butterfly_spike takes four separate configuration mappings instead of one.

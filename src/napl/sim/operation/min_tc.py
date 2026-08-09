@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class min_tc(napl_base):
@@ -54,7 +54,7 @@ class min_tc(napl_base):
         """
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational temporal minimum.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'tc', 'input_1': 'tc', 'output': 'tc'}
         self.polarity_io = {}

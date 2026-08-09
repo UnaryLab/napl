@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import add_any
+from napl.sim.base import napl_base
+from .add_any import add_any
 
 
 class sigmoid_hard(napl_base):
@@ -57,7 +57,7 @@ class sigmoid_hard(napl_base):
             'width' : config.get('width', 4),
             })
         #: Hardware latency and timing metadata for the composed hard sigmoid.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}

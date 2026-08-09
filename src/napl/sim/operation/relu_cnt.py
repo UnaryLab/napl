@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class relu_cnt(napl_base):
@@ -66,7 +66,7 @@ class relu_cnt(napl_base):
         self.acc: torch.Tensor
         self.register_buffer('acc', torch.zeros(1, dtype=self.ntype).fill_(2**(self.width - 1)))
         #: Hardware latency and timing metadata for the combinational ReLU output.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}

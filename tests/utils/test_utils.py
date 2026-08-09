@@ -1,27 +1,17 @@
 import torch
 
-from napl.utils import (num2tuple, conv2d_output_shape, conv2d_get_padding,
-                        rshift_offset, NN_SC_Weight_Clipper, pow2_lshift,
-                        pow2_rshift)
+from napl.utils import (num2tuple, rshift_offset, nn_weight_unary_clip,
+                        pow2_lshift, pow2_rshift)
 from napl.utils._shared_test import devices, timer
 
 
 def test_utils():
-    """Verify shared shape, synchronization, power-of-two, and tensor utility contracts."""
+    """Verify shared synchronization, power-of-two, and tensor utility contracts."""
     assert num2tuple(3) == (3, 3)
     assert num2tuple((2, 4)) == (2, 4)
 
     for device in devices():
         with timer(device) as elapsed:
-            for ksize, stride, pad in [(3, 1, 1), (5, 2, 0), (3, 2, 1)]:
-                conv = torch.nn.Conv2d(
-                    2, 4, ksize, stride=stride, padding=pad
-                ).to(device)
-                out = conv(torch.zeros(1, 2, 32, 32, device=device))
-                assert conv2d_output_shape(
-                    (32, 32), ksize, stride, pad
-                ) == (out.shape[2], out.shape[3]), (device, ksize, stride, pad)
-
             x = torch.tensor([1.5, -2.0], device=device)
             assert torch.allclose(pow2_lshift(x, 2), x * 4)
             assert torch.allclose(pow2_rshift(x, 1), x / 2)
@@ -42,13 +32,11 @@ def test_utils():
             lin = torch.nn.Linear(8, 4).to(device)
             with torch.no_grad():
                 lin.weight.mul_(100)
-            NN_SC_Weight_Clipper(
+            nn_weight_unary_clip(
                 frequency=2, mode='bipolar', method='clip', bitwidth=8
             )(lin)
             assert lin.weight.abs().max() <= 1.0
         print(f'[{device}] time={elapsed.seconds * 1000:.1f}ms')
-
-    assert conv2d_get_padding((32, 32), (32, 32), 3, 1) == ((1, 1), (1, 1))
 
     print('Test passed.')
 

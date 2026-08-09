@@ -1,11 +1,11 @@
 import torch
 
 from loguru import logger
-from napl.sim.base import hw_params, napl_base
-from napl.sim.operation.encode import gen_num_seq
+from napl.sim.base import napl_base
+from .encode import encode
 
 
-class mul_ugemm_sr(napl_base):
+class mul_ugemm_dyn(napl_base):
     r"""
     Multiply unary streams with shift-register decorrelation.
 
@@ -26,9 +26,9 @@ class mul_ugemm_sr(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mul_ugemm_sr
+        from napl import mul_ugemm_dyn
 
-        multiply = mul_ugemm_sr({'polarity': 'unipolar', 'width': 2,
+        multiply = mul_ugemm_dyn({'polarity': 'unipolar', 'width': 2,
                                  'generator': 'sobol'})
         output = multiply(torch.tensor([1], dtype=torch.int8),
                           torch.tensor([1], dtype=torch.int8))
@@ -83,15 +83,14 @@ class mul_ugemm_sr(napl_base):
         self.depth = 2**self.width
 
         rng_config = {
-            'width': self.width,
+            'polarity': self.polarity,
+            'timestep': self.depth,
             'generator': config['generator'],
             'dim': config.get('dim', 1),
         }
         #: Periodic stochastic comparison levels over the register-count range.
         self.rng_seq: torch.Tensor
-        self.register_buffer('rng_seq',
-            torch.floor(gen_num_seq(rng_config).mul(self.depth)),
-        )
+        self.register_buffer('rng_seq', encode(rng_config).num_seq.mul(self.depth))
         #: Per-element random-sequence index for the direct input path.
         self.rng_idx: torch.Tensor
         self.register_buffer('rng_idx', torch.zeros(1, dtype=torch.long))
@@ -110,12 +109,10 @@ class mul_ugemm_sr(napl_base):
         #: Per-element number of one-spikes currently stored in :attr:`reg`.
         self.count: torch.Tensor
         self.register_buffer('count', torch.zeros(1, dtype=torch.long))
-        #: Circular index of the register row replaced on the next call.
-        self.head = 0
         #: Whether the register and index tensors must be expanded for the input shape.
         self.is_first_call = True
-        #: Hardware latency and timing metadata for the combinational output path.
-        self.hw = hw_params(pp_delay=0)
+        #: Hardware latency and timing metadata for the combinational multiply path.
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}
@@ -134,7 +131,6 @@ class mul_ugemm_sr(napl_base):
         for index in range(self.depth):
             self.reg[index].fill_(index % 2)
         self.count.resize_(1).zero_()
-        self.head = 0
         self.is_first_call = True
 
 
@@ -193,9 +189,9 @@ class mul_ugemm_sr(napl_base):
                 self.rng_idx_inv.resize_as_(rng_idx_inv).copy_(rng_idx_inv.detach())
             output = path | path_inv
 
-        removed = self.reg[self.head].clone()
-        self.reg[self.head].copy_(input_1_stype.detach())
+        head = (self.timestep_cur - 1) % self.depth
+        removed = self.reg[head].clone()
+        self.reg[head].copy_(input_1_stype.detach())
         self.count.add_(input_1_stype).sub_(removed)
-        self.head = (self.head + 1) % self.depth
 
         return output.type(self.stype)

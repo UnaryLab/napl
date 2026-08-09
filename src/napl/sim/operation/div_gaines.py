@@ -1,7 +1,7 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import encode
+from napl.sim.base import napl_base
+from .encode import encode
 
 
 class div_gaines(napl_base):
@@ -77,10 +77,10 @@ class div_gaines(napl_base):
                                   'generator': config['generator'],
                                   'dim': config.get('dim', 1)})
         scaled = self.reference_encode.num_seq.mul(2 ** self.width)
-        assert torch.allclose(scaled, scaled.round(), atol=1e-9), \
+        assert torch.allclose(scaled, scaled.round(), rtol=0, atol=1e-9), \
             f'Sequence value off the 1/{2 ** self.width} grid; the counter-scale view would not be exact.'
         #: Counter-scale view of the encoder sequence, read by the RTL generator.
-        self.rng_seq = scaled.round().tolist()
+        self.rng_seq = scaled.tolist()
 
         #: Largest value retained by the quotient counter.
         self.scnt_max = 2 ** self.width - 1
@@ -96,7 +96,7 @@ class div_gaines(napl_base):
         self.register_buffer('divisor_d', torch.zeros(1, dtype=torch.int8))
         # Output uses the counter state before the current update, giving one-cycle latency.
         #: Hardware latency and timing metadata for the registered divider output.
-        self.hw = hw_params(pp_delay=1)
+        self.hw.pp_delay = 1
 
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}

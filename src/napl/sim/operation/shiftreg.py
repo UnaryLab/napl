@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class shiftreg(napl_base):
@@ -61,7 +61,7 @@ class shiftreg(napl_base):
         self.register_buffer('head', torch.zeros((), dtype=torch.long))
         # reg[head] is depth cycles old; RTL reset uses the same alternating i % 2 pattern.
         #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
-        self.hw = hw_params(pp_delay=self.depth)
+        self.hw.pp_delay = self.depth
 
         self.encoding_io = {}
         self.polarity_io = {}

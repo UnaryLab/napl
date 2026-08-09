@@ -15,7 +15,7 @@ baseline as more spike bits are streamed.
   `MLP3_clamp_eval` is the matching inference model whose per-layer outputs the unary pipeline
   reproduces.
 - `train_fp.py` - trains `MLP3_clamp_train` on MNIST (resized to 32x32) in floating point for a
-  few epochs at a narrow hidden width, applies `NN_SC_Weight_Clipper(bitwidth=8)` per epoch
+  few epochs at a narrow hidden width, applies `nn_weight_unary_clip(bitwidth=8)` per epoch
   (bipolar 8-bit weight/bias quantization), prints test accuracy, and saves the state_dict to
   `checkpoints/mlp3_mnist.pt`. MNIST downloads to `data/`.
 - `eval_unary.py` - loads the checkpoint, computes the FP test accuracy, then streams the MLP
@@ -50,7 +50,7 @@ conda run -n napl python zoo/mlp/eval_unary.py --sanity      # tiny both-device 
   spikes on a decorrelated RNG dimension. Accumulating the count over k cycles and forming
   `2*(count/k) - entry` recovers the bipolar `W x + b` with progressively higher precision.
 - `napl.relu_hub` - bounded ReLU in the binary domain between streamed linear layers.
-- `napl.utils.NN_SC_Weight_Clipper` - bipolar 8-bit weight/bias clipping during training.
+- `napl.utils.nn_weight_unary_clip` - bipolar 8-bit weight/bias clipping during training.
 
 The layers are streamed **sequentially** (layer L is run to convergence over all T cycles, its
 activation is read out, then layer L+1 is streamed). This keeps every layer's input stream

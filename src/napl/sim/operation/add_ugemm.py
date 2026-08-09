@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class add_ugemm(napl_base):
@@ -77,7 +77,7 @@ class add_ugemm(napl_base):
         #: Whether the next call must infer the reduction size and offset.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational uGEMM adder.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}

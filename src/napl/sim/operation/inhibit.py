@@ -1,6 +1,6 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 
 
 class inhibit(napl_base):
@@ -83,7 +83,7 @@ class inhibit(napl_base):
         self.latch: torch.Tensor
         self.register_buffer('latch', torch.zeros(1, dtype=torch.int8))
         #: Hardware latency and timing metadata for the combinational INHIBIT output.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_data': 'tc', 'input_inhibit': 'tc', 'output': 'tc'}
         self.polarity_io = {}

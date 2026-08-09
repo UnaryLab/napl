@@ -5,7 +5,7 @@ unary-computing evaluation in eval_unary.py.
 This is intentionally small: a narrow hidden width and a few epochs, just enough to give a
 usable accuracy for the unary demo (the point of the example is the per-cycle unary curve,
 not a state-of-the-art classifier). After every epoch the weights and biases are clamped and
-quantized to the stochastic-computing range with NN_SC_Weight_Clipper(bitwidth=8), matching
+quantized to the stochastic-computing range with nn_weight_unary_clip(bitwidth=8), matching
 the bipolar 8-bit streams used at eval time.
 
 Run:
@@ -20,7 +20,7 @@ import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 
-from napl.utils import NN_SC_Weight_Clipper
+from napl.utils import nn_weight_unary_clip
 
 from model import MLP3_clamp_train
 
@@ -76,7 +76,7 @@ def main():
     criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     # Keep trained weights in the bitwidth-8 bipolar range.
-    clipper = NN_SC_Weight_Clipper(bitwidth=BITWIDTH, mode='bipolar')
+    clipper = nn_weight_unary_clip(bitwidth=BITWIDTH, mode='bipolar')
 
     for epoch in range(EPOCHS):
         model.train()
