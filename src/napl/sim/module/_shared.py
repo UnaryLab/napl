@@ -62,27 +62,6 @@ def _init_linear_params(module, in_features, out_features, bias, weight_ext, bia
         module.bias.data = bias_ext.clone().type(module.bias.dtype)
 
 
-def _gaines_counter_step(cnt, delta, cnt_max, cnt_half):
-    """
-    Advance the non-scaled Gaines bipolar saturating counter by one timestep and return
-    its output spike. With ``a`` the counter and ``d`` the per-timestep increment,
-
-    .. math::
-
-       a_t = \\mathrm{clamp}(a_{t-1} + d_t,\\; 0,\\; \\mathit{cnt\\_max}),\\qquad
-       y_t = \\mathbf{1}\\{a_t > \\mathit{cnt\\_half}\\}.
-
-    The scalar initial state broadcasts out of place on the first call; matching shapes
-    update in place. Shared by linear_gaines1 and linear_gaines2.
-    """
-    if cnt.shape == delta.shape:
-        cnt.add_(delta).clamp_(0, cnt_max)
-    else:
-        expanded = cnt.add(delta).clamp(0, cnt_max).detach()
-        cnt.resize_as_(expanded).copy_(expanded)
-    return torch.gt(cnt, cnt_half)
-
-
 def _linear_ste_grads(ctx, grad_output):
     """
     Straight-through gradient shared by the binary-domain linear kernels: the forward is
@@ -252,8 +231,7 @@ def _mgu_run_outlasts_ismul(timestep, depth_ismul):
     Whether a run of ``timestep`` timesteps outlasts the flush of the ``depth_ismul``
     shift register inside the MGU gate multiplier. Flushing that register consumes
     ``2 ** depth_ismul`` timesteps, so a run of exactly that length leaves nothing
-    behind. Shared by mgu and mgu_hub, which state the same rule in timestep and in
-    width units respectively.
+    behind. ``mgu_hard`` uses this condition to validate its stream length.
     """
     return timestep > 2 ** depth_ismul
 

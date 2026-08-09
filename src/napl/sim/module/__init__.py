@@ -1,5 +1,6 @@
 from .avgpool2d_ugemm import *
 from .conv_fxp import *
+from .conv_gaines import *
 from .conv_mix import *
 from .conv_ugemm import *
 from .linear_fxp import *
@@ -13,6 +14,7 @@ from .round_fxp import *
 __all__ = [
     'avgpool2d_ugemm',
     'conv_fxp',
+    'conv_gaines',
     'conv_mix',
     'conv_ugemm',
     'linear_fxp',
