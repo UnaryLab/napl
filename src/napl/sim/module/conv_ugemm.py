@@ -1,8 +1,9 @@
 import torch
 
-from napl.utils import conv2d_output_shape, num2tuple
-from napl.sim.base import napl_base, hw_params
-from napl.sim.operation import add_any, mul_ugemm
+from napl.utils import num2tuple
+from napl.sim.base import napl_base
+from napl.sim.module._shared import _check_acc_width, conv2d_output_shape
+from .linear_ugemm import linear_ugemm
 from loguru import logger
 
 
@@ -10,7 +11,7 @@ class conv_ugemm(napl_base):
     r"""Apply streaming unary convolution with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
-    free-running weight encoder used by :class:`conv`. Weight spikes come from
+    free-running weight encoder used by :class:`conv_mix`. Weight spikes come from
     :class:`mul_ugemm` conditional spike generation, where each weight-stream
     index advances only when its input spike is ``1``, and bipolar mode adds an
     input-``0`` path on a separate index. The decoded output rate
@@ -22,10 +23,16 @@ class conv_ugemm(napl_base):
        y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
 
     Bipolar zero padding alternates ``0`` and ``1`` each timestep, a
-    deterministic rate-``0.5`` stream, where :class:`conv` instead uses a
+    deterministic rate-``0.5`` stream, where :class:`conv_mix` instead uses a
     decorrelated pad encoder. The layer is rate-coded, supports ``groups=1`` and
     zero padding, and implements only the scaled UnarySim ``FSUConv2duGEMM``
     mode.
+
+    This class holds the convolution geometry: it gathers the im2col patches and
+    folds the result back to NCHW. The inner product over one patch is a
+    :class:`linear_ugemm` core over the flattened kernel, which owns the
+    conditional spike generator and the scaled adder and reads this layer's
+    weight and bias parameters.
 
     .. rubric:: Example
 
@@ -52,7 +59,7 @@ class conv_ugemm(napl_base):
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
                  config={'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
-                         'scale': None, 'width': 12}):
+                         'scale': None, 'width': 8}):
         """Construct the streaming CSG convolution.
 
         .. container:: api-parameter-list
@@ -70,7 +77,7 @@ class conv_ugemm(napl_base):
               - **timestep**: Positive stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > fan_in + has_bias``; the default is ``12``.
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
               - **name**: Optional instance label.
 
         Weight and bias are updatable only by an in-place write, such as
@@ -114,14 +121,8 @@ class conv_ugemm(napl_base):
         self.scale = self.entry if scale is None else scale
         self._is_bipolar = (self.polarity == 'bipolar')
 
-        width = config.get('width', 12)
-        if 2 ** (width - 1) <= self.entry:
-            message = (
-                f'conv_ugemm accumulator width <{width}> too small for fan-in <{self.entry}>: '
-                f'2**(width-1) must be > entry or partial sums saturate. Increase width.'
-            )
-            logger.error(message)
-            raise AssertionError(message)
+        width = _check_acc_width('conv_ugemm', config.get('width', 8), self.entry,
+                                 self.scale, self.polarity)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']
@@ -129,20 +130,20 @@ class conv_ugemm(napl_base):
             message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
             logger.error(message)
             raise AssertionError(message)
-        # Weight and bias CSG paths share one RNG sequence.
-        #: Conditional spike generator holding the weight sequence and its per-input indices.
-        self.mul = mul_ugemm({'polarity': self.polarity, 'timestep': self.timestep,
-                              'generator': config['generator']})
-        #: Power-of-two period of the conditional-generator sequence.
-        self.len = self.mul.len
-
+        # dim 1 is the number sequence mul_ugemm builds on its own, so the core
+        # generates its weight spikes from the same sequence as the bias path.
+        #: Inner product over one im2col patch, holding the conditional spike
+        #: generator and the scaled adder.
+        self.core = linear_ugemm(weight.detach().reshape(self.out_channels, -1), bias,
+                                 config={'polarity': self.polarity, 'timestep': self.timestep,
+                                         'generator': config['generator'], 'dim': 1,
+                                         'scale': self.scale, 'width': width})
+        # This layer owns the parameters; the core reads them on every call.
+        del self.core.weight, self.core.bias
         #: Externally updatable numeric weight tensor converted to spike probabilities on use.
         self.weight = torch.nn.Parameter(weight)
         #: Optional externally updatable numeric bias converted to spike probabilities on use.
         self.bias = torch.nn.Parameter(bias) if bias is not None else None
-
-        #: Streaming unary adder that reduces each convolution product count.
-        self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': width})
 
         #: Flat gather indices that build the im2col patch layout, rebuilt on demand.
         self._im2col_idx: torch.Tensor
@@ -154,7 +155,7 @@ class conv_ugemm(napl_base):
 
         # Conditional generation and the adder are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming layer.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
@@ -172,6 +173,18 @@ class conv_ugemm(napl_base):
         self._im2col_idx = None
         self._im2col_key = None
         self._out_hw = None
+
+
+    @property
+    def mul(self):
+        """Conditional spike generator holding the weight sequence and its per-input indices."""
+        return self.core.mul
+
+
+    @property
+    def acc(self):
+        """Streaming unary adder that reduces each convolution product count."""
+        return self.core.acc
 
 
     def forward(self, input_spike):
@@ -203,16 +216,9 @@ class conv_ugemm(napl_base):
 
         # The patch spike broadcasts over output channels, so each patch position
         # keeps one sequence index shared by the whole weight row.
-        product = self.mul(inp.unsqueeze(1), self.weight.reshape(self.out_channels, -1))
-        psum = product.type(self.ntype).sum(-1)
-
-        if self.has_bias:
-            # The bias stream advances once per timestep on the shared RNG.
-            b_prob = ((self.bias + 1) / 2 if self._is_bipolar else self.bias).type(self.ntype)
-            psum += torch.gt(b_prob,
-                             self.mul.num_seq[(self.timestep_cur - 1) % self.len]).type(self.ntype)
-
-        acc = self.acc(psum, entry=self.entry, dim=None)
+        self.core.weight = self.weight.reshape(self.out_channels, -1)
+        self.core.bias = None if self.bias is None else self.bias.data
+        acc = self.core(inp)
         return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
                   .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)
 

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import conv_ugemm, conv
+from napl.sim.module import conv_ugemm, conv_mix
 from napl.sim.operation import encode, decode
 
 
@@ -99,7 +99,7 @@ def _kernel_specific_checks():
         ugemm = conv_ugemm(weight, bias, stride=1, padding=0,
                                config={'polarity': 'bipolar', 'timestep': timestep,
                                        'generator': 'sobol', 'width': 12}).to(device)
-        full = conv(weight, bias, stride=1, padding=0,
+        full = conv_mix(weight, bias, stride=1, padding=0,
                         config={'polarity': 'bipolar', 'timestep': timestep,
                                 'generator': 'sobol', 'dim': 3, 'width': 12}).to(device)
 

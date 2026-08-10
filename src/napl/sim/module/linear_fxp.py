@@ -1,6 +1,5 @@
-from napl.utils import rshift_offset
 from napl.sim.base import napl_base
-from napl.sim.module._shared import _init_linear_params, _linear_fxp_fn
+from napl.sim.module._shared import _init_linear_params, _linear_fxp_fn, rshift_offset
 
 # Single source for every optional key: the signature default and the per-key fallback.
 _DEFAULT_CONFIG = {
@@ -96,20 +95,6 @@ class linear_fxp(napl_base):
         #: Largest weight magnitude represented by the quantized kernel.
         self.max_abs_w = 2 ** (self.widthw - 1)
         _init_linear_params(self, in_features, out_features, bias, weight_ext, bias_ext)
-
-        self.encoding_io = {}
-        self.polarity_io = {}
-        self.correlation_i = {}
-        self.stability_flux = 1.0
-
-
-    def _reset(self):
-        """Reset local execution state.
-
-        This single-shot layer has no mutable run state, so the hook returns
-        ``None`` without changing trainable parameters.
-        """
-        pass
 
 
     def forward(self, input):

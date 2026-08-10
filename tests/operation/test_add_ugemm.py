@@ -34,6 +34,7 @@ def run_case(polarity, scaled, input, device, timestep=256):
     add_ugemm_config = {
         'polarity': polarity,
         'scaled': scaled,
+        'width': 16,
     }
     input = input.to(device)
     inst = napl_add_ugemm(codec_config, add_ugemm_config).to(device)
@@ -92,7 +93,7 @@ def _suite_config(polarity, scaled):
     scale = 1.0 if scaled else 1.0 / entry
 
     def make_operation(_polarity, _timestep, _device):
-        return add_ugemm({'polarity': polarity, 'scaled': scaled})
+        return add_ugemm({'polarity': polarity, 'scaled': scaled, 'width': 16})
 
     def make_values(_polarity):
         values = torch.linspace(low, high, 512).reshape(64, entry) * scale
@@ -141,5 +142,57 @@ def test_add_ugemm():
         streaming_suite(config)
 
 
+def test_add_ugemm_width_saturation():
+    """Verify a narrow width saturates the accumulator and lowers the realized output rate."""
+    # Unipolar scaled with entry 3 and a per-timestep sum of 2: with a generous width the
+    # accumulator walks 2, 4->1, 3->0 and emits 2 spikes per 3 timesteps; with acc_max = 3
+    # the walk is clipped to 2, 4->3->0 and emits 1 spike per 2 timesteps.
+    steps = 8
+    spike = torch.tensor([[1, 1, 0], [1, 1, 0]], dtype=global_config.stype)
+    expected_generous = torch.tensor([0, 1, 1, 0, 1, 1, 0, 1], dtype=global_config.stype)
+    expected_narrow = torch.tensor([0, 1, 0, 1, 0, 1, 0, 1], dtype=global_config.stype)
+
+    for device in devices():
+        spike_dev = spike.to(device)
+        generous = add_ugemm({'polarity': 'unipolar', 'scaled': True, 'width': 10}).to(device)
+        narrow = add_ugemm({'polarity': 'unipolar', 'scaled': True, 'width': 3}).to(device)
+        assert narrow.acc_max == 3 and narrow.acc_min == -4
+
+        for step in range(steps):
+            o_generous = generous(spike_dev, dim=-1)
+            o_narrow = narrow(spike_dev, dim=-1)
+            assert o_generous.shape == (2,), f'{device}: generous output shape {o_generous.shape}'
+            assert o_narrow.shape == (2,), f'{device}: narrow output shape {o_narrow.shape}'
+            assert torch.equal(o_generous.cpu(), expected_generous[step].expand(2)), (
+                f'{device}: generous output at step {step} is {o_generous}'
+            )
+            assert torch.equal(o_narrow.cpu(), expected_narrow[step].expand(2)), (
+                f'{device}: narrow output at step {step} is {o_narrow}'
+            )
+        # Saturation discards accumulated credit, so the narrow stream emits fewer spikes.
+        assert expected_narrow.sum() < expected_generous.sum()
+        assert narrow.accumulator.abs().max().item() <= narrow.acc_max
+
+        print(f'[{device}] width saturation: narrow rate {expected_narrow.float().mean():.3f} '
+              f'< generous rate {expected_generous.float().mean():.3f}')
+
+    print('Test passed.')
+
+
+def test_add_ugemm_width_required():
+    """Verify a config without 'width' is rejected by the napl_base key check."""
+    try:
+        add_ugemm({'polarity': 'unipolar', 'scaled': True})
+    except AssertionError as error:
+        assert str(error) == 'Missing key <width> in the input configuration.', error
+    else:
+        raise AssertionError('add_ugemm accepted a config without <width>')
+
+    print('missing width rejected as expected.')
+    print('Test passed.')
+
+
 if __name__ == '__main__':
     test_add_ugemm()
+    test_add_ugemm_width_saturation()
+    test_add_ugemm_width_required()

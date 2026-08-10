@@ -1,12 +1,12 @@
 from napl.sim.base import napl_base
 
 
-class butterfly_binary(napl_base):
+class butterfly_fp(napl_base):
     r"""
     Evaluate an exact radix-2 complex butterfly in the binary domain.
 
     Use this stateless PyTorch module as a reference for
-    :class:`butterfly_spike` or wherever spike-stream simulation is unnecessary.
+    :class:`butterfly_ugemm` or wherever spike-stream simulation is unnecessary.
 
     The target is the radix-2 decimation-in-time butterfly on complex inputs
     :math:`x_0`, :math:`x_1` and twiddle factor :math:`w`,
@@ -23,9 +23,9 @@ class butterfly_binary(napl_base):
     .. code-block:: python
 
         import torch
-        from napl.sim.algorithm.fft import butterfly_binary
+        from napl.sim.algorithm.fft import butterfly_fp
 
-        operation = butterfly_binary()
+        operation = butterfly_fp()
         inputs = tuple(torch.zeros(1) for _ in range(6))
         y0r, y0i, y1r, y1i = operation(*inputs)
     """

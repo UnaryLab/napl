@@ -48,6 +48,7 @@ class add_any_dyn(napl_base):
 
         .. rubric:: References
 
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
 
 

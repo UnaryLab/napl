@@ -221,10 +221,10 @@ def _select_entry(mapping, class_name, config, requested_rtl=None):
         matches = [entry for entry in entries if entry.get("rtl_module") == expected]
         if matches:
             return matches[0]
-        # One RTL module may serve several simulation classes, in which case its
-        # base name is not the class name: linear_gaines1 and linear_gaines2 both
-        # map to linear_gaines_<polarity>. The polarity suffix still selects the
-        # variant whenever exactly one entry carries it.
+        # One RTL module may serve a simulation class whose node name differs from
+        # the RTL base name, for example linear_mix nodes map to linear_<polarity>.
+        # The polarity suffix still selects the variant whenever exactly one entry
+        # carries it.
         matches = [entry for entry in entries
                    if str(entry.get("rtl_module", "")).endswith(f"_{polarity}")]
         if len(matches) == 1:

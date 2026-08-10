@@ -3,7 +3,7 @@ import torch
 from napl.sim.base import napl_base
 
 
-class relu_hub(napl_base):
+class relu_fxp(napl_base):
     r"""
     Apply a bounded ReLU in the binary domain.
 
@@ -22,9 +22,9 @@ class relu_hub(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_hub
+        from napl import relu_fxp
 
-        operation = relu_hub({'scale': 1.0})
+        operation = relu_fxp({'scale': 1.0})
         output = operation(torch.tensor([-1.0, 0.5, 2.0]))
     """
     #: Marks this activation as a single-shot tensor operation.

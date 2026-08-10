@@ -1,6 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
+from loguru import logger
 
 
 class add_ugemm(napl_base):
@@ -21,6 +22,10 @@ class add_ugemm(napl_base):
     The number of reduced streams is taken from the first input and stays fixed
     until ``reset()``.
 
+    The accumulator width bounds the running accumulation to the signed range of
+    that width, so the realized output rate departs from the target once the
+    accumulation reaches the range.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -28,7 +33,7 @@ class add_ugemm(napl_base):
         import torch
         from napl import add_ugemm
 
-        adder = add_ugemm({'polarity': 'unipolar', 'scaled': True})
+        adder = add_ugemm({'polarity': 'unipolar', 'scaled': True, 'width': 10})
         output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
 
     .. container:: api-references
@@ -44,10 +49,11 @@ class add_ugemm(napl_base):
             config={
                 'polarity' : 'bipolar',
                 'scaled' : True,
+                'width' : 10,
             }
         ):
         """
-        Configure the input encoding and scaling mode.
+        Configure the input encoding, scaling mode, and accumulator width.
 
         .. container:: api-parameter-list
 
@@ -57,12 +63,19 @@ class add_ugemm(napl_base):
 
               - **polarity**: Input encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **scaled**: Emit a mean-like scaled stream when ``True`` or a clipped sum when ``False``; the default is ``True``.
+              - **width**: Signed accumulator width in bits; the default is ``10``.
               - **name**: Optional instance label.
         """
-        super().__init__(config, ['polarity', 'scaled'], polarity_required=True)
+        super().__init__(config, ['polarity', 'scaled', 'width'], polarity_required=True)
 
         #: Whether the output represents the mean rather than the clipped sum.
         self.scaled = config['scaled']
+        #: Signed accumulator width in bits.
+        self.width = config['width']
+        #: Largest value retained by the signed accumulator.
+        self.acc_max = 2**(self.width-1) - 1
+        #: Smallest value retained by the signed accumulator.
+        self.acc_min = -2**(self.width-1)
         #: Number of streams reduced per call, inferred from the first input.
         self.acc_bound = 0
         #: Bipolar centering offset inferred from :attr:`acc_bound`.
@@ -105,7 +118,8 @@ class add_ugemm(napl_base):
 
         Returns:
             A spike tensor with ``dim`` removed. The call updates the running
-            accumulator and, in non-scaled mode, the emitted-spike count.
+            accumulator and, in non-scaled mode, the emitted-spike count. The
+            width bounds the accumulation to its signed range.
 
         **Example:**
 
@@ -117,14 +131,25 @@ class add_ugemm(napl_base):
             self.acc_bound = input.size()[dim]
             if self.polarity == 'bipolar':
                 self.offset = (self.acc_bound - 1) / 2
+            if self.scaled and self.acc_bound > self.acc_max:
+                message = (
+                    f'add_ugemm reduction size <{self.acc_bound}> exceeds accumulator maximum '
+                    f'<{self.acc_max}> for width <{self.width}>.'
+                )
+                logger.error(message)
+                raise AssertionError(message)
             self.is_first_call = False
 
         acc_delta = torch.sum(input, dim, dtype=self.ntype)
         # The scalar initial state broadcasts out of place; matching shapes update in place.
         if self.accumulator.shape == acc_delta.shape:
             self.accumulator.add_(acc_delta)
+            if self.scaled:
+                self.accumulator.clamp_(self.acc_min, self.acc_max)
         else:
             updated = self.accumulator.add(acc_delta)
+            if self.scaled:
+                updated = updated.clamp(self.acc_min, self.acc_max)
             self.accumulator.resize_as_(updated).copy_(updated.detach())
 
         # Integer spikes promote exactly into the ntype accumulators.
@@ -133,6 +158,15 @@ class add_ugemm(napl_base):
             self.accumulator.sub_(output, alpha=self.acc_bound)
         else:
             self.accumulator.sub_(self.offset)
+            # The width bounds the accumulator gap that drives the comparison.
+            bounded = torch.minimum(
+                torch.maximum(self.accumulator, self.out_accumulator + self.acc_min),
+                self.out_accumulator + self.acc_max,
+            )
+            if self.accumulator.shape == bounded.shape:
+                self.accumulator.copy_(bounded)
+            else:
+                self.accumulator.resize_as_(bounded).copy_(bounded.detach())
             output = torch.gt(self.accumulator, self.out_accumulator).type(self.stype)
             if self.out_accumulator.shape == output.shape:
                 self.out_accumulator.add_(output)

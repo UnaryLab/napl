@@ -1,19 +1,19 @@
 import torch
 import torch.nn.functional as F
 
-from napl.sim.operation import sigmoid_hub
+from napl.sim.operation import sigmoid_fxp
 from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _kernel_specific_checks():
     """
-    sigmoid_hub matches the torch piecewise-linear reference.
+    sigmoid_fxp matches the torch piecewise-linear reference.
     """
     x_cpu = torch.linspace(-3, 3, 25)
 
     for device in devices():
         x = x_cpu.to(device)
-        sigmoid = sigmoid_hub().to(device)
+        sigmoid = sigmoid_fxp().to(device)
 
         with timer(device) as elapsed:
             sigmoid_result = sigmoid(x)
@@ -38,7 +38,7 @@ class sigmoid_reference(torch.nn.Module):
 
 
 def make_module_pair():
-    return sigmoid_hub(), sigmoid_reference()
+    return sigmoid_fxp(), sigmoid_reference()
 
 
 def make_inputs():
@@ -51,11 +51,11 @@ def make_performance_values():
 
 def known_answer_case():
     values = torch.tensor([-1.0, 0.0, 1.0])
-    return sigmoid_hub(), (values,), F.hardsigmoid(values * 3)
+    return sigmoid_fxp(), (values,), F.hardsigmoid(values * 3)
 
 
 def gradient_case():
-    return sigmoid_hub(), (torch.tensor([0.0]),)
+    return sigmoid_fxp(), (torch.tensor([0.0]),)
 
 
 def expected_ste_gradients(_candidate, _inputs, grad_output):
@@ -77,10 +77,10 @@ CONFIG = {
 }
 
 
-def test_sigmoid_hub():
-    """Verify sigmoid_hub quantization and STE gradients against its reference, including timing."""
+def test_sigmoid_fxp():
+    """Verify sigmoid_fxp quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':
-    test_sigmoid_hub()
+    test_sigmoid_fxp()

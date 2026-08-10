@@ -3,7 +3,7 @@ import torch
 from napl.sim.base import napl_base
 
 
-class sigmoid_hub(napl_base):
+class sigmoid_fxp(napl_base):
     r"""
     Apply a scaled hard sigmoid in the binary domain.
 
@@ -24,9 +24,9 @@ class sigmoid_hub(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sigmoid_hub
+        from napl import sigmoid_fxp
 
-        operation = sigmoid_hub({'scale': 3})
+        operation = sigmoid_fxp({'scale': 3})
         output = operation(torch.tensor([-1.0, 0.0, 1.0]))
     """
     #: Marks this activation as a single-shot tensor operation.

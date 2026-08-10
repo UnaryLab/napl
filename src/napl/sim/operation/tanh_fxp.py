@@ -3,7 +3,7 @@ import torch
 from napl.sim.base import napl_base
 
 
-class tanh_hub(napl_base):
+class tanh_fxp(napl_base):
     r"""
     Apply hard tanh in the binary domain.
 
@@ -24,9 +24,9 @@ class tanh_hub(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import tanh_hub
+        from napl import tanh_fxp
 
-        operation = tanh_hub()
+        operation = tanh_fxp()
         output = operation(torch.tensor([-2.0, 0.0, 2.0]))
     """
     #: Marks this activation as a single-shot tensor operation.

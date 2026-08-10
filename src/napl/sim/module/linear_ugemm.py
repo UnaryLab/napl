@@ -1,8 +1,9 @@
 import torch
 
-from napl.sim.base import napl_base, hw_params
+from napl.sim.base import napl_base
 from napl.sim.operation import add_any, mul_ugemm
-from napl.sim.operation.encode import gen_num_seq
+from napl.sim.operation import encode
+from napl.sim.module._shared import _check_acc_width
 from loguru import logger
 
 
@@ -10,7 +11,7 @@ class linear_ugemm(napl_base):
     r"""Apply a streaming unary linear layer with conditional spike generation.
 
     Use this layer when input-driven uGEMM weight streams are preferred over the
-    free-running weight encoder used by :class:`linear`. Each input feature
+    free-running weight encoder used by :class:`linear_mix`. Each input feature
     advances its number-sequence index only when its input spike is ``1``, and
     bipolar mode adds an input-``0`` path on a separate index, so the layer
     computes the scaled affine map one timestep at a time,
@@ -59,7 +60,7 @@ class linear_ugemm(napl_base):
                 'generator': 'sobol',
                 'dim': 1,
                 'scale': None,
-                'width': 12,
+                'width': 8,
             }
         ):
         """Construct the streaming CSG layer from external numeric parameters.
@@ -77,7 +78,7 @@ class linear_ugemm(napl_base):
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **dim**: Number-sequence dimension; the default is ``1``.
               - **scale**: Output divisor, where ``None`` uses ``in_features + has_bias``; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) > in_features + has_bias``; the default is ``12``.
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
               - **name**: Optional instance label.
 
         Weight and bias are updatable only by an in-place write, such as
@@ -118,15 +119,8 @@ class linear_ugemm(napl_base):
             raise AssertionError(message)
 
         #: Signed accumulator width used by the streaming unary adder.
-        self.width = config.get('width', 12)
-        # The signed accumulator range must contain every per-step partial sum.
-        if 2 ** (self.width - 1) <= self.entry:
-            message = (
-                f'linear_ugemm accumulator width <{self.width}> too small for fan-in <{self.entry}>: '
-                f'2**(width-1) must be > entry or partial sums saturate. Increase width.'
-            )
-            logger.error(message)
-            raise AssertionError(message)
+        self.width = _check_acc_width('linear_ugemm', config.get('width', 8), self.entry,
+                                      self.scale, self.polarity)
 
         self._is_bipolar = (self.polarity == 'bipolar')
         #: Externally updatable numeric weight matrix converted to spike probabilities on use.
@@ -139,16 +133,17 @@ class linear_ugemm(napl_base):
         self.mul = mul_ugemm({'polarity': self.polarity, 'timestep': self.timestep,
                               'generator': config['generator']})
         # mul_ugemm builds its sequence on dimension 1; this layer selects its own.
-        self.mul.num_seq.copy_(gen_num_seq({'width': self.mul.width,
-                                            'generator': config['generator'],
-                                            'dim': config.get('dim', 1)}))
+        self.mul.num_seq.copy_(encode({'polarity': self.polarity,
+                                       'timestep': self.mul.len,
+                                       'generator': config['generator'],
+                                       'dim': config.get('dim', 1)}).num_seq)
 
         #: Streaming unary adder that reduces each linear product count.
         self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': self.width})
 
         # Conditional generation and the adder are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming layer.
-        self.hw = hw_params(pp_delay=0)
+        self.hw.pp_delay = 0
 
         self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}

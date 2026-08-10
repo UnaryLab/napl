@@ -3,7 +3,8 @@ import torch.nn.functional as F
 
 from napl.sim.base import napl_base
 from napl.sim.module._shared import _init_mgu_params
-from napl.sim.operation import sigmoid_hub, tanh_hub, round_fxp
+from .round_fxp import round_fxp
+from napl.sim.operation import sigmoid_fxp, tanh_fxp
 
 
 # Single source for every optional key: the signature default and the per-key fallback.
@@ -14,7 +15,7 @@ _DEFAULT_CONFIG = {
 }
 
 
-class mgu_hardfxp(napl_base):
+class mgu_hard_fxp(napl_base):
     r"""Apply a quantization-aware MGU cell with hard range bounds.
 
     Use this single-shot cell to train or evaluate an MGU while rounding operands
@@ -52,10 +53,10 @@ class mgu_hardfxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mgu_hardfxp
+        from napl import mgu_hard_fxp
 
-        cell = mgu_hardfxp(2, 3, config={"hard": True,
-                                        "intwidth": 3, "fracwidth": 4})
+        cell = mgu_hard_fxp(2, 3, config={"hard": True,
+                                          "intwidth": 3, "fracwidth": 4})
         hidden = cell(torch.zeros(1, 2))
 
     .. container:: api-references
@@ -96,28 +97,14 @@ class mgu_hardfxp(napl_base):
         #: Whether the forget and new gates use hard activations.
         self.hard = cfg['hard']
         #: Hard-tanh operator that bounds intermediate and output values.
-        self.htanh = tanh_hub()
+        self.htanh = tanh_fxp()
         #: Fixed-point quantizer applied to recurrent operands and parameters.
         self.trunc = round_fxp({'intwidth': cfg['intwidth'], 'fracwidth': cfg['fracwidth']})
         #: Activation applied to the forget gate.
-        self.fg_sigmoid = sigmoid_hub() if self.hard else torch.nn.Sigmoid()
+        self.fg_sigmoid = sigmoid_fxp() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the candidate hidden state.
-        self.ng_tanh = tanh_hub() if self.hard else torch.nn.Tanh()
+        self.ng_tanh = tanh_fxp() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
-
-        self.encoding_io = {}
-        self.polarity_io = {}
-        self.correlation_i = {}
-        self.stability_flux = 1.0
-
-
-    def _reset(self):
-        """Reset local recurrent state.
-
-        The cell stores no hidden state between calls, so this hook returns
-        ``None`` without changing parameters or quantization settings.
-        """
-        pass
 
 
     def forward(self, input, hx=None):

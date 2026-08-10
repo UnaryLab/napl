@@ -40,24 +40,48 @@ ARGUMENT_SHAPES = [
 SPECIAL_CASES = {
     # avgpool2d_ugemm needs an accumulator width satisfying 2 ** (width - 1) - 1 >= 2 * kernel_area - 1.
     'avgpool2d_ugemm': ([2], {'polarity': 'bipolar', 'width': 12}),
+    # conv_gaines needs a power-of-two adder entry, which this 2x2x2 kernel gives.
+    'conv_gaines': ([torch.zeros(4, 2, 2, 2), None, 1, 0, 1],
+                    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2,
+                     'scaled': True}),
     'conv_mix': ([WEIGHT_4D, None, 1, 0, 1],
              {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2,
               'scale': None, 'width': 12}),
     'conv_ugemm': ([WEIGHT_4D, None, 1, 0, 1],
                    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
-    # mgu_hard is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
+    # mgu_hard_mix is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
     # its run must outlast the depth_ismul multiplier shift register.
-    'mgu_hard': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
+    'mgu_hard_mix': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
             {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'depth_ismul': 3}),
 }
 
-# butterfly_spike takes four separate configuration mappings instead of one.
-BUTTERFLY_CONFIGS = (
-    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 1},
-    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'},
-    {'polarity': 'bipolar', 'scale': 2, 'width': 10},
-    {'polarity': 'bipolar', 'timestep': 16},
-)
+# Building blocks of the multi-configuration probes below.
+CODEC = {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}
+ADD_SCALED = {'polarity': 'bipolar', 'scale': 2, 'width': 12}
+ADD_DYNAMIC = {'polarity': 'bipolar', 'scale_max': 3, 'width': 12}
+
+# Classes taking several configuration mappings instead of one, keyed by the
+# constructor parameter each mapping is bound to. Every mapping is recorded, so a
+# write into any of them is caught.
+MULTI_CONFIG_CASES = {
+    'butterfly_ugemm': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_SCALED}),
+    'butterfly_ugemm_dyn': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_DYNAMIC}),
+    'conv_ugemm_hub': ([WEIGHT_4D, None, 1, 0, 1],
+                       {'codec_config': dict(CODEC, dim=2),
+                        'core_config': {'scale': None, 'width': 12}}),
+    'fft': ([8], {'mul_config': CODEC, 'add_config': ADD_SCALED}),
+    'fft_dyn': ([8], {'mul_config': CODEC, 'add_config': ADD_DYNAMIC}),
+    'fft_dyn_hub': ([8], {'codec_config': dict(CODEC, dim=1), 'mul_config': CODEC,
+                          'add_config': ADD_DYNAMIC}),
+    'fft_hub': ([8], {'codec_config': dict(CODEC, dim=1), 'mul_config': CODEC,
+                      'add_config': ADD_SCALED}),
+    'linear_ugemm_hub': ([WEIGHT_2D, None],
+                         {'codec_config': dict(CODEC, dim=2),
+                          'core_config': {'dim': 1, 'scale': None, 'width': 12}}),
+    'mgu_hard_mix_hub': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
+                         {'codec_config': dict(CODEC, dim=1),
+                          'core_config': {'width': 10, 'depth_ismul': 3}}),
+}
 
 
 class recording_dict(dict):
@@ -115,10 +139,24 @@ def _probe(cls, arguments, config):
     """Construct ``cls`` and return ``(writes, error)``; ``writes`` is ``None`` on failure."""
     probe = recording_dict(copy.deepcopy(config))
     try:
-        cls(*arguments, probe) if arguments else cls(probe)
+        cls(*arguments, config=probe)
     except Exception as error:
         return None, error
     return probe.writes, None
+
+
+def _probe_multi(cls, arguments, configs):
+    """Construct ``cls`` from several configuration mappings; ``None`` on failure.
+
+    Each mapping is bound by the constructor parameter naming it, so a probe
+    cannot land on a parameter that is not a configuration.
+    """
+    probes = {name: recording_dict(copy.deepcopy(config)) for name, config in configs.items()}
+    try:
+        cls(*arguments, **probes)
+    except Exception:
+        return None
+    return [write for probe in probes.values() for write in probe.writes]
 
 
 def _probe_generic(cls):
@@ -135,6 +173,13 @@ def _probe_generic(cls):
             for _ in range(len(CONFIG)):
                 writes, error = _probe(cls, arguments, config)
                 if writes is not None:
+                    # A construction that rejected no key never validated the
+                    # probe, so the class ran on its own default configuration
+                    # and no write into it would have been recorded.
+                    assert len(config) < len(CONFIG), (
+                        f'{cls.__name__} constructed without rejecting any key, so the probe '
+                        'never reached its configuration; add a SPECIAL_CASES entry'
+                    )
                     return writes
                 match = UNKNOWN_KEY.search(str(error))
                 if match is None or match.group(1) not in config or len(config) == 1:
@@ -150,10 +195,9 @@ def test_config_not_mutated():
     unreached = []
 
     for name in names:
-        if name == 'butterfly_spike':
-            probes = [recording_dict(copy.deepcopy(config)) for config in BUTTERFLY_CONFIGS]
-            napl.butterfly_spike(*probes)
-            writes = [write for probe in probes for write in probe.writes]
+        if name in MULTI_CONFIG_CASES:
+            arguments, configs = MULTI_CONFIG_CASES[name]
+            writes = _probe_multi(getattr(napl, name), arguments, configs)
         elif name in SPECIAL_CASES:
             arguments, config = SPECIAL_CASES[name]
             writes, _ = _probe(getattr(napl, name), arguments, config)

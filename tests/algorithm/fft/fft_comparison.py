@@ -12,7 +12,7 @@ x = torch.tensor([
     1.0000, 1.14644661, 0.5000, 0.14644661
 ])
 
-# Measured with butterfly_spike over four radix-2 stages: bipolar sobol streams,
+# Measured with butterfly_ugemm over four radix-2 stages: bipolar sobol streams,
 # timestep 4096, adder scale 2, input scaled by 1/2 and the output by 2 * 2**4.
 unary_real = torch.tensor([
     15.9844, 0.0000, -0.0156, 0.0000,

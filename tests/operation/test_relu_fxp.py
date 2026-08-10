@@ -1,35 +1,42 @@
 import torch
 import torch.nn.functional as F
 
-from napl.sim.operation import tanh_hub
+from napl.sim.operation import relu_fxp
 from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
 def _kernel_specific_checks():
     """
-    tanh_hub matches torch hardtanh, passes through the [-1, 1] band, and clips outside it.
+    relu_fxp matches torch hardtanh, passes through the [0, scale] band, and clips outside it.
     """
     x_cpu = torch.linspace(-3, 3, 25)
-    known_tanh_cpu = torch.tensor([-2.0, 0.3, 2.0])
+    known_relu_cpu = torch.tensor([-0.5, 0.5, 2.0])
 
     for device in devices():
         x = x_cpu.to(device)
-        tanh = tanh_hub().to(device)
+        relu = relu_fxp().to(device)
+        relu_scaled = relu_fxp({'scale': 6.0}).to(device)
 
         with timer(device) as elapsed:
-            tanh_result = tanh(x)
+            relu_result = relu(x)
+            relu_scaled_result = relu_scaled(x)
 
         with timer(device) as reference_elapsed:
-            F.hardtanh(x, -1.0, 1.0)
+            F.hardtanh(x, 0.0, 1.0)
+            F.hardtanh(x, 0.0, 6.0)
 
-        assert torch.allclose(tanh_result, F.hardtanh(x, -1.0, 1.0))
+        assert torch.allclose(relu_result, F.hardtanh(x, 0.0, 1.0))
+        assert torch.allclose(relu_scaled_result, F.hardtanh(x, 0.0, 6.0))
 
-        known_tanh = known_tanh_cpu.to(device)
+        known_relu = known_relu_cpu.to(device)
         assert torch.allclose(
-            tanh(known_tanh),
-            torch.tensor([-1.0, 0.3, 1.0], device=device),
+            relu(known_relu),
+            torch.tensor([0.0, 0.5, 1.0], device=device),
         )
 
+        xg = torch.tensor([0.5], device=device, requires_grad=True)
+        relu(xg).backward()
+        assert xg.grad.item() == 1.0
         ratio = reference_elapsed.seconds / elapsed.seconds
         print(
             f'[{device}] kernel={elapsed.seconds * 1000:.3f}ms, '
@@ -40,7 +47,7 @@ def _kernel_specific_checks():
 
 
 def make_module_pair():
-    return tanh_hub(), torch.nn.Hardtanh(-1.0, 1.0)
+    return relu_fxp(), torch.nn.Hardtanh(0.0, 1.0)
 
 
 def make_inputs():
@@ -52,12 +59,12 @@ def make_performance_values():
 
 
 def known_answer_case():
-    values = torch.tensor([-2.0, 0.3, 2.0])
-    return tanh_hub(), (values,), torch.tensor([-1.0, 0.3, 1.0])
+    values = torch.tensor([-0.5, 0.5, 2.0])
+    return relu_fxp(), (values,), torch.tensor([0.0, 0.5, 1.0])
 
 
 def gradient_case():
-    return tanh_hub(), (torch.tensor([0.3]),)
+    return relu_fxp(), (torch.tensor([0.5]),)
 
 
 def expected_ste_gradients(_candidate, _inputs, grad_output):
@@ -79,10 +86,10 @@ CONFIG = {
 }
 
 
-def test_tanh_hub():
-    """Verify tanh_hub quantization and STE gradients against its reference, including timing."""
+def test_relu_fxp():
+    """Verify relu_fxp quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':
-    test_tanh_hub()
+    test_relu_fxp()

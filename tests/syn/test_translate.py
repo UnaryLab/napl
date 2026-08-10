@@ -72,28 +72,28 @@ def module_nodes():
     weight = torch.zeros(8, 16)
     layer_config = LAYER_CONFIG
     return [
-        {"class": "avgpool2d", "config": {"kernel_size": 2, "lanes": 48}},
-        {"class": "avgpool2d", "config": {"kernel_size": (2, 3), "lanes": 48}},
+        {"class": "avgpool2d_ugemm", "config": {"kernel_size": 2, "lanes": 48}},
+        {"class": "avgpool2d_ugemm", "config": {"kernel_size": (2, 3), "lanes": 48}},
         {"class": "linear_ugemm",
          "config": {"weight": weight, "bias": torch.zeros(8),
                     "config": layer_config, "lanes": 8}},
         {"class": "linear_ugemm",
          "config": {"weight": weight, "bias": None,
                     "config": dict(layer_config, polarity='bipolar'), "lanes": 8}},
-        {"class": "linear",
+        {"class": "linear_mix",
          "config": {"weight": weight, "bias": torch.zeros(8),
                     "config": layer_config, "lanes": 8}},
-        {"class": "linear",
+        {"class": "linear_mix",
          "config": {"weight": weight, "bias": None,
                     "config": dict(layer_config, polarity='bipolar'), "lanes": 8}},
         # conv sizes itself from the weight and the input shape, so its node
         # carries the NCHW input the geometry is derived from.
-        {"class": "conv",
+        {"class": "conv_mix",
          "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
                     "stride": 1, "padding": 1, "dilation": 1,
                     "config": layer_config, "lanes": 108},
          "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
-        {"class": "conv",
+        {"class": "conv_mix",
          "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": None,
                     "stride": 2, "padding": 2, "dilation": 2,
                     "config": dict(layer_config, polarity='bipolar'), "lanes": 27},
@@ -150,20 +150,20 @@ def test_module_layer_parameters():
     assert convolution_nb.parameters["LANES"] == 27
 
 
-def test_one_rtl_module_serves_both_gaines_classes():
-    """Resolve linear_gaines1 and linear_gaines2 to the same RTL module per polarity."""
+def test_linear_gaines_maps_per_polarity():
+    """Resolve linear_gaines to the same RTL module base per polarity."""
     for polarity in ("unipolar", "bipolar"):
-        expected = {"IN_FEATURES": 16, "LANES": 8, "SEQ_WIDTH": 8, "HAS_BIAS": 1,
+        expected = {"IN_FEATURES": 15, "LANES": 8, "SEQ_WIDTH": 8, "HAS_BIAS": 1,
                     "SCALE_WIDTH": 4, "SCALED": 1}
         if polarity == "bipolar":
-            # Only the bipolar non-scaled arm holds a counter, so only it carries DEPTH.
-            expected["DEPTH"] = 8
-        for class_name in ("linear_gaines1", "linear_gaines2"):
-            binding = translate_node(gaines_node(class_name, polarity))
-            assert binding.rtl_module == f"linear_gaines_{polarity}"
-            assert binding.parameters == expected, binding.parameters
+            expected.pop("SCALED")
+        binding = translate_node(gaines_node("linear_gaines", polarity))
+        assert binding.rtl_module == f"linear_gaines_{polarity}"
+        assert binding.parameters == expected, binding.parameters
     # No bias drops an addend, so the threshold width follows the smaller entry.
-    no_bias = translate_node(gaines_node("linear_gaines1", "unipolar", has_bias=False))
+    no_bias = translate_node(gaines_node(
+        "linear_gaines", "unipolar", has_bias=False, scaled=False
+    ))
     assert no_bias.parameters["HAS_BIAS"] == 0
     assert no_bias.parameters["SCALE_WIDTH"] == 4
 
@@ -171,7 +171,7 @@ def test_one_rtl_module_serves_both_gaines_classes():
 def test_module_rejects_unsupported_configuration():
     """Reject pooling geometry the RTL does not implement."""
     with pytest.raises(TranslationError, match="stride"):
-        translate_node({"class": "avgpool2d",
+        translate_node({"class": "avgpool2d_ugemm",
                         "config": {"kernel_size": 2, "stride": 3, "lanes": 48}})
     # A lane count the convolution geometry cannot fill is rejected before elaboration.
     conv_node = dict(module_nodes()[-1])
@@ -217,16 +217,16 @@ def add_any_node(polarity, width, entry):
 
 
 def linear_node(class_name, polarity, lanes=8, width=12):
-    """One linear or linear_ugemm node over an 8x16 weight."""
+    """One linear_mix or linear_ugemm node over an 8x16 weight."""
     return {"class": class_name,
             "config": {"weight": torch.zeros(8, 16), "bias": torch.zeros(8),
                        "config": dict(LAYER_CONFIG, polarity=polarity, width=width),
                        "lanes": lanes}}
 
 
-def gaines_node(class_name, polarity, in_features=16, has_bias=True, lanes=8,
+def gaines_node(class_name, polarity, in_features=15, has_bias=True, lanes=8,
                 generator='sobol', scaled=True):
-    """One linear_gaines1 or linear_gaines2 node over a `lanes` x in_features weight."""
+    """One linear_gaines node over a `lanes` x in_features weight."""
     config = dict(LAYER_CONFIG, polarity=polarity, generator=generator, scaled=scaled)
     return {"class": class_name,
             "config": {"weight": torch.zeros(8, in_features),
@@ -234,8 +234,8 @@ def gaines_node(class_name, polarity, in_features=16, has_bias=True, lanes=8,
                        "config": config, "lanes": lanes}}
 
 
-def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv"):
-    """One conv or conv_pc node over a 3x2x3x3 weight and a 1x2x6x6 input."""
+def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv_mix"):
+    """One conv node over a 3x2x3x3 weight and a 1x2x6x6 input."""
     return {"class": class_name,
             "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
                        "stride": 1, "padding": 1, "dilation": 1,
@@ -246,7 +246,7 @@ def conv_node(polarity, in_channels=2, lanes=108, width=12, class_name="conv"):
 
 def mgu_node(lanes=3, hidden=3, in_size=4, width=10, depth_ismul=6, n_hidden=None,
              n_features=None):
-    """One mgu node over gate weights shaped (hidden, hidden + in_size).
+    """One mgu_hard_mix node over gate weights shaped (hidden, hidden + in_size).
 
     `n_hidden` and `n_features` override the new-gate weight shape on its own, so
     a gate pair that disagrees can be built without touching the forget gate.
@@ -254,7 +254,7 @@ def mgu_node(lanes=3, hidden=3, in_size=4, width=10, depth_ismul=6, n_hidden=Non
     features = hidden + in_size
     config = {'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol',
               'width': width, 'depth_ismul': depth_ismul}
-    return {"class": "mgu",
+    return {"class": "mgu_hard_mix",
             "config": {"weight_f": torch.zeros(hidden, features),
                        "bias_f": torch.zeros(hidden),
                        "weight_n": torch.zeros(n_hidden or hidden,
@@ -270,8 +270,14 @@ def rejection_cases():
         ("div_cordiv", "2 ** int(WIDTH) == DEPTH",
          {"class": "div_cordiv", "config": {"depth": 6}}),
         ("avgpool2d", "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']",
-         {"class": "avgpool2d", "config": {"kernel_size": 2, "stride": 3, "lanes": 48}}),
-        # mgu is bipolar only, so its clauses are listed once rather than per
+         {"class": "avgpool2d_ugemm", "config": {"kernel_size": 2, "stride": 3, "lanes": 48}}),
+        ("linear_gaines_bipolar", "get(config['config'], 'scaled', True)",
+         gaines_node("linear_gaines", "bipolar", scaled=False)),
+        ("linear_gaines_bipolar", "IN_FEATURES + HAS_BIAS >= 2",
+         gaines_node("linear_gaines", "bipolar", in_features=1, has_bias=False)),
+        ("linear_gaines_bipolar", "2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS",
+         gaines_node("linear_gaines", "bipolar", in_features=2)),
+        # mgu_hard_mix is bipolar only, so its clauses are listed once rather than per
         # polarity. Clauses resolve in order, so each case below breaks its own
         # clause with every earlier one still satisfied.
         ("mgu_bipolar", "shape(config['weight_f'])[0] == config['lanes']",
@@ -298,24 +304,11 @@ def rejection_cases():
             (f"add_any_{polarity}", "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1",
              add_any_node(polarity, 30, 400_000_000)),
             (f"linear_{polarity}", "shape(config['weight'])[0] == config['lanes']",
-             linear_node("linear", polarity, lanes=4)),
+             linear_node("linear_mix", polarity, lanes=4)),
             (f"linear_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
-             linear_node("linear", polarity, width=4)),
-            # linear_pc drops the accumulator, so it carries the lane clause but
-            # no accumulator-width one.
-            (f"linear_pc_{polarity}", "shape(config['weight'])[0] == config['lanes']",
-             linear_node("linear_pc", polarity, lanes=4)),
-            # linear_gaines1 and linear_gaines2 share one RTL module per polarity,
-            # so one node per clause per polarity covers both entries. The scaled
-            # arm's threshold sequence is 2**round(log2(entry)) long, and an lfsr
-            # image of width 1 has no feedback polynomial, so entry 2 under lfsr
-            # is the configuration that clause rejects.
+             linear_node("linear_mix", polarity, width=4)),
             (f"linear_gaines_{polarity}", "shape(config['weight'])[0] == config['lanes']",
-             gaines_node("linear_gaines1", polarity, lanes=4)),
-            (f"linear_gaines_{polarity}",
-             "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3",
-             gaines_node("linear_gaines2", polarity, in_features=2, has_bias=False,
-                         generator='lfsr')),
+             gaines_node("linear_gaines", polarity, lanes=4)),
             (f"linear_ugemm_{polarity}", "shape(config['weight'])[0] == config['lanes']",
              linear_node("linear_ugemm", polarity, lanes=4)),
             (f"linear_ugemm_{polarity}", "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS",
@@ -341,14 +334,15 @@ def rejection_cases():
              conv_node(polarity, lanes=28, class_name="conv_ugemm")),
             (f"conv_ugemm_{polarity}", "WIDTH <= 30",
              conv_node(polarity, width=31, class_name="conv_ugemm")),
-            # conv_pc drops the accumulator, so it carries the geometry clauses
-            # but no accumulator-width one.
-            (f"conv_pc_{polarity}", "shape(config['weight'])[1] == input.size(1)",
-             conv_node(polarity, in_channels=4, class_name="conv_pc")),
-            (f"conv_pc_{polarity}",
-             "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)",
-             conv_node(polarity, lanes=28, class_name="conv_pc")),
         ]
+        if polarity == "unipolar":
+            cases += [
+                ("linear_gaines_unipolar", "SCALED == 0 or IN_FEATURES + HAS_BIAS >= 2",
+                 gaines_node("linear_gaines", polarity, in_features=1, has_bias=False)),
+                ("linear_gaines_unipolar",
+                 "SCALED == 0 or 2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS",
+                 gaines_node("linear_gaines", polarity, in_features=2)),
+            ]
     return cases
 
 
@@ -405,21 +399,7 @@ def test_bindings_match_rtl_module_headers():
             "config": {"polarity": "unipolar", "scale": 2, "width": 8},
             "inputs": {"input": {"shape": (4, 16)}},
         },
-        # conv_pc's pad source exists only for a bipolar stream with nonzero
-        # padding, so the unipolar entry maps pad_bits to no port and the
-        # unipolar RTL header carries none. Both polarities are checked here so a
-        # mapping that named a pad port the module does not have fails.
-        {"class": "conv_pc",
-         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": torch.zeros(3),
-                    "stride": 1, "padding": 1, "dilation": 1,
-                    "config": LAYER_CONFIG, "lanes": 108},
-         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
-        {"class": "conv_pc",
-         "config": {"weight": torch.zeros(3, 2, 3, 3), "bias": None,
-                    "stride": 2, "padding": 2, "dilation": 2,
-                    "config": dict(LAYER_CONFIG, polarity='bipolar'), "lanes": 27},
-         "inputs": {"input_spike": {"shape": (1, 2, 6, 6)}}},
-        # mgu composes two linear layers, so its header carries the gate widths
+        # mgu_hard_mix composes two linear layers, so its header carries the gate widths
         # and the multiplier sequence widths rather than a single SCALE.
         mgu_node(),
         {"class": "shiftreg", "config": {"depth": 4}},

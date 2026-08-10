@@ -231,7 +231,7 @@ def _mgu_run_outlasts_ismul(timestep, depth_ismul):
     Whether a run of ``timestep`` timesteps outlasts the flush of the ``depth_ismul``
     shift register inside the MGU gate multiplier. Flushing that register consumes
     ``2 ** depth_ismul`` timesteps, so a run of exactly that length leaves nothing
-    behind. ``mgu_hard`` uses this condition to validate its stream length.
+    behind. ``mgu_hard_mix`` uses this condition to validate its stream length.
     """
     return timestep > 2 ** depth_ismul
 
@@ -250,3 +250,42 @@ def _init_mgu_params(module, input_size, hidden_size, bias):
     for w in [module.weight_f, module.weight_n, module.bias_f, module.bias_n]:
         if w is not None:
             w.data = truncated_normal(w, 0.0, stdv)
+
+
+#: Configuration keys the codec owns for a hybrid unary-binary wrapper.
+_SHARED_CODEC_KEYS = ('polarity', 'timestep', 'generator')
+
+#: Number-sequence dimension the streaming convolution core uses for its weights.
+_CORE_DIM = 1
+
+#: Number-sequence dimensions the streaming MGU cell's gate encoders occupy.
+_CORE_DIMS = (3, 4, 5, 6)
+
+
+def _hub_core_config(class_name, codec_config, core_config):
+    """Return the streaming core configuration completed from the codec configuration.
+
+    Args:
+        class_name: Wrapper class name used in rejection messages.
+        codec_config: Validated codec configuration mapping.
+        core_config: Caller-supplied core configuration mapping.
+
+    Returns:
+        A new mapping holding the core keys plus the codec's **polarity**,
+        **timestep**, and **generator**.
+
+    Neither input mapping is modified. A core configuration that carries one of
+    the codec-owned keys is rejected, since the numeric ports and the streaming
+    core must share one stream length, polarity, and generator.
+    """
+    for key in _SHARED_CODEC_KEYS:
+        if key in core_config:
+            message = (f'Invalid key <{key}> in the {class_name} core configuration; '
+                       f'the codec configuration supplies <polarity>, <timestep>, and '
+                       f'<generator>.')
+            logger.error(message)
+            raise AssertionError(message)
+    merged = dict(core_config)
+    for key in _SHARED_CODEC_KEYS:
+        merged[key] = codec_config[key]
+    return merged

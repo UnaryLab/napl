@@ -1,7 +1,8 @@
 import torch
 import torch.nn.functional as F
+from torch import nn
 
-from napl.sim.module import mgu_hard, mgu_hardfxp
+from napl.sim.module import mgu_hard_fxp
 from napl.utils._shared_test import devices, single_shot_suite, timer
 
 
@@ -14,13 +15,34 @@ def _ref_mgu(x, hx, Wf, bf, Wn, bn):
     return F.hardtanh(ng - fg * ng + fg_hx)
 
 
+class _ReferenceMgu(nn.Module):
+    """Direct hard-activation MGU equation with trainable-like held parameters."""
+
+
+    def __init__(self, isz, hsz):
+        super().__init__()
+        self.weight_f = nn.Parameter(torch.zeros(hsz, hsz + isz), requires_grad=False)
+        self.weight_n = nn.Parameter(torch.zeros(hsz, hsz + isz), requires_grad=False)
+        self.bias_f = nn.Parameter(torch.zeros(hsz), requires_grad=False)
+        self.bias_n = nn.Parameter(torch.zeros(hsz), requires_grad=False)
+
+
+    def forward(self, x, hx):
+        return _ref_mgu(x, hx, self.weight_f, self.bias_f, self.weight_n, self.bias_n)
+
+
 def _kernel_specific_checks():
     """
-    mgu_hardfxp approximates mgu_hard within the fixed-point bound and trains with finite gradients.
+    mgu_hard_fxp approximates the direct hard-activation MGU equation and trains with finite gradients.
     """
     torch.manual_seed(0)
     isz, hsz, b = 6, 4, 5
-    cell = mgu_hard(isz, hsz, bias=True)
+    cell = _ReferenceMgu(isz, hsz)
+    with torch.no_grad():
+        cell.weight_f.copy_(torch.rand(hsz, hsz + isz) * 2 - 1)
+        cell.weight_n.copy_(torch.rand(hsz, hsz + isz) * 2 - 1)
+        cell.bias_f.copy_(torch.rand(hsz) * 2 - 1)
+        cell.bias_n.copy_(torch.rand(hsz) * 2 - 1)
     x_cpu = torch.rand(b, isz) * 2 - 1
     hx_cpu = torch.rand(b, hsz) * 2 - 1
 
@@ -35,7 +57,7 @@ def _kernel_specific_checks():
                 x, hx, cell.weight_f, cell.bias_f, cell.weight_n, cell.bias_n
             )
 
-        cfx = mgu_hardfxp(
+        cfx = mgu_hard_fxp(
             isz, hsz, bias=True, config={'intwidth': 3, 'fracwidth': 6}
         ).to(device)
         for target, source in [
@@ -47,7 +69,7 @@ def _kernel_specific_checks():
             target.data = source.data.clone()
         rmse = (cfx(x, hx) - y).pow(2).mean().sqrt().item()
         print(
-            f'[{device}] mgu_hardfxp rmse={rmse:.4f}, '
+            f'[{device}] mgu_hard_fxp rmse={rmse:.4f}, '
             f'hard/reference ratio={ref_elapsed.seconds / max(elapsed.seconds, 1e-12):.2f}x'
         )
         assert rmse < 0.05, (device, rmse)
@@ -68,7 +90,7 @@ def _copy_parameters(target, source):
 
 def _make_candidate():
     torch.manual_seed(17)
-    candidate = mgu_hardfxp(
+    candidate = mgu_hard_fxp(
         6, 4, bias=True, config={'intwidth': 3, 'fracwidth': 6}
     )
     for parameter in candidate.parameters():
@@ -78,7 +100,7 @@ def _make_candidate():
 
 def make_module_pair():
     candidate = _make_candidate()
-    reference = mgu_hard(6, 4, bias=True)
+    reference = _ReferenceMgu(6, 4)
     _copy_parameters(reference, candidate)
     return candidate, reference
 
@@ -111,7 +133,7 @@ def gradient_case():
 
 
 def expected_ste_gradients(candidate, inputs, grad_output):
-    reference = mgu_hardfxp(
+    reference = mgu_hard_fxp(
         6, 4, bias=True, config={'intwidth': 3, 'fracwidth': 6}
     ).to(inputs[0].device)
     _copy_parameters(reference, candidate)
@@ -139,10 +161,10 @@ CONFIG = {
 }
 
 
-def test_mgu_hardfxp():
-    """Verify mgu_hardfxp quantization and STE gradients against its reference, including timing."""
+def test_mgu_hard_fxp():
+    """Verify mgu_hard_fxp quantization and STE gradients against its reference, including timing."""
     single_shot_suite(CONFIG)
 
 
 if __name__ == '__main__':
-    test_mgu_hardfxp()
+    test_mgu_hard_fxp()

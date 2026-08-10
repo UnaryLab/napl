@@ -3,7 +3,7 @@ import torch
 from napl.sim.base import global_config, napl_base, napl_sim_timesteps
 from napl.utils import gen_rand_tensor
 from napl.utils._shared_test import devices, streaming_suite, timer
-from napl.sim.module import linear, linear_ugemm
+from napl.sim.module import linear_mix, linear_ugemm
 from napl.sim.operation import encode, decode
 
 
@@ -91,7 +91,7 @@ def _kernel_specific_checks():
         bias = bias_cpu.to(device)
         enc = encode({'polarity': 'bipolar', 'timestep': timestep, 'generator': 'sobol', 'dim': 2}).to(device)
         ug = linear_ugemm(weight, bias, lin_cfg).to(device)
-        lin = linear(weight, bias, {**lin_cfg, 'dim': 3}).to(device)
+        lin = linear_mix(weight, bias, {**lin_cfg, 'dim': 3}).to(device)
 
         spikes = [enc(input_x).clone() for _ in range(timestep)]
         enc.reset()
