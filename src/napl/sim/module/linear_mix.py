@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
-from napl.sim.operation import add_any
+from napl.sim.operation import add_scale
 from napl.sim.operation import encode
 from napl.sim.module._shared import _check_acc_width
 from loguru import logger
@@ -28,7 +28,7 @@ class linear_mix(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import linear_mix
+        from napl.sim.module import linear_mix
 
         layer = linear_mix(torch.zeros(3, 2), config={"polarity": "bipolar",
                        "timestep": 4, "generator": "sobol"})
@@ -40,6 +40,10 @@ class linear_mix(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: The weight and bias encoders are held inside the layer, so the RTL
+    #: counterpart encodes those operands itself from held numeric codes
+    #: instead of taking them as spikes from a shared encoder.
+    internal_encode = True
 
 
     def __init__(
@@ -70,7 +74,7 @@ class linear_mix(napl_base):
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **dim**: One-based weight Sobol dimension, with the bias on the next dimension; the default is ``2``.
               - **scale**: Output scaling divisor, where ``None`` uses ``in_features + has_bias``; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
@@ -111,7 +115,8 @@ class linear_mix(napl_base):
         self.w_encoder = encode({'polarity': self.polarity, 'timestep': config['timestep'],
                                 'generator': config['generator'], 'dim': dim})
         #: Streaming unary adder that reduces each linear product count.
-        self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': self.width})
+        self.acc = add_scale({'polarity': self.polarity, 'scale': self.scale,
+                              'intwidth': self.width, 'fracwidth': 0})
 
         if self.has_bias:
             #: Encoder that converts the optional numeric bias to spikes.
@@ -122,8 +127,8 @@ class linear_mix(napl_base):
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -137,11 +142,11 @@ class linear_mix(napl_base):
         pass
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor whose last dimension is
+            input: ``0``/``1`` tensor whose last dimension is
                 ``in_features``. Leading dimensions are preserved.
 
         Returns:
@@ -153,7 +158,7 @@ class linear_mix(napl_base):
         modified.
         """
         w_spike = self.w_encoder(self.weight)
-        xf = input_spike.type(self.ntype)
+        xf = input.type(self.ntype)
         wf = w_spike.type(self.ntype)
         psum = torch.matmul(xf, wf.t())
         if self.polarity == 'bipolar':

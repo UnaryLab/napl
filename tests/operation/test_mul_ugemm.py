@@ -34,7 +34,7 @@ def make_values(polarity):
     )
 
 
-def make_performance_values(polarity):
+def make_random_perf_values(polarity):
     low = -1.0 if polarity == 'bipolar' else 0.0
     values = torch.linspace(low, 1.0, 131072, dtype=global_config.ntype)
     return values, values.roll(17)
@@ -57,7 +57,7 @@ def known_answer_case(polarity):
             torch.tensor([-1.0, 1.0, -1.0, 1.0]),
         )
         expected = torch.tensor([1.0, -1.0, -1.0, 1.0])
-    return values, expected, 0.0
+    return values, expected
 
 
 def check_rank2():
@@ -83,11 +83,10 @@ def check_rank2():
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 1.0,
     'make_operation': make_operation,
     'apply_operation': apply_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'extra_checks': check_rank2,

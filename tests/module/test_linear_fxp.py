@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.module import linear_fxp
-from napl.utils._shared_test import devices, single_shot_suite
+from napl.utils._shared_test import devices, non_streaming_suite
 
 
 _IN_FEATURES = 16
@@ -50,7 +50,7 @@ def make_inputs():
     return (value,)
 
 
-def make_performance_values():
+def make_random_perf_values():
     return (make_inputs()[0].repeat(4096, 1),)
 
 
@@ -76,13 +76,11 @@ def expected_ste_gradients(candidate, inputs, grad_output):
 
 
 CONFIG = {
-    'quantization_atol': 0.05,
-    'known_answer_atol': 0.0,
     'gradient_atol': 1e-6,
     'gradient_rtol': 1e-6,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,
@@ -91,7 +89,7 @@ CONFIG = {
 
 def test_linear_fxp():
     """Verify linear_fxp quantization and STE gradients against its reference, including timing."""
-    single_shot_suite(CONFIG)
+    non_streaming_suite(CONFIG)
 
 
 def test_fxp_signed_saturation():

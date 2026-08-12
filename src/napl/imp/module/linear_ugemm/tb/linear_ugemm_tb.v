@@ -23,14 +23,14 @@ module linear_ugemm_tb;
 
     reg                         i_clk;
     reg                         i_rst_n;
-    reg  [`GEN_IN_FEATURES-1:0] i_input_spike_u;
-    reg  [`GEN_IN_FEATURES-1:0] i_input_spike_b;
-    wire [`GEN_LANES-1:0]       o_out_u;
-    wire [`GEN_LANES-1:0]       o_out_u_nb;
-    wire [`GEN_LANES-1:0]       o_out_b;
-    wire [`GEN_LANES-1:0]       o_out_b_nb;
-    wire [`GEN_LANES-1:0]       o_out_u_s;
-    wire [`GEN_LANES-1:0]       o_out_b_s;
+    reg  [`GEN_IN_FEATURES-1:0] i_input_u;
+    reg  [`GEN_IN_FEATURES-1:0] i_input_b;
+    wire [`GEN_LANES-1:0]       o_output_u;
+    wire [`GEN_LANES-1:0]       o_output_u_nb;
+    wire [`GEN_LANES-1:0]       o_output_b;
+    wire [`GEN_LANES-1:0]       o_output_b_nb;
+    wire [`GEN_LANES-1:0]       o_output_u_s;
+    wire [`GEN_LANES-1:0]       o_output_b_s;
 
     // Held fixed-point operands: per lane, GEN_IN_FEATURES weight codes then the
     // bias code. Generated from the model, so the DUT sees its exact parameters.
@@ -82,10 +82,10 @@ module linear_ugemm_tb;
     ) dut_u (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .o_out         (o_out_u)
+        .o_output      (o_output_u)
     );
 
     // HAS_BIAS = 0 drops the bias addend, so entry and the default scale shrink.
@@ -99,10 +99,10 @@ module linear_ugemm_tb;
     ) dut_u_nb (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight_u),
         .i_bias        (i_bias_u),
-        .o_out         (o_out_u_nb)
+        .o_output      (o_output_u_nb)
     );
 
     linear_ugemm_bipolar #(
@@ -115,10 +115,10 @@ module linear_ugemm_tb;
     ) dut_b (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight_b),
         .i_bias        (i_bias_b),
-        .o_out         (o_out_b)
+        .o_output      (o_output_b)
     );
 
     linear_ugemm_bipolar #(
@@ -131,10 +131,10 @@ module linear_ugemm_tb;
     ) dut_b_nb (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight_b),
         .i_bias        (i_bias_b),
-        .o_out         (o_out_b_nb)
+        .o_output      (o_output_b_nb)
     );
 
     // SCALE differs from ENTRY here, so the divisor is exercised independently of
@@ -151,10 +151,10 @@ module linear_ugemm_tb;
     ) dut_u_s (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight_s),
         .i_bias        (i_bias_s),
-        .o_out         (o_out_u_s)
+        .o_output      (o_output_u_s)
     );
 
     linear_ugemm_bipolar #(
@@ -167,10 +167,10 @@ module linear_ugemm_tb;
     ) dut_b_s (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight_s),
         .i_bias        (i_bias_s),
-        .o_out         (o_out_b_s)
+        .o_output      (o_output_b_s)
     );
 
     // One character wider than the widest golden column: $fscanf("%s") truncates
@@ -244,8 +244,8 @@ module linear_ugemm_tb;
     initial begin
         i_clk           = 1'b0;
         i_rst_n         = 1'b1;
-        i_input_spike_u = {`GEN_IN_FEATURES{1'b0}};
-        i_input_spike_b = {`GEN_IN_FEATURES{1'b0}};
+        i_input_u = {`GEN_IN_FEATURES{1'b0}};
+        i_input_b = {`GEN_IN_FEATURES{1'b0}};
 
         fd = $fopen("vec/linear_ugemm.vec", "r");
         if (fd == 0) begin
@@ -297,35 +297,35 @@ module linear_ugemm_tb;
                     #1;
                 end
 
-                i_input_spike_u = in_u;
-                i_input_spike_b = in_b;
+                i_input_u = in_u;
+                i_input_b = in_b;
                 #1;
 
                 n = n + 1;
-                if (o_out_u !== exp_u) begin
-                    $display("FAIL n=%0d unipolar bias : got %b exp %b", n, o_out_u, exp_u);
+                if (o_output_u !== exp_u) begin
+                    $display("FAIL n=%0d unipolar bias : got %b exp %b", n, o_output_u, exp_u);
                     fails = fails + 1;
                 end
-                if (o_out_u_nb !== exp_u_nb) begin
-                    $display("FAIL n=%0d unipolar nobias : got %b exp %b", n, o_out_u_nb, exp_u_nb);
+                if (o_output_u_nb !== exp_u_nb) begin
+                    $display("FAIL n=%0d unipolar nobias : got %b exp %b", n, o_output_u_nb, exp_u_nb);
                     fails = fails + 1;
                 end
-                if (o_out_b !== exp_b) begin
-                    $display("FAIL n=%0d bipolar bias : got %b exp %b", n, o_out_b, exp_b);
+                if (o_output_b !== exp_b) begin
+                    $display("FAIL n=%0d bipolar bias : got %b exp %b", n, o_output_b, exp_b);
                     fails = fails + 1;
                 end
-                if (o_out_b_nb !== exp_b_nb) begin
-                    $display("FAIL n=%0d bipolar nobias : got %b exp %b", n, o_out_b_nb, exp_b_nb);
+                if (o_output_b_nb !== exp_b_nb) begin
+                    $display("FAIL n=%0d bipolar nobias : got %b exp %b", n, o_output_b_nb, exp_b_nb);
                     fails = fails + 1;
                 end
-                if (o_out_u_s !== exp_u_s) begin
+                if (o_output_u_s !== exp_u_s) begin
                     $display("FAIL n=%0d unipolar scale=%0d : got %b exp %b",
-                             n, `GEN_SCALE_S, o_out_u_s, exp_u_s);
+                             n, `GEN_SCALE_S, o_output_u_s, exp_u_s);
                     fails = fails + 1;
                 end
-                if (o_out_b_s !== exp_b_s) begin
+                if (o_output_b_s !== exp_b_s) begin
                     $display("FAIL n=%0d bipolar scale=%0d : got %b exp %b",
-                             n, `GEN_SCALE_S, o_out_b_s, exp_b_s);
+                             n, `GEN_SCALE_S, o_output_b_s, exp_b_s);
                     fails = fails + 1;
                 end
 

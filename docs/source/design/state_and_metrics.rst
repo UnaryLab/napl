@@ -9,8 +9,8 @@ Lifecycle and reset
 -------------------
 
 Streaming state belongs to the class that updates it, while
-:class:`napl.napl_base` provides the common lifecycle. The public reset
-contract is documented by :meth:`napl.napl_base.reset`; class-specific state
+:class:`napl.sim.base.napl_base` provides the common lifecycle. The public reset
+contract is documented by :meth:`napl.sim.base.napl_base.reset`; class-specific state
 behavior belongs to each class's API documentation. The implementation and
 verification requirements remain in the canonical simulation policy linked
 above.
@@ -42,7 +42,11 @@ Metric analysis
 ---------------
 
 Metrics separate streaming observation from explicit analysis. The metric API
-pages own their call, state, and analysis contracts: :class:`napl.accuracy`,
-:class:`napl.correlation`, :class:`napl.stability`,
-:class:`napl.stability_flux`, and :class:`napl.stability_norm`. Shared summary
-calculation is listed as :func:`napl.analyze`.
+pages own their call, state, and analysis contracts: :class:`napl.sim.metric.accuracy`,
+:class:`napl.sim.metric.correlation`, :class:`napl.sim.metric.stability`,
+:class:`napl.sim.metric.stability_flux`, and :class:`napl.sim.metric.stability_norm`. Shared summary
+calculation is exposed as ``analyze``.
+
+:class:`napl.sim.metric.stability_builder` sits in the same package and runs the other
+direction: each call emits the next spike of a stream designed to hold a
+requested normalized stability, so it has no ``analyze`` contract.

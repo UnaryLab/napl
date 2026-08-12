@@ -6,6 +6,7 @@ from loguru import logger
 from dataclasses import dataclass, field
 from napl.utils import read_yaml
 from functools import wraps
+from inspect import unwrap
 
 
 torch_dtype_map = {
@@ -30,9 +31,11 @@ torch_dtype_map = {
 
 def check_config(config: dict, key_list: list, optional_key_list: list = []):
     """
-    Check if all key in the key_list exists in the config.
+    Check that every key in ``key_list`` is present in ``config``.
 
-    Keys in the optional_key_list may be absent; any other key is rejected.
+    Keys in ``optional_key_list`` and the key ``name`` may be absent; any key
+    outside these three groups is rejected. Raises ``AssertionError`` on a
+    missing required key or an unknown key.
     """
     for key in key_list:
         if key not in config:
@@ -50,7 +53,10 @@ def check_config(config: dict, key_list: list, optional_key_list: list = []):
 
 def check_polarity(config: dict):
     """
-    Check if polarity is legal.
+    Check that the optional ``polarity`` key of ``config`` is legal.
+
+    Returns the lowercased polarity, or ``None`` when the key is absent. Raises
+    ``AssertionError`` for anything other than ``"unipolar"`` or ``"bipolar"``.
     """
     polarity = config.get('polarity', None)
     if polarity is not None:
@@ -69,7 +75,10 @@ def check_polarity(config: dict):
 
 def check_name(config: dict):
     """
-    Check if name is available.
+    Check that the optional ``name`` key of ``config`` is a string.
+
+    Returns the lowercased name, or ``None`` when the key is absent. Raises
+    ``AssertionError`` when the value is not a string.
     """
     name = config.get('name', None)
     if name is not None:
@@ -87,6 +96,7 @@ _GLOBAL_CONFIG_FILE = os.path.join(_GLOBAL_ROOT_PATH, 'sim/base/global_config.ya
 
 @dataclass
 class global_config_check:
+    """Hold the process-wide spike and non-spike dtypes read from the global YAML configuration."""
     #: Installed NAPL package directory used to locate shared data files.
     root_path: str = field(default_factory=lambda: _GLOBAL_ROOT_PATH)
     #: YAML file that defines the process-wide spike and non-spike dtypes.
@@ -118,6 +128,7 @@ global_config = global_config_check()
 
 @dataclass(frozen=True)
 class pvt_corner:
+    """Identify one immutable process, voltage, temperature, RC, and mode scenario used to key timing data."""
     #: Technology-node identifier, such as ``"asap7"``.
     node: str
     #: Process corner or standard-cell library set, such as ``"ss"``.
@@ -134,6 +145,7 @@ class pvt_corner:
 
 @dataclass
 class timing:
+    """Hold the nanosecond path delays measured for a module at one ``pvt_corner``."""
     #: Worst internal combinational delay in nanoseconds.
     cp_delay: float = 0.0
     #: Input-port-to-first-register delay in nanoseconds.
@@ -144,6 +156,7 @@ class timing:
 
 @dataclass
 class hw_params:
+    """Describe a module's hardware counterpart: its pipeline latency and its characterized timing data."""
     #: Input-to-output pipeline latency in clock cycles.
     pp_delay: int = 0
     #: Timing data indexed by ``pvt_corner``.
@@ -154,7 +167,7 @@ class napl_base(torch.nn.Module):
     """Provide shared execution state and reset behavior for NAPL modules.
 
     Use this class as the base of a new NAPL simulation module. Streaming
-    subclasses advance ``timestep_cur`` once per call. Single-shot subclasses set
+    subclasses advance ``timestep_cur`` once per call. Non-streaming subclasses set
     ``streaming = False`` and leave the timestep at ``0``.
 
     Every module takes its tensor dtypes from the module-level ``global_config``
@@ -181,7 +194,7 @@ class napl_base(torch.nn.Module):
 
     .. code-block:: python
 
-        from napl import napl_base
+        from napl.sim.base import napl_base
 
         module = napl_base()
         module.tick()
@@ -192,10 +205,11 @@ class napl_base(torch.nn.Module):
     #: Whether each call represents one streaming timestep.
     streaming = True
 
-    #: Whether the RTL counterpart must hold its own encoder.
-    #: True when encoding advances conditionally on data, as in conditional
-    #: bitstream generation, so the encoder cannot be shared with other
-    #: operations.
+    #: Whether the RTL counterpart holds its own encoder.
+    #: True when the hardware counterpart carries the encoder itself, covering
+    #: both encoding that advances conditionally on data and operands such as
+    #: weights and biases that it encodes internally from held numeric codes.
+    #: The binary-domain fxp classes have no encoder, so they are False.
     internal_encode = False
 
 
@@ -203,10 +217,11 @@ class napl_base(torch.nn.Module):
         """Initialize shared configuration, execution state, and hardware metadata.
 
         Args:
-            config: Module configuration. The shared optional keys are
-                **polarity**, ``"unipolar"`` or ``"bipolar"``, and **name**, a
-                user label. Their defaults are supplied by ``check_polarity()``
-                and ``check_name()`` when the caller permits them to be absent.
+            config: Module configuration. **name**, a user label, is always
+                accepted and defaults to ``None``. **polarity**, ``"unipolar"``
+                or ``"bipolar"``, is accepted only when the subclass lists it in
+                ``key_list`` or ``optional_key_list``, and defaults to ``None``
+                when absent.
             key_list: Configuration keys accepted by the subclass. Defaults to
                 an empty list.
             optional_key_list: Configuration keys the subclass accepts but does
@@ -234,7 +249,7 @@ class napl_base(torch.nn.Module):
         self.name = check_name(config)
 
         parts = type(self).__module__.split('.')
-        #: Simulation layer this class belongs to: the ``napl.sim`` subdirectory
+        #: Simulation layer this class belongs to, given by the ``napl.sim`` subdirectory
         #: of the defining module, such as ``"operation"``, ``"module"``,
         #: ``"metric"``, ``"structure"``, or ``"algorithm"``. A class defined
         #: outside ``napl.sim`` reports ``""``.
@@ -275,7 +290,7 @@ class napl_base(torch.nn.Module):
         ``None``; callers use :meth:`reset` instead.
 
         Every streaming subclass defines this hook. A streaming subclass with
-        no local mutable state uses a documented ``pass``. A single-shot
+        no local mutable state uses a documented ``pass``. A non-streaming
         subclass may inherit this no-op implementation.
         """
         pass
@@ -289,7 +304,7 @@ class napl_base(torch.nn.Module):
             ``True`` when ``timestep_cur > 0``; otherwise ``False``.
 
         Reading this property does not change state. It remains ``False`` for
-        single-shot modules because they do not advance ``timestep_cur``.
+        non-streaming modules because they do not advance ``timestep_cur``.
         """
         return self.timestep_cur > 0
 
@@ -311,6 +326,39 @@ class napl_base(torch.nn.Module):
         self.timestep_cur += 1
 
 
+    def forward_timestep(self, *args, **kwargs):
+        """Advance ``forward()`` by exactly one timestep.
+
+        Args:
+            *args: Positional inputs forwarded to ``forward()``.
+            **kwargs: Keyword inputs forwarded to ``forward()``.
+
+        Returns:
+            The value ``forward()`` produces for one timestep.
+
+        The call increments ``timestep_cur`` once for a streaming module and
+        runs a single timestep even when ``forward()`` carries the
+        ``napl_sim_timesteps`` decorator, so a caller can step a run and read
+        the progressively refined result after each timestep. It never resets,
+        so consecutive calls continue the current run.
+
+        **Example:**
+
+        .. code-block:: python
+
+            import torch
+            from napl.sim.operation import shiftreg
+
+            delay = shiftreg({'depth': 2})
+            for _ in range(4):
+                output = delay.forward_timestep(torch.tensor([1], dtype=torch.int8))
+            assert delay.timestep_cur == 4
+        """
+        if self.streaming:
+            self.tick()
+        return unwrap(type(self).forward)(self, *args, **kwargs)
+
+
     def __call__(self, *args, **kwargs):
         """Run ``forward()`` and update streaming execution state.
 
@@ -322,7 +370,7 @@ class napl_base(torch.nn.Module):
             The value returned by ``forward()``.
 
         For streaming modules, the call increments ``timestep_cur`` before
-        ``forward()`` runs. Single-shot modules with ``streaming = False`` do not
+        ``forward()`` runs. Non-streaming modules with ``streaming = False`` do not
         change the timestep. Call the module normally instead of invoking this
         method directly.
         """
@@ -361,34 +409,59 @@ class napl_base(torch.nn.Module):
 
 
 def napl_sim_timesteps(timestep_func):
-    """Repeat a NAPL method or free function for a requested number of timesteps.
+    """Repeat a NAPL method or free function for a run of timesteps.
 
     Args:
         timestep_func: Callable that advances one timestep per invocation.
 
     Returns:
         A wrapper accepting the same arguments plus two keyword-only entries:
-        **timesteps**, the required number of repetitions, and **verbose**,
-        which logs the run when ``True`` and defaults to ``False``. The wrapper
-        returns the value produced by the final repetition.
+        **timesteps**, the number of repetitions, and **verbose**, which logs
+        the run when ``True`` and defaults to ``False``. The wrapper returns the
+        value produced by the final repetition.
+
+    A ``napl_base`` module carrying a ``timestep`` attribute, such as a hub
+    wrapper, may omit **timesteps**. One such call is then a complete fresh run:
+    the wrapper resets the module and its children, repeats the callable for the
+    configured ``timestep`` cycles on the same arguments, and counts those cycles
+    on ``timestep_cur`` for a streaming module. A non-streaming module keeps
+    ``timestep_cur`` at ``0``, and its streaming children hold the cycle count
+    instead. Any state the caller set beforehand,
+    including a partly advanced run, is discarded by that reset, so repeating
+    the call on the same input returns the same result. Every other target must
+    pass **timesteps**, and the wrapper then repeats the callable without
+    resetting it. Use :meth:`napl_base.forward_timestep` to advance a decorated
+    ``forward()`` one timestep at a time instead.
     """
     @wraps(timestep_func)
     def timesteps_wrapper(*args, **kwargs):
-        if 'timesteps' not in kwargs:
+        module = args[0] if args and isinstance(args[0], napl_base) else None
+        # A module that carries its own run length needs no timesteps argument.
+        fresh_run = 'timesteps' not in kwargs and getattr(module, 'timestep', None) is not None
+        if 'timesteps' not in kwargs and not fresh_run:
             message = 'Timesteps not specified in the arguments. Please provide <timesteps> as a keyword argument.'
             logger.error(message)
             raise AssertionError(message)
 
-        timesteps = kwargs.pop('timesteps', 256)
+        timesteps = kwargs.pop('timesteps', None)
         verbose = kwargs.pop('verbose', False)
+        if fresh_run:
+            timesteps = module.timestep
+            module.reset()
         if verbose:
-            if args and isinstance(args[0], napl_base):
-                target = f'class <{args[0].__class__.__name__}>'
+            if module is not None:
+                target = f'class <{module.__class__.__name__}>'
             else:
                 target = f'function <{timestep_func.__name__}>'
             logger.info(f'Simulating <{timesteps}> timesteps in NAPL {target}...')
 
         for _ in range(timesteps):
+            # A streaming module counts a fresh run's cycles on its own counter,
+            # since __call__ charges its tick and the reset cleared the one charged
+            # for this run, while a non-streaming hub keeps its counter at 0 and its
+            # streaming children carry the cycle count instead.
+            if fresh_run and module.streaming:
+                module.tick()
             output = timestep_func(*args, **kwargs)
         return output
 

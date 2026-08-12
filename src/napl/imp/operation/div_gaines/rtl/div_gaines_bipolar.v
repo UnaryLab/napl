@@ -12,7 +12,7 @@ module div_gaines_bipolar #(
     input  wire i_rst_n,
     input  wire i_dividend,
     input  wire i_divisor,
-    output wire o_out
+    output wire o_output
 );
     localparam [WIDTH-1:0] CNT_MAX = {WIDTH{1'b1}};
     localparam [WIDTH-1:0] CNT_INIT = {
@@ -30,8 +30,8 @@ module div_gaines_bipolar #(
     initial $readmemb("vec/div_gaines_rom.hex", rng_rom);
 
     assign rng_value = rng_rom[rng_idx];
-    assign o_out = (cnt > rng_value);
-    assign increment = ~(divisor_d ^ i_divisor ^ o_out);
+    assign o_output = (cnt > rng_value);
+    assign increment = ~(divisor_d ^ i_divisor ^ o_output);
     assign decrement = i_dividend ^ i_divisor;
 
     always @(posedge i_clk or negedge i_rst_n) begin

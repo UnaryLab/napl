@@ -37,7 +37,7 @@ class conv_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import conv_gaines
+        from napl.sim.module import conv_gaines
 
         layer = conv_gaines(torch.zeros(2, 2, 2, 2), padding=1,
                             config={"polarity": "bipolar", "timestep": 256,
@@ -75,8 +75,8 @@ class conv_gaines(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: First weight sequence dimension, with one dimension per kernel position above it, the bias on ``dim + K``, the scaled threshold on ``dim + K + 1`` and the bipolar pad stream on ``dim + K + 2``, where ``K`` is the kernel fan-in; the default is ``2``.
-              - **scaled**: Use random-threshold scaled addition when ``True``; the default is ``True``.
+              - **dim**: First weight sequence dimension, with one dimension per kernel position above it, the bias on ``dim + K``, the scaled adder's MUX select sequence on ``dim + K + 1`` and the bipolar pad stream on ``dim + K + 2``, where ``K`` is the kernel fan-in; the default is ``2``.
+              - **scaled**: Use MUX-select scaled addition, which picks one input per timestep by a Sobol-derived index, when ``True``; the default is ``True``.
               - **name**: Optional instance label.
 
         In scaled mode, ``in_channels * kernel_height * kernel_width + has_bias``
@@ -85,7 +85,8 @@ class conv_gaines(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scaled'], polarity_required=True)
 
-        #: Whether the Gaines adder uses random-threshold scaled addition.
+        #: Whether the Gaines adder uses MUX-select scaled addition, selecting one
+        #: input bit per timestep by a Sobol-derived index.
         self.scaled = config.get('scaled', True)
         if self.polarity == 'bipolar' and not self.scaled:
             message = 'Non-scaled Gaines addition in conv_gaines does not support bipolar data.'
@@ -169,8 +170,8 @@ class conv_gaines(napl_base):
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -186,11 +187,11 @@ class conv_gaines(napl_base):
         self._out_hw = None
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one NCHW input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor shaped
+            input: ``0``/``1`` tensor shaped
                 ``(batch, in_channels, height, width)``.
 
         Returns:
@@ -203,10 +204,10 @@ class conv_gaines(napl_base):
         rebuilt when the input geometry or device changes.
         """
         ph, pw = self.padding
-        if self._im2col_key != (input_spike.shape, input_spike.device):
-            self._build_im2col(input_spike)
+        if self._im2col_key != (input.shape, input.device):
+            self._build_im2col(input)
         # unfold requires floating input; converting 0/1 spikes is exact.
-        xf = input_spike.type(self.ntype)
+        xf = input.type(self.ntype)
         if self.polarity == 'bipolar' and self.padding != (0, 0):
             # A decorrelated rate-0.5 pad stream represents bipolar zero.
             pad_bit = self.pad_bits[(self.timestep_cur - 1) % self.pad_len]
@@ -220,8 +221,8 @@ class conv_gaines(napl_base):
         self.core.weight = self.weight.reshape(self.out_channels, -1)
         self.core.bias = None if self.bias is None else self.bias.data
         acc = self.core(inp)
-        return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
-                  .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)
+        return acc.view(input.size(0), -1, acc.size(-1)).transpose(1, 2) \
+                  .reshape(input.size(0), acc.size(-1), *self._out_hw)
 
 
     @property
@@ -230,18 +231,18 @@ class conv_gaines(napl_base):
         return self.core.acc
 
 
-    def _build_im2col(self, input_spike):
+    def _build_im2col(self, input):
         ph, pw = self.padding
         self._out_hw = conv2d_output_shape(
-            (input_spike.size(2), input_spike.size(3)),
+            (input.size(2), input.size(3)),
             kernel_size=self.kernel_size,
             dilation=self.dilation,
             pad=self.padding,
             stride=self.stride,
         )
-        c = input_spike.size(1)
-        hp = input_spike.size(2) + 2 * ph
-        wp = input_spike.size(3) + 2 * pw
+        c = input.size(1)
+        hp = input.size(2) + 2 * ph
+        wp = input.size(3) + 2 * pw
         # Build exact float64 indices on CPU because MPS lacks float64.
         ar = torch.arange(c * hp * wp, dtype=torch.float64).view(1, c, hp, wp)
         unfolded = torch.nn.functional.unfold(
@@ -249,5 +250,5 @@ class conv_gaines(napl_base):
         )
         # Output-position-major indices map a flat gather to (positions, K).
         self._im2col_idx = unfolded.view(self.K, -1).t().contiguous().long().view(-1) \
-            .to(input_spike.device)
-        self._im2col_key = (input_spike.shape, input_spike.device)
+            .to(input.device)
+        self._im2col_key = (input.shape, input.device)

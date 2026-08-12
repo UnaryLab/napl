@@ -2,6 +2,7 @@ import torch
 
 from napl.sim.base import napl_base
 from .bi2uni import bi2uni
+from .decorr import decorr
 from .div_cordiv import div_cordiv
 
 
@@ -28,7 +29,7 @@ class sqrt_traceiscb(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sqrt_traceiscb
+        from napl.sim.operation import sqrt_traceiscb
 
         operation = sqrt_traceiscb({'polarity': 'unipolar'})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -65,7 +66,11 @@ class sqrt_traceiscb(napl_base):
 
         #: Correlated-divider stage that updates the square-root trace.
         self.cordiv_kernel = div_cordiv({'depth': 2, 'generator': 'sobol'})
-        #: One-timestep delayed input used by the trace update.
+        # The Sobol input and bi2uni output streams phase-lock to the period-2 dividend gate, pinning the divider trace at 0.5 and returning the input instead of its square root, so this decorrelating shuffle buffer breaks the lock to restore an approximate p_q = u / (u + 1); its depth, period, and generator are an empirical local optimum, and the declared fidelity bounds hold only under the tests' Sobol input encoder.
+        #: Shuffle buffer that decorrelates the trace-path input from the dividend gate.
+        self.decorr = decorr({'polarity': 'unipolar', 'depth': 4,
+                              'timestep': 256, 'generator': 'lfsr', 'seed': 1})
+        #: Toggling flip-flop state that gates the divider dividend on alternating timesteps.
         self.dff: torch.Tensor
         self.register_buffer('dff', torch.zeros(1, dtype=torch.int8))
         #: Saved square-root trace inserted into the current input stream.
@@ -73,10 +78,13 @@ class sqrt_traceiscb(napl_base):
         self.register_buffer('trace', torch.zeros(1, dtype=torch.int8))
 
         if self.polarity == 'bipolar':
-            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
+            #: Converter that re-encodes the bipolar output value ``2p - 1`` as a
+            #: unipolar rate in bipolar mode.
             self.bi2uni = bi2uni({'width': 3})
         #: Hardware latency and timing metadata for the composed square-root path.
         self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
@@ -86,7 +94,7 @@ class sqrt_traceiscb(napl_base):
 
     def _reset(self):
         """
-        Clear the local delay and trace buffers.
+        Clear the local toggle and trace buffers.
 
         Registered child kernels are reset by :meth:`reset` before this local reset.
         """
@@ -128,8 +136,10 @@ class sqrt_traceiscb(napl_base):
 
     def _unipolar_trace(self, output):
         """Update the saved trace from a unipolar output spike."""
+        # decorr returns one reordered stream per port; the second is unused.
+        shuffled, _ = self.decorr(output, output)
         dff_inv = 1 - self.dff
-        dividend = dff_inv & output.type(torch.int8)
+        dividend = dff_inv & shuffled.type(torch.int8)
         divisor = self.dff | dividend
 
         trace = self.cordiv_kernel(dividend, divisor)

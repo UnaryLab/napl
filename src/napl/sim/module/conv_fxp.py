@@ -14,7 +14,7 @@ _DEFAULT_CONFIG = {
 class conv_fxp(napl_base):
     r"""Apply a trainable fixed-point approximation of ``torch.nn.Conv2d``.
 
-    Use this single-shot layer for quantization-aware convolution with
+    Use this non-streaming layer for quantization-aware convolution with
     ``groups=1`` and zero padding. The target is
 
     .. math::
@@ -37,7 +37,7 @@ class conv_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import conv_fxp
+        from napl.sim.module import conv_fxp
 
         layer = conv_fxp(1, 2, 3, padding=1)
         output = layer(torch.zeros(1, 1, 4, 4))
@@ -74,7 +74,7 @@ class conv_fxp(napl_base):
         """
         super().__init__(config, [], optional_key_list=list(_DEFAULT_CONFIG))
         cfg = {**_DEFAULT_CONFIG, **config}
-        #: Spatial height and width of the convolution kernel.
+        #: Convolution kernel size, as an integer or a height-width pair.
         self.kernel_size = kernel_size
         #: Spatial step between adjacent convolution windows.
         self.stride = stride

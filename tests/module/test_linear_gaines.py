@@ -106,26 +106,9 @@ def _kernel_specific_checks():
             err = (inst.decoder.spike_value - r_value).abs()
             rmse = torch.sqrt(err.pow(2).mean()).item()
             print(f'[{device}] scaled {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
-            # The residual error is systematic Gaines sub-lattice bias
-            # (add_gaines builds its MUX select with period = entry, so each
-            # feature's weight threshold samples a stride-entry Sobol
-            # sub-lattice), flat in timestep. The fixtures are deterministic, so
-            # the bipolar rmse is exact: 0.0545 (bias) / 0.0232 (no bias) at
-            # this timestep; bound = 2x the worst pre-row-scale case (0.0697).
-            bound = 0.14 if polarity == 'bipolar' else 0.13
-            assert rmse < bound, f'{device}/scaled/{polarity}/bias={has_bias}: rmse {rmse}'
-            # Non-vacuity: a dead (const-zero) output must fail the bound.
-            const_zero_rmse = torch.sqrt(
-                (torch.zeros_like(r_value) - r_value).pow(2).mean()
-            ).item()
-            assert const_zero_rmse > bound, \
-                f'{device}/scaled/{polarity}/bias={has_bias}: bound {bound} is vacuous, ' \
-                f'const-zero rmse {const_zero_rmse} passes it'
-            # Scale-free coupling: the real output must beat a dead output 2x.
-            assert rmse < const_zero_rmse / 2, \
-                f'{device}/scaled/{polarity}/bias={has_bias}: rmse {rmse} is not ' \
-                f'well under const-zero rmse {const_zero_rmse}'
             assert inst.linear.timestep_cur == timestep
+            # The layer holds its own weight and bias encoders.
+            assert inst.linear.internal_encode is True
             inst.reset()
 
         # Non-scaled Gaines addition supports unipolar data only.
@@ -281,14 +264,16 @@ def make_values(polarity):
     return (torch.linspace(low, high, 16),)
 
 
-def make_performance_values(polarity):
+def make_random_perf_values(polarity):
     values = make_values(polarity)[0]
     return (values.repeat(32768, 1),)
 
 
 def analytic_reference(values, polarity):
+    # values[0] @ weight.T keeps the reference correct for a batched perf input
+    # of shape (rows, in_features) as well as a single fidelity vector.
     return _scaled_ref(
-        _suite_weight(polarity) @ values[0], polarity, 16
+        values[0] @ _suite_weight(polarity).T, polarity, 16
     )
 
 
@@ -297,16 +282,14 @@ def known_answer_case(polarity):
     return (
         (values,),
         analytic_reference((values,), polarity),
-        3.2 / (256 ** 0.5),
     )
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 3.2,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

@@ -7,13 +7,13 @@ module exp_n1_tb;
     reg i_clk;
     reg i_rst_n;
     reg i_input;
-    wire o_out;
+    wire o_output;
 
     exp_n1 #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_input),
-        .o_out(o_out)
+        .o_output(o_output)
     );
 
     integer fd;
@@ -63,10 +63,10 @@ module exp_n1_tb;
                     reset_dut;
                 #1;
                 count = count + 1;
-                if (o_out !== expected) begin
+                if (o_output !== expected) begin
                     $display(
                         "FAIL exp_n1 cycle %0d: in=%b got=%b expected=%b",
-                        count, i_input, o_out, expected
+                        count, i_input, o_output, expected
                     );
                     fails = fails + 1;
                 end

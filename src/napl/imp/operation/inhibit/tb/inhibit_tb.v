@@ -16,7 +16,7 @@ module inhibit_tb;
         .i_rst_n         (rst_n),
         .i_input_data    (in_data),
         .i_input_inhibit (in_inhibit),
-        .o_out           (out)
+        .o_output        (out)
     );
 
     integer fd, code, n, fails;
@@ -52,7 +52,7 @@ module inhibit_tb;
                     rst_n = 1'b1; #1;
                 end else begin
                     {in_data, in_inhibit} = {a, b}; // inputs of one timestep update atomically so the level latch never sees a half-updated vector
-                    #1;                  // settle the combinational o_out
+                    #1;                  // settle the combinational o_output
                     n = n + 1;
                     if (out !== exp_out) begin
                         $display("FAIL cycle %0d: in_data=%b in_inhibit=%b : got %b exp %b",

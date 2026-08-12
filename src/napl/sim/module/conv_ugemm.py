@@ -39,7 +39,7 @@ class conv_ugemm(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import conv_ugemm
+        from napl.sim.module import conv_ugemm
 
         layer = conv_ugemm(torch.zeros(2, 1, 3, 3), padding=1,
                            config={"polarity": "bipolar", "timestep": 4,
@@ -53,7 +53,8 @@ class conv_ugemm(napl_base):
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
     #: Encoding advances conditionally on data, so the RTL counterpart holds
-    #: its own encoder instead of sharing an external one.
+    #: its own encoder for the weight, bias, and pad streams instead of sharing
+    #: an external one.
     internal_encode = True
 
 
@@ -77,7 +78,7 @@ class conv_ugemm(napl_base):
               - **timestep**: Positive stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.
 
         Weight and bias are updatable only by an in-place write, such as
@@ -157,8 +158,8 @@ class conv_ugemm(napl_base):
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -187,11 +188,11 @@ class conv_ugemm(napl_base):
         return self.core.acc
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one NCHW input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor shaped
+            input: ``0``/``1`` tensor shaped
                 ``(batch, in_channels, height, width)``.
 
         Returns:
@@ -204,34 +205,32 @@ class conv_ugemm(napl_base):
         indices are rebuilt when the input geometry or device changes.
         """
         ph, pw = self.padding
-        if self._im2col_key != (input_spike.shape, input_spike.device):
-            self._build_im2col(input_spike)
+        if self._im2col_key != (input.shape, input.device):
+            self._build_im2col(input)
         # RNG comparison arithmetic requires floating input.
-        xf = input_spike.type(self.ntype)
+        xf = input.type(self.ntype)
         if self.padding != (0, 0):
             # Bipolar zero-padding alternates 0 and 1, starting with 0.
             pad_bit = float((self.timestep_cur - 1) % 2) if self._is_bipolar else 0.0
             xf = torch.nn.functional.pad(xf, (pw, pw, ph, ph), value=pad_bit)
         inp = xf.reshape(xf.size(0), -1).index_select(1, self._im2col_idx).view(-1, self.K)
 
-        # The patch spike broadcasts over output channels, so each patch position
-        # keeps one sequence index shared by the whole weight row.
         self.core.weight = self.weight.reshape(self.out_channels, -1)
         self.core.bias = None if self.bias is None else self.bias.data
         acc = self.core(inp)
-        return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
-                  .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)
+        return acc.view(input.size(0), -1, acc.size(-1)).transpose(1, 2) \
+                  .reshape(input.size(0), acc.size(-1), *self._out_hw)
 
 
-    def _build_im2col(self, input_spike):
+    def _build_im2col(self, input):
         ph, pw = self.padding
-        self._out_hw = conv2d_output_shape((input_spike.size(2), input_spike.size(3)),
+        self._out_hw = conv2d_output_shape((input.size(2), input.size(3)),
                                            kernel_size=self.kernel_size, dilation=self.dilation,
                                            pad=self.padding, stride=self.stride)
-        c, hp, wp = input_spike.size(1), input_spike.size(2) + 2 * ph, input_spike.size(3) + 2 * pw
+        c, hp, wp = input.size(1), input.size(2) + 2 * ph, input.size(3) + 2 * pw
         # Build exact float64 indices on CPU because MPS lacks float64.
         ar = torch.arange(c * hp * wp, dtype=torch.float64).view(1, c, hp, wp)
         u = torch.nn.functional.unfold(ar, self.kernel_size, self.dilation, 0, self.stride)
         # L-major indices map a flat gather to the (P, K) patch layout.
-        self._im2col_idx = u.view(self.K, -1).t().contiguous().long().view(-1).to(input_spike.device)
-        self._im2col_key = (input_spike.shape, input_spike.device)
+        self._im2col_idx = u.view(self.K, -1).t().contiguous().long().view(-1).to(input.device)
+        self._im2col_key = (input.shape, input.device)

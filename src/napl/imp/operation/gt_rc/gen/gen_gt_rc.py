@@ -3,13 +3,13 @@ Generate golden test vectors for the gt_rc RTL module straight from napl's
 functional Python model (napl.sim.operation.gt_rc) -- so the testbench checks the
 Verilog against the *actual* simulator, not a hand-derived truth table.
 
-gt_rc is stateful: it holds a 1-bit result register (dff, reset to 1) and a
+gt_rc is stateful: it holds a 1-bit decision register (reset to 1) and a
 2-bit skew counter inside sync_skewed (width=2, reset to 0). So a single stream
 of (in_0, in_1) pairs is driven from model.reset() and per-cycle I/O recorded.
 Because the op is stateful, the stream also exercises a MID-STREAM reset: after
 the state is dirtied by the first batch of pairs, model.reset() is called and a
 reset marker is emitted, then the stream continues -- proving the RTL's
-active-low i_rst_n returns dff->1 / cnt->0 from a dirtied state, matching the
+active-low i_rst_n returns decision->1 / cnt->0 from a dirtied state, matching the
 Python reset() exactly.
 
 Output: ../vec/gt_rc.vec, one line per cycle:

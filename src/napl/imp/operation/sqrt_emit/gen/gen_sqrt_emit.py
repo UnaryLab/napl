@@ -4,13 +4,13 @@ functional Python model (napl.sim.operation.sqrt_emit) -- so the testbench check
 the Verilog against the *actual* simulator, not a hand-derived truth table.
 
 sqrt_emit is opportunistic-bit-inserting square root. It is stateful: a unipolar
-non-scaled accumulator (add_any, scale=1, width=3), a depth-2 shift register that
+non-scaled accumulator (add_scale, scale=1, intwidth=3), a depth-2 shift register that
 scrambles the inverted output, the emitted feedback bit, and -- for bipolar only
 -- a bi2uni accumulator (width=2). Both polarity variants share the same input
 stream and the same accumulator/shiftreg path; only the feedback (emit) differs
 (unipolar uses output directly, bipolar uses bi2uni(output)).
 
-These sizes (nsadd width=3, shiftreg depth=2, bi2uni width=2) are intrinsic
+These sizes (nsadd intwidth=3, shiftreg depth=2, bi2uni width=2) are intrinsic
 algorithm constants hardcoded inside sqrt_emit.__init__; the op's only config key
 is `polarity` (no config-derived numeric size key), so the RTL carries no sizing
 parameters and is validated as-is.

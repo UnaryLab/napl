@@ -22,7 +22,7 @@ class max_tc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import max_tc
+        from napl.sim.operation import max_tc
 
         maximum = max_tc()
         output = maximum(torch.tensor([1], dtype=torch.int8),

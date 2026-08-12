@@ -7,7 +7,7 @@ from napl.sim.operation import div_gaines
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _gen_common import require_seeded_sys, pair_streams, rep_pairs
+from _gen_common import pair_streams, rep_pairs
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,9 +32,6 @@ CODEC_BI_0 = {**CODEC_UNI_0, "polarity": "bipolar"}
 # operands are drawn from a narrower range.
 BI_RANGE = (-1.0, 0.5)
 CODEC_BI_1 = {**CODEC_BI_0, "dim": 2}
-
-
-require_seeded_sys(BASE_CONFIG, CODEC_UNI_0, CODEC_UNI_1, CODEC_BI_0, CODEC_BI_1)
 
 
 def drive(model, stream_0, stream_1, reset_at):

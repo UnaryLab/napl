@@ -58,12 +58,14 @@ def analytic_reference(values, _polarity):
 def known_answer_case(_polarity):
     """Zero input against the fixed gates still follows the binary-domain cell."""
     values = (torch.zeros(BATCH, ISZ), _hx_value())
-    return values, _reference_mgu(values[0], values[1]), 0.2
+    return values, _reference_mgu(values[0], values[1])
 
 
 def check_bipolar_only():
-    """Verify mgu_hard_mix rejects unipolar configuration."""
+    """Verify mgu_hard_mix rejects unipolar configuration and reports a held encoder."""
     weight_f, bias_f, weight_n, bias_n = _reference_parameters()
+    # The gate multipliers encode their own operands.
+    assert make_operation('bipolar', TIMESTEPS, 'cpu').internal_encode is True
     try:
         mgu_hard_mix(weight_f, bias_f, weight_n, bias_n, _hx_value(),
             {'polarity': 'unipolar', 'timestep': 16, 'generator': 'sobol'})
@@ -74,7 +76,6 @@ def check_bipolar_only():
 
 CONFIG = {
     'polarities': ['bipolar'],
-    'tolerance_scale': 3.0,
     'make_operation': make_operation,
     'make_values': make_values,
     'analytic_reference': analytic_reference,
@@ -98,8 +99,8 @@ def test_mgu_hard_mix_width_drives_every_adder():
     cell = mgu_hard_mix(weight_f, bias_f, weight_n, bias_n, _hx_value(),
                {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'width': 9,
                 'depth_ismul': 3})
-    assert cell.fg_sigmoid.scaled_add.width == 9
-    assert cell.hy_add.width == 9
+    assert cell.fg_sigmoid.scaled_add.intwidth == 9
+    assert cell.hy_add.intwidth == 9
     print('Test passed.')
 
 

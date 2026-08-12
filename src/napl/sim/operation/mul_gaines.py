@@ -22,7 +22,7 @@ class mul_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mul_gaines
+        from napl.sim.operation import mul_gaines
 
         multiply = mul_gaines({'polarity': 'unipolar'})
         output = multiply(torch.tensor([1], dtype=torch.int8),
@@ -72,7 +72,7 @@ class mul_gaines(napl_base):
         pass
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Multiply one timestep of two unary streams.
 

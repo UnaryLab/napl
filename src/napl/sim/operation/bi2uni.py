@@ -20,14 +20,14 @@ class bi2uni(napl_base):
     target rather than matching it exactly.
 
     Only a non-negative input value is representable in unipolar form; a negative
-    input value produces an all-zero output stream.
+    input value produces an output rate near zero instead of the input value.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import bi2uni
+        from napl.sim.operation import bi2uni
 
         converter = bi2uni({'width': 2})
         output = converter(torch.tensor([1, 0], dtype=torch.int8))
@@ -118,6 +118,9 @@ class bi2uni(napl_base):
         output = torch.ge(acc, 1).type(self.stype)
         # Since output is 1 only for acc >= 1, subtraction preserves the accumulator bounds.
         acc.sub_(output)
-        if self.accumulator.shape != acc.shape:
+        # The in-place branch updates the buffer directly; the out-of-place branch produces a
+        # fresh tensor that is stored back, including the 0-dim case whose broadcast shape (1,)
+        # matches the buffer.
+        if acc is not self.accumulator:
             self.accumulator.resize_as_(acc).copy_(acc.detach())
         return output

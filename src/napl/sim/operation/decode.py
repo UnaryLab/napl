@@ -30,7 +30,7 @@ class decode(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import decode
+        from napl.sim.operation import decode
 
         dec = decode({"polarity": "unipolar", "timestep": 4})
         dec(torch.tensor([1.0, 0.0]))
@@ -72,7 +72,7 @@ class decode(napl_base):
         self.hw.pp_delay = 0
 
         self.encoding_io = {}
-        self.polarity_io = {'spike': self.polarity}
+        self.polarity_io = {'input': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -86,30 +86,29 @@ class decode(napl_base):
         self.spike_count.resize_(1).zero_()
 
 
-    def forward(self, spike: torch.Tensor):
+    def forward(self, input: torch.Tensor):
         """Accumulate one spike tensor.
 
         Args:
-            spike: Current ``0``/``1`` spike tensor. Its shape becomes the
+            input: Current ``0``/``1`` spike tensor. Its shape becomes the
                 decoder state shape on the first call.
 
         Returns:
             ``None``. Read :attr:`spike_value` for the progressive decoded value.
 
-        The call adds ``spike`` to ``spike_count`` and advances
+        The call adds ``input`` to ``spike_count`` and advances
         ``timestep_cur``. It rejects calls beyond the configured **timestep**.
         """
         if self.timestep_cur > self.timestep:
             message = f'Timestep <{self.timestep_cur}> exceeds the maximum timestep <{self.timestep}>.'
             logger.error(message)
             raise AssertionError(message)
-        # A float accumulator avoids overflow, and 0/1 spikes promote exactly.
         sc = self.spike_count
         # The scalar seed broadcasts once; matching shapes then accumulate in place.
-        if sc.shape == spike.shape:
-            sc.add_(spike)
+        if sc.shape == input.shape:
+            sc.add_(input)
         else:
-            expanded = sc.add(spike).detach()
+            expanded = sc.add(input).detach()
             self.spike_count.resize_as_(expanded).copy_(expanded)
 
 

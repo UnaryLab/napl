@@ -10,7 +10,7 @@ active-low i_rst_n reload matches the model from a dirtied counter state.
 
 Output: ../vec/decode.vec, one line per timestep:
 
-    <i_spike> <o_spike_count> <rst>   (spike and rst are 0/1, count is decimal;
+    <i_input> <o_spike_count> <rst>   (spike and rst are 0/1, count is decimal;
                                        rst=1 means "reset BEFORE this cycle")
 
 The sizing param WIDTH is the single source of truth: it is derived by the model

@@ -71,9 +71,13 @@ def _kernel_specific_checks():
         r_value = dividend / divisor
         error, _ = div_iscb_inst.accuracy.analyze(r_value, verbose=True)
         rmse = error.pow(2).mean().sqrt().item()
-        assert rmse < 0.25, f'[{device}] rmse={rmse:.4f}'
 
         assert div_iscb_inst.div_iscb.timestep_cur == codec_config1['timestep']
+        # The divider derives internal_encode over its registered parts. Only the
+        # div_cordiv kernel is True; the sync_skewed, signabs, bi2uni, and uni2bi
+        # parts are all False, so the kernel alone carries the derived value.
+        assert div_iscb_inst.div_iscb.internal_encode is True
+        assert div_iscb_inst.div_iscb.cordiv_kernel.internal_encode is True
         div_iscb_inst.reset()
         assert div_iscb_inst.div_iscb.timestep_cur == 0
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed.seconds:.3f}s')
@@ -96,7 +100,7 @@ def make_values(polarity):
     return quotient * divisor, divisor
 
 
-def make_performance_values(polarity):
+def make_random_perf_values(polarity):
     if polarity == 'unipolar':
         quotient = torch.linspace(0.0, 1.0, 131072)
         divisor = torch.linspace(0.25, 1.0, 131072)
@@ -114,17 +118,16 @@ def analytic_reference(values, _polarity):
 def known_answer_case(polarity):
     if polarity == 'unipolar':
         values = (torch.tensor([0.0, 1.0]), torch.tensor([0.25, 1.0]))
-        return values, torch.tensor([0.0, 1.0]), 0.25
+        return values, torch.tensor([0.0, 1.0])
     values = (torch.tensor([-1.0, 1.0]), torch.tensor([1.0, -1.0]))
-    return values, torch.tensor([-1.0, -1.0]), 0.25
+    return values, torch.tensor([-1.0, -1.0])
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 4.0,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

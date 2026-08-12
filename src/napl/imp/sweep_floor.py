@@ -9,15 +9,14 @@ different size. A folder that exists but no longer holds the registered
 `rtl_module`'s `.v` file is rejected too, so an emptied directory fails here
 instead of passing as present.
 
-It also warns when `core.hooksPath` is not `.githooks`, since the pre-commit
-gate is bypassed whenever it is not installed.
+It also rejects a `.v` basename that appears in more than one rtl directory,
+since `-y` resolves an instantiated name to the first match along its path.
 
 Run as `python sweep_floor.py "<operations>" "<modules>"`, each argument the
 space-separated list the Makefile discovered for that layer.
 """
 
 import pathlib
-import subprocess
 import sys
 
 import yaml
@@ -25,25 +24,11 @@ import yaml
 MAPPING = pathlib.Path(__file__).with_name("mapping.yaml")
 ROOT = MAPPING.parent
 LAYERS = ("operation", "module")
-HOOKS_PATH = ".githooks"
 
 
 def _candidates(entry):
-    """Unit folder names an entry accepts, most specific first.
-
-    The folder is the simulation class name. `linear_gaines` is the documented
-    exception: one RTL base name serves `linear_gaines1` and `linear_gaines2`,
-    so the polarity-stripped RTL module name is accepted as a fallback.
-    """
-    names = [pathlib.Path(entry["sim_module"]).stem]
-    rtl_module = entry["rtl_module"]
-    for suffix in ("_unipolar", "_bipolar"):
-        if rtl_module.endswith(suffix):
-            rtl_module = rtl_module[: -len(suffix)]
-            break
-    if rtl_module not in names:
-        names.append(rtl_module)
-    return names
+    """Unit folder names an entry accepts: the simulation class name."""
+    return [pathlib.Path(entry["sim_module"]).stem]
 
 
 def expected_units():
@@ -66,26 +51,33 @@ def rtl_modules(layer, discovered):
     }
 
 
-def hooks_warning():
-    """Warn when the pre-commit gate is not installed, so a commit can bypass it."""
-    installed = subprocess.run(
-        ["git", "config", "core.hooksPath"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    if installed == HOOKS_PATH:
-        return None
-    return (
-        f"core.hooksPath is {installed or '<unset>'}, not {HOOKS_PATH}: the pre-commit "
-        "sweep gate is not installed. Run `make install-hooks`."
-    )
+def basename_collisions():
+    """Report every .v basename that appears in more than one rtl directory.
+
+    A module compiles with every `operation/*/rtl` and `module/*/rtl` directory
+    passed to `iverilog` as a `-y` library, and `-y` resolves an instantiated
+    name to the first `<name>.v` it finds along that path, so two files sharing
+    a basename link one module where the other was meant instead of failing at
+    elaboration. Testbenches live in `<unit>/tb/`, outside the `-y` path, so
+    globbing the rtl directories alone is the set `-y` can resolve.
+    """
+    seen = {}
+    problems = []
+    for layer in LAYERS:
+        for path in sorted((ROOT / layer).glob("*/rtl/*.v")):
+            first = seen.setdefault(path.stem, path)
+            if first != path:
+                problems.append(
+                    f"module basename '{path.stem}' is not unique across the -y "
+                    f"search path: {first.relative_to(ROOT)} and {path.relative_to(ROOT)}"
+                )
+    return problems
 
 
 def check(discovered_lists):
     """Report every registered unit the sweep would skip, and every extra unit."""
     units = expected_units()
-    problems = []
+    problems = basename_collisions()
     for layer, discovered_arg in zip(LAYERS, discovered_lists):
         discovered = set(discovered_arg.split())
         if not discovered:
@@ -120,9 +112,6 @@ def check(discovered_lists):
 def main(argv):
     if len(argv) != len(LAYERS):
         sys.exit(f"usage: sweep_floor.py {' '.join(f'<{layer}s>' for layer in LAYERS)}")
-    warning = hooks_warning()
-    if warning:
-        print(f"*** SWEEP FLOOR WARNING: {warning}")
     problems = check(argv)
     if problems:
         print("*** SWEEP FLOOR FAILED")

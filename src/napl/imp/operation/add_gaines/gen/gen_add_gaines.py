@@ -1,14 +1,9 @@
 import math
-import sys
 from pathlib import Path
 
 import torch
 
 from napl.sim.operation import add_gaines, encode
-
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _gen_common import require_seeded_sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,13 +27,20 @@ UNSCALED_CODECS = [
     {"polarity": "unipolar", "timestep": TIMESTEP, "generator": "sobol", "dim": dim}
     for dim in range(1, UNSCALED_ENTRY + 1)
 ]
+# Rail rates driving each input stream to the codec's extremes (all-zeros, the
+# rate-0.5 bipolar-zero midpoint, all-ones), appended to every arm so
+# build_segments zips a matching count.
+CORNER_RATES = (0.0, 0.5, 1.0)
 
-require_seeded_sys(SCALED, SCALED_CODEC, *UNSCALED_CODECS)
+
+def corner_values(polarity):
+    return [rate if polarity == "unipolar" else 2 * rate - 1 for rate in CORNER_RATES]
 
 
 def scaled_streams(polarity):
     lo = -0.75 if polarity == "bipolar" else 0.0
-    values = torch.linspace(lo, 0.75, 64).repeat(SCALED_ENTRY, 1)
+    sweep = torch.cat((torch.linspace(lo, 0.75, 64), torch.tensor(corner_values(polarity))))
+    values = sweep.repeat(SCALED_ENTRY, 1)
     enc = encode({"polarity": polarity, **SCALED_CODEC})
     enc.reset()
     spikes = torch.stack([enc(values) for _ in range(TIMESTEP)])
@@ -47,7 +49,9 @@ def scaled_streams(polarity):
 
 def unscaled_streams():
     base = torch.linspace(0.0, 0.15, 64)
-    values = torch.stack([base.roll(index * 7) for index in range(UNSCALED_ENTRY)])
+    rolled = torch.stack([base.roll(index * 7) for index in range(UNSCALED_ENTRY)])
+    corner = torch.tensor(corner_values("unipolar")).repeat(UNSCALED_ENTRY, 1)
+    values = torch.cat((rolled, corner), dim=1)
     encoders = [encode(config) for config in UNSCALED_CODECS]
     for enc in encoders:
         enc.reset()
@@ -62,7 +66,8 @@ def build_segments():
     uni = scaled_streams("unipolar")
     bi = scaled_streams("bipolar")
     unscaled = unscaled_streams()
-    segments = [(uni[index], bi[index], unscaled[index]) for index in range(64)]
+    count = uni.shape[0]
+    segments = [(uni[index], bi[index], unscaled[index]) for index in range(count)]
     first = segments[0]
     return [
         tuple(stream[:3] for stream in first),

@@ -1,5 +1,5 @@
 from napl.sim.base import napl_base
-from .add_any import add_any
+from .add_scale import add_scale
 
 
 class relu_sat(napl_base):
@@ -20,7 +20,7 @@ class relu_sat(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_sat
+        from napl.sim.operation import relu_sat
 
         operation = relu_sat()
         output = operation(torch.tensor([0.0, 1.0]))
@@ -49,9 +49,9 @@ class relu_sat(napl_base):
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
         #: Bipolar saturating adder that performs the first ReLU transform stage.
-        self.sub_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
+        self.sub_1 = add_scale({'polarity': 'bipolar', 'scale': 1, 'intwidth': 3, 'fracwidth': 0})
         #: Bipolar saturating adder that performs the second ReLU transform stage.
-        self.add_1 = add_any({'polarity': 'bipolar', 'scale': 1, 'width': 3})
+        self.add_1 = add_scale({'polarity': 'bipolar', 'scale': 1, 'intwidth': 3, 'fracwidth': 0})
         #: Hardware latency and timing metadata for the composed ReLU path.
         self.hw.pp_delay = 0
 

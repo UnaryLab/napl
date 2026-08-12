@@ -3,10 +3,11 @@ Generate golden test vectors for the min_rc RTL straight from napl's functional
 Python model (napl.sim.operation.min_rc) -- so the testbench checks the Verilog
 against the *actual* simulator, not a hand-derived truth table.
 
-min_rc is STATEFUL (holds dff and the sync_skewed counter), so a single static
-input combination does not characterize it: we drive a multi-cycle stream from
-model.reset() and record per-cycle (inputs, outputs). The testbench replays the
-same stream after pulsing i_rst_n low, so both start from the post-reset() state.
+min_rc is STATEFUL (holds the selection index and the sync_skewed counter), so a
+single static input combination does not characterize it: we drive a multi-cycle
+stream from model.reset() and record per-cycle (inputs, outputs). The testbench
+replays the same stream after pulsing i_rst_n low, so both start from the
+post-reset() state.
 
 To prove reset equivalence from a DIRTIED state, the stream is split into two
 segments by a mid-stream model.reset(): the per-cycle `rst` flag marks the first
@@ -51,9 +52,9 @@ def emit(f, model, s0, s1, rst_first):
     """
     rows = 0
     for i, (a, b) in enumerate(zip(s0, s1)):
-        o_min, o_arg = model(torch.tensor(a), torch.tensor(b))
+        o_output, o_index = model(torch.tensor(a), torch.tensor(b))
         rst = 1 if (rst_first and i == 0) else 0
-        f.write(f"{a} {b} {int(o_min.item())} {int(o_arg.item())} {rst}\n")
+        f.write(f"{a} {b} {int(o_output.item())} {int(o_index.item())} {rst}\n")
         rows += 1
     return rows
 

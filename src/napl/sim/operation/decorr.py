@@ -7,7 +7,7 @@ from .encode import encode
 
 class decorr(napl_base):
     r"""
-    Lower the correlation of two unipolar rate-coded streams (SC decorrelator).
+    Lower the correlation of two rate-coded streams (SC decorrelator).
 
     Use this kernel before an operation that needs uncorrelated operands, such as
     an AND-gate multiplier fed from one shared source. It returns two streams that
@@ -16,6 +16,11 @@ class decorr(napl_base):
     .. math::
 
        p'_0 = p_0, \qquad p'_1 = p_1, \qquad \mathrm{SCC}(y_0,y_1) \to 0.
+
+    Both polarities are supported. The buffers reorder bits without changing
+    either stream's rate beyond the buffers' end-of-run residue, so each stream
+    keeps its value under the unipolar reading :math:`v = p` and the bipolar
+    reading :math:`v = 2p - 1` alike.
 
     Each stream runs its own shuffle buffer of **depth** positions, holding
     ``depth - 1`` stored bits plus one pass-through path. Every timestep an
@@ -36,7 +41,7 @@ class decorr(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import decorr
+        from napl.sim.operation import decorr
 
         decorrelator = decorr({'polarity': 'unipolar', 'depth': 4,
                                        'timestep': 256, 'generator': 'sys'})
@@ -49,6 +54,10 @@ class decorr(napl_base):
 
         *Correlation Manipulating Circuits for Stochastic Computing*, DATE, 2018.
     """
+    #: The buffer-position index sequences are encoded from held number
+    #: sequences, so the RTL counterpart holds its own encoder instead of
+    #: sharing an external one.
+    internal_encode = True
 
 
     def __init__(
@@ -69,7 +78,7 @@ class decorr(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"unipolar"``.
               - **depth**: Number of shuffle-buffer positions, an integer of at least ``1``; the default is ``4``. A larger depth lowers the correlation further.
               - **timestep**: Period of the auxiliary number sequence that picks the buffer position; the default is ``256``.
               - **generator**: Number-sequence generator used to pick the buffer position; the default is ``"sys"``.
@@ -80,10 +89,6 @@ class decorr(napl_base):
         """
         super().__init__(config, ['polarity', 'depth', 'timestep', 'generator'],
                          optional_key_list=['dim', 'seed', 'taps'], polarity_required=True)
-        if self.polarity != 'unipolar':
-            message = f'Invalid polarity: <{self.polarity}>; decorr supports unipolar only.'
-            logger.error(message)
-            raise AssertionError(message)
 
         #: Number of shuffle-buffer positions, one of which is the pass-through path.
         self.depth = config['depth']
@@ -117,8 +122,8 @@ class decorr(napl_base):
         self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output_0': 'rc', 'output_1': 'rc'}
-        self.polarity_io = {'input_0': 'unipolar', 'input_1': 'unipolar',
-                            'output_0': 'unipolar', 'output_1': 'unipolar'}
+        self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
+                            'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -133,14 +138,14 @@ class decorr(napl_base):
         self.is_first_call = True
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Decorrelate one timestep of the two input streams.
 
         Args:
-            input_0: Current 0/1 spikes from the first unipolar stream.
-            input_1: Current 0/1 spikes from the second unipolar stream.
-            Both inputs share one shape.
+            input_0: Current 0/1 spikes from the first stream.
+            input_1: Current 0/1 spikes from the second stream.
+                Both inputs share one shape.
 
         Returns:
             A pair ``(output_0, output_1)`` of 0/1 spike tensors with the input

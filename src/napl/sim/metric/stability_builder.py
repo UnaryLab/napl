@@ -32,7 +32,7 @@ class stability_builder(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import stability_builder
+        from napl.sim.metric import stability_builder
 
         builder = stability_builder(torch.tensor([0.0]))
         spike = builder()
@@ -155,6 +155,8 @@ class stability_builder(napl_base):
         #: Per-element position within the stable-tail number sequence.
         self.out_cnt_st: torch.Tensor
         self.register_buffer('out_cnt_st', torch.zeros_like(val, dtype=torch.long))
+
+        self.polarity_io = {'spike': self.polarity}
 
 
     def _reset(self):

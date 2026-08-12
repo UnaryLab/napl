@@ -11,7 +11,7 @@ class div_cordiv(napl_base):
     Divide synchronized unipolar streams by correlated division.
 
     Use this kernel when the dividend and divisor have already been correlated,
-    for example by :class:`napl.sync_skewed`.
+    for example by :class:`napl.sim.operation.sync_skewed`.
 
     The target rate-domain operation is
 
@@ -27,7 +27,7 @@ class div_cordiv(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import div_cordiv
+        from napl.sim.operation import div_cordiv
 
         divider = div_cordiv({'depth': 2, 'generator': 'Sobol'})
         quotient = divider(torch.tensor([1], dtype=torch.int8),
@@ -43,6 +43,10 @@ class div_cordiv(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: The buffer-row index sequence is encoded from a held number sequence, so
+    #: the RTL counterpart holds its own encoder instead of sharing an external
+    #: one.
+    internal_encode = True
 
 
     def __init__(
@@ -103,8 +107,8 @@ class div_cordiv(napl_base):
         #: Hardware latency and timing metadata for the correlated divider.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'quotient': 'rc'}
-        self.polarity_io = {'dividend': 'unipolar', 'divisor': 'unipolar', 'quotient': 'unipolar'}
+        self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
+        self.polarity_io = {'dividend': 'unipolar', 'divisor': 'unipolar', 'output': 'unipolar'}
         self.correlation_i = {('dividend', 'divisor'): 'pos'}
         self.stability_flux = 1.0
 

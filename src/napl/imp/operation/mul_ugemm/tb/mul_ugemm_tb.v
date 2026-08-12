@@ -13,15 +13,15 @@ module mul_ugemm_tb;
     reg                 i_input_0;
     reg  [`GEN_WIDTH:0] i_input_1u;   // operand bus = WIDTH+1 bits
     reg  [`GEN_WIDTH:0] i_input_1b;
-    wire                o_out_uni;
-    wire                o_out_bi;
+    wire                o_output_uni;
+    wire                o_output_bi;
 
     mul_ugemm_unipolar #(.WIDTH(`GEN_WIDTH)) dut_u (
         .i_clk   (i_clk),
         .i_rst_n (i_rst_n),
         .i_input_0  (i_input_0),
         .i_input_1  (i_input_1u),
-        .o_out   (o_out_uni)
+        .o_output   (o_output_uni)
     );
 
     mul_ugemm_bipolar #(.WIDTH(`GEN_WIDTH)) dut_b (
@@ -29,7 +29,7 @@ module mul_ugemm_tb;
         .i_rst_n (i_rst_n),
         .i_input_0  (i_input_0),
         .i_input_1  (i_input_1b),
-        .o_out   (o_out_bi)
+        .o_output   (o_output_bi)
     );
 
     integer fd, code, n, fails;
@@ -73,14 +73,14 @@ module mul_ugemm_tb;
                 #1;
 
                 n = n + 1;
-                if (o_out_uni !== out_u[0]) begin
+                if (o_output_uni !== out_u[0]) begin
                     $display("FAIL uni n=%0d in_0=%b in_1=%0d : got %b exp %0d",
-                             n, a, in1u, o_out_uni, out_u);
+                             n, a, in1u, o_output_uni, out_u);
                     fails = fails + 1;
                 end
-                if (o_out_bi !== out_b[0]) begin
+                if (o_output_bi !== out_b[0]) begin
                     $display("FAIL bi  n=%0d in_0=%b in_1=%0d : got %b exp %0d",
-                             n, a, in1b, o_out_bi, out_b);
+                             n, a, in1b, o_output_bi, out_b);
                     fails = fails + 1;
                 end
 

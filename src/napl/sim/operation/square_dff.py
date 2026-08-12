@@ -23,7 +23,7 @@ class square_dff(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import square_dff
+        from napl.sim.operation import square_dff
 
         square = square_dff({'polarity': 'unipolar', 'depth': 1})
         output = square(torch.tensor([1], dtype=torch.int8))
@@ -68,8 +68,8 @@ class square_dff(napl_base):
         #: Hardware latency and timing metadata for the combinational square output.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input': 'rc', 'out': 'rc'}
-        self.polarity_io = {'input': self.polarity, 'out': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -81,7 +81,7 @@ class square_dff(napl_base):
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Square one timestep against its delayed copy.
 

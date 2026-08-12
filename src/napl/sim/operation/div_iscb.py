@@ -22,7 +22,7 @@ class div_iscb(napl_base):
 
        y = \frac{x}{d}.
 
-    Unlike :class:`napl.div_cordiv`, this divider correlates the streams itself,
+    Unlike :class:`napl.sim.operation.div_cordiv`, this divider correlates the streams itself,
     so the inputs need no prior synchronization. A bipolar quotient is formed
     from the magnitudes of the two streams and the sign of their product.
 
@@ -31,7 +31,7 @@ class div_iscb(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import div_iscb
+        from napl.sim.operation import div_iscb
 
         divider = div_iscb({'polarity': 'unipolar'})
         quotient = divider(torch.tensor([1], dtype=torch.int8),
@@ -89,6 +89,8 @@ class div_iscb(napl_base):
             self.uni2bi_quotient = uni2bi({'width': 3})
         #: Hardware latency and timing metadata for the composed divider.
         self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
 
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}
@@ -129,7 +131,7 @@ class div_iscb(napl_base):
         return output.type(self.stype)
 
 
-    def _bipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
+    def _bipolar_forward(self, dividend: torch.Tensor, divisor: torch.Tensor):
         """Process one timestep through the bipolar division path."""
         sign_dividend, abs_dividend = self.signabs_dividend(dividend)
         sign_divisor, abs_divisor = self.signabs_divisor(divisor)
@@ -141,7 +143,7 @@ class div_iscb(napl_base):
         return bi_quotient
 
 
-    def _unipolar_forward(self, dividend: torch.tensor, divisor: torch.tensor):
+    def _unipolar_forward(self, dividend: torch.Tensor, divisor: torch.Tensor):
         """Process one timestep through the unipolar division path."""
         dividend_sync, divisor_sync = self.sync(dividend, divisor)
         quotient = self.cordiv_kernel(dividend_sync, divisor_sync)

@@ -1,8 +1,9 @@
 """Emit golden vectors for max_rc from the napl Python model.
 
-Drives the model with random {0,1} spike streams on (input_0, input_1) and
-records per cycle: reset i_input_0 i_input_1 o_max o_arg. max_rc has no polarity
-branch. Reset is asserted before the first row and once after state has changed.
+Drives the model on (input_0, input_1) with the spike streams test_max_rc.py's
+encoders emit for representative operand pairs, and records per cycle:
+reset i_input_0 i_input_1 o_output o_index. max_rc has no polarity branch. Reset is
+asserted before the first row and once after state has changed.
 """
 import os
 import sys
@@ -38,13 +39,13 @@ def main():
             reset = int(index == 0 or index == reset_at)
             if index == reset_at:
                 model.reset()
-            o_max, o_arg = model(
+            o_output, o_index = model(
                 torch.tensor([i0], dtype=torch.int8),
                 torch.tensor([i1], dtype=torch.int8),
             )
             f.write(
                 f"{reset} {i0} {i1} "
-                f"{int(o_max.item())} {int(o_arg.item())}\n"
+                f"{int(o_output.item())} {int(o_index.item())}\n"
             )
     print(
         f"wrote {VEC} ({len(s0)} vectors, reset@{reset_at}) and {PARAMS} "

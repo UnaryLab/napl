@@ -12,7 +12,7 @@ module exp_n1 #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
     reg [WIDTH-1:0] coef_idx;
     reg input_d1;
@@ -33,7 +33,7 @@ module exp_n1 #(
     assign n_2 = ~(n_1 & input_d1 & coef[2]);
     assign n_3 = ~(n_2 & input_d2 & coef[1]);
     assign n_4 = ~(n_3 & input_d3 & coef[0]);
-    assign o_out = coef[0] ? ~(n_4 & input_d4) : ~input_d4;
+    assign o_output = coef[0] ? ~(n_4 & input_d4) : ~input_d4;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

@@ -1,3 +1,7 @@
+import io
+import re
+from contextlib import redirect_stdout
+
 import torch
 
 from napl.sim.module import linear_fxp
@@ -9,7 +13,7 @@ from napl.utils._shared_test import (
     assert_inputs_equal,
     benchmark,
     clone_inputs,
-    single_shot_suite,
+    non_streaming_suite,
     streaming_suite,
     devices,
 )
@@ -162,23 +166,33 @@ def _mul_gaines_reference(values, polarity):
 
 def _mul_gaines_known_answer(polarity):
     # Both polarities encode 1.0 as all ones, so the product is exact.
-    return (torch.tensor([1.0]), torch.tensor([1.0])), torch.tensor([1.0]), 0.0
+    return (torch.tensor([1.0]), torch.tensor([1.0])), torch.tensor([1.0])
 
 
 def test_streaming_suite():
-    """Verify streaming_suite exercises fidelity, known answers, reset replay, rank, and timing."""
-    streaming_suite({
-        'polarities': ('unipolar', 'bipolar'),
-        'tolerance_scale': 1.0,
-        'make_operation': _mul_gaines_operation,
-        'make_values': _mul_gaines_values,
-        'make_performance_values': _mul_gaines_performance_values,
-        'analytic_reference': _mul_gaines_reference,
-        'known_answer_case': _mul_gaines_known_answer,
-        'timesteps': 64,
-        'warmup_runs': 1,
-        'trials': 3,
-    })
+    """Verify streaming_suite prints the measured per-run error for every polarity and asserts no fidelity."""
+    timesteps = 64
+    log = io.StringIO()
+    with redirect_stdout(log):
+        streaming_suite({
+            'polarities': ('unipolar', 'bipolar'),
+            'make_operation': _mul_gaines_operation,
+            'make_values': _mul_gaines_values,
+            'make_random_perf_values': _mul_gaines_performance_values,
+            'analytic_reference': _mul_gaines_reference,
+            'known_answer_case': _mul_gaines_known_answer,
+            'timesteps': timesteps,
+            'warmup_runs': 1,
+            'trials': 3,
+        })
+    output = log.getvalue()
+    print(output, end='')
+
+    # The suite prints the measured error only, with no bound field of any kind.
+    assert 'bound=' not in output
+    for polarity in ('unipolar', 'bipolar'):
+        errors = re.findall(rf'\[{polarity}\].*rmse=([0-9.]+)', output)
+        assert errors, f'{polarity}: no printed rmse'
 
 
 def _fxp_pair():
@@ -232,11 +246,9 @@ def _fxp_expected_gradients(candidate, inputs, grad_output):
     return (grad_input,), {'weight': grad_weight, 'bias': grad_bias}
 
 
-def test_single_shot_suite():
-    """Verify single_shot_suite exercises quantization, known answers, gradients, rank, and timing."""
-    single_shot_suite({
-        'quantization_atol': 0.05,
-        'known_answer_atol': 0.0,
+def test_non_streaming_suite():
+    """Verify non_streaming_suite exercises fidelity, known answers, gradients, rank, and timing."""
+    non_streaming_suite({
         'gradient_atol': 1e-5,
         'gradient_rtol': 1e-5,
         'make_module_pair': _fxp_pair,
@@ -244,7 +256,7 @@ def test_single_shot_suite():
         'known_answer_case': _fxp_known_answer,
         'gradient_case': _fxp_gradient_case,
         'expected_ste_gradients': _fxp_expected_gradients,
-        'make_performance_values': _fxp_performance_values,
+        'make_random_perf_values': _fxp_performance_values,
         'warmup_runs': 1,
         'trials': 3,
     })
@@ -263,9 +275,9 @@ def test_suite_config_validation():
     expect(NotImplementedError, "set 'polarities'", {}, streaming_suite)
     expect(
         NotImplementedError,
-        "set 'quantization_atol'",
+        "set 'gradient_atol'",
         {},
-        single_shot_suite,
+        non_streaming_suite,
     )
     # Removed options fail explicitly by name.
     expect(
@@ -278,7 +290,7 @@ def test_suite_config_validation():
         ValueError,
         "unknown keys: ['bogus_key']",
         {'bogus_key': 1},
-        single_shot_suite,
+        non_streaming_suite,
     )
 
 
@@ -288,5 +300,5 @@ if __name__ == '__main__':
     test_multirank_inputs()
     test_benchmark()
     test_streaming_suite()
-    test_single_shot_suite()
+    test_non_streaming_suite()
     test_suite_config_validation()

@@ -12,7 +12,7 @@ module bi2uni #(
     input  wire i_clk,
     input  wire i_rst_n,   // active-low reset -> Python reset(): acc = 0
     input  wire i_input,      // input spike (bipolar stream)
-    output wire o_out      // output spike (unipolar stream)
+    output wire o_output   // output spike (unipolar stream)
 );
     // (WIDTH+1)-bit signed datapath: holds acc in [ACC_MIN, ACC_MAX] and the
     // pre-clamp sum in [ACC_MIN-1, ACC_MAX+1].
@@ -29,9 +29,9 @@ module bi2uni #(
     wire signed [DW-1:0] clamped = (sum > ACC_MAX) ? ACC_MAX :
                                    (sum < ACC_MIN) ? ACC_MIN : sum;
 
-    assign o_out = (clamped >= ONE);
+    assign o_output = (clamped >= ONE);
 
-    wire signed [DW-1:0] acc_nxt = o_out ? (clamped - ONE) : clamped;
+    wire signed [DW-1:0] acc_nxt = o_output ? (clamped - ONE) : clamped;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

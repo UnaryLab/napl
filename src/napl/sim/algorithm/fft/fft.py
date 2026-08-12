@@ -5,7 +5,12 @@ from loguru import logger
 
 from napl.sim.base import napl_base
 
+from .butterfly_mix import butterfly_mix
 from .butterfly_ugemm import butterfly_ugemm
+
+
+#: First Sobol dimension a mix-kernel stage twiddle encoder takes.
+TWIDDLE_DIM_FIRST = 5
 
 
 class fft(napl_base):
@@ -38,22 +43,36 @@ class fft(napl_base):
     stage 0's internal adder runs at twice ``scales[0]`` while every later stage
     runs at its reported value.
 
-    All stages share one weight sequence: their multipliers accept no sequence
-    dimension and are built from the same ``mul_config``, so their number
-    sequences are bit-identical. Decorrelation across stages comes from
-    ``mul_ugemm`` advancing its sequence index only on enabling timesteps, which
-    makes the stages' index pointers diverge once they see distinct data.
+    The optional ``mul_config`` key ``kernel`` selects the stage class:
+    ``'ugemm'``, the default, builds :class:`butterfly_ugemm` stages, and
+    ``'mix'`` builds :class:`butterfly_mix` stages. The key is consumed here and
+    never reaches a stage.
+
+    With ``'ugemm'``, all stages share one weight sequence: their multipliers
+    accept no sequence dimension and are built from the same ``mul_config``, so
+    their number sequences are bit-identical. Decorrelation across stages comes
+    from ``mul_ugemm`` advancing its sequence indices conditionally on the data,
+    which makes the stages' index pointers diverge once they see distinct data.
+
+    With ``'mix'``, each stage encodes its own twiddle stream, and stage
+    ``index`` takes the one-based Sobol dimension ``5 + index``. That schedule
+    gives every stage a distinct twiddle dimension and clears the dimensions
+    ``1`` through ``4`` conventionally used by the input encoders, so no stage's
+    twiddle stream correlates with its own input stream or with another stage's
+    twiddle stream. Because that schedule decorrelates by Sobol dimension,
+    ``'mix'`` requires a sobol-family generator (``'sobol'``, ``'rc'``, or
+    ``'rate'``) in ``mul_config``; the stage rejects any other generator.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import decode, encode
-        from napl.sim.algorithm.fft import fft
+        from napl.sim.operation import decode, encode
+        from napl.sim.algorithm import fft
 
         codec = {'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol'}
-        adder = {'polarity': 'bipolar', 'scale': 2, 'width': 8}
+        adder = {'polarity': 'bipolar', 'scale': 2, 'intwidth': 8, 'fracwidth': 0}
         operation = fft(8, codec, adder)
         source_real, source_imag = encode(codec), encode(dict(codec, dim=2))
         sink = decode(codec)
@@ -78,17 +97,29 @@ class fft(napl_base):
 
         Args:
             point: Positive power-of-two transform length.
-            mul_config: Bipolar conditional-spike multiplier configuration
-                containing ``polarity``, ``timestep``, and ``generator``.
+            mul_config: Bipolar multiplier configuration containing
+                ``polarity``, ``timestep``, and ``generator``, plus the optional
+                ``kernel``, which is ``'ugemm'`` or ``'mix'`` and defaults to
+                ``'ugemm'``.
             add_config: Bipolar scaled-adder configuration. Its ``scale`` may be
                 one positive Python int shared by every stage, or a list
                 containing one positive Python int per stage.
 
-        The two mappings accept the same keys as
-        :class:`~napl.sim.algorithm.fft.butterfly_ugemm` and are not modified.
+        Apart from ``kernel``, the two mappings accept the same keys as
+        :class:`~napl.sim.algorithm.butterfly_ugemm` and are not modified.
         """
         super().__init__(mul_config, ['polarity', 'timestep', 'generator'],
-                         polarity_required=True)
+                         optional_key_list=['kernel'], polarity_required=True)
+        kernel = mul_config.get('kernel', 'ugemm')
+        kernel = kernel.lower() if isinstance(kernel, str) else kernel
+        if kernel not in ('ugemm', 'mix'):
+            message = (
+                f'Invalid kernel: <{kernel!r}>; legal values: <[\'mix\', \'ugemm\']>.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
+        stage_mul_config = dict(mul_config)
+        stage_mul_config.pop('kernel', None)
         if isinstance(point, bool) or not isinstance(point, int) \
                 or point < 2 or point & (point - 1):
             message = (
@@ -168,11 +199,19 @@ class fft(napl_base):
             # spike interface does not have, so the same attenuation is folded
             # into that stage's carry scale, which divides exactly.
             stage_add_config['scale'] = requested_scales[stage] * (2 if stage == 0 else 1)
+            if kernel == 'mix':
+                # Each Gaines stage encodes its own twiddle, so it gets its own
+                # Sobol dimension above the input encoders' dimensions 1 to 4.
+                stage_butterfly_class = butterfly_mix
+                stage_mul = dict(stage_mul_config, dim=TWIDDLE_DIM_FIRST + stage)
+            else:
+                stage_butterfly_class = butterfly_ugemm
+                stage_mul = dict(stage_mul_config)
             try:
-                stage_butterfly = butterfly_ugemm(
+                stage_butterfly = stage_butterfly_class(
                     twiddle_tensor.real,
                     twiddle_tensor.imag,
-                    dict(mul_config),
+                    stage_mul,
                     stage_add_config,
                 )
             except AssertionError as error:
@@ -183,14 +222,16 @@ class fft(napl_base):
 
         #: Hardware latency and timing metadata for the streaming FFT.
         self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
         #: Rate coding on both input and both output spike ports.
         self.encoding_io = {port: 'rc' for port in
-                            ('input_real_spike', 'input_imag_spike',
-                             'output_real_spike', 'output_imag_spike')}
+                            ('input_real', 'input_imag',
+                             'output_real', 'output_imag')}
         #: Stream polarity of the four spike ports, which share the class polarity.
         self.polarity_io = {port: self.polarity for port in
-                            ('input_real_spike', 'input_imag_spike',
-                             'output_real_spike', 'output_imag_spike')}
+                            ('input_real', 'input_imag',
+                             'output_real', 'output_imag')}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -204,39 +245,39 @@ class fft(napl_base):
         pass
 
 
-    def forward(self, input_real_spike, input_imag_spike):
+    def forward(self, input_real, input_imag):
         """Process one spike timestep of a batch of complex transforms.
 
         Args:
-            input_real_spike: Real-part spike tensor shaped ``(point, ...)`` in
+            input_real: Real-part spike tensor shaped ``(point, ...)`` in
                 natural sample order.
-            input_imag_spike: Imaginary-part spike tensor with the same shape as
-                ``input_real_spike``.
+            input_imag: Imaginary-part spike tensor with the same shape as
+                ``input_real``.
 
         Returns:
-            ``(output_real_spike, output_imag_spike)`` as bipolar 0/1 spike
+            ``(output_real, output_imag)`` as bipolar 0/1 spike
             tensors in natural FFT-bin order with the input shape, each encoding
             the spectrum divided by :attr:`compensation`.
 
         The call advances every stage once and does not modify either input.
         """
-        if input_real_spike.shape != input_imag_spike.shape:
+        if input_real.shape != input_imag.shape:
             message = (
-                f'FFT input shapes must match: got <{input_real_spike.shape}> and '
-                f'<{input_imag_spike.shape}>.'
+                f'FFT input shapes must match: got <{input_real.shape}> and '
+                f'<{input_imag.shape}>.'
             )
             logger.error(message)
             raise AssertionError(message)
-        if input_real_spike.ndim == 0 or input_real_spike.shape[0] != self.point:
+        if input_real.ndim == 0 or input_real.shape[0] != self.point:
             message = (
                 f'FFT first input dimension must equal point <{self.point}>: '
-                f'got shape <{input_real_spike.shape}>.'
+                f'got shape <{input_real.shape}>.'
             )
             logger.error(message)
             raise AssertionError(message)
 
-        current_real = input_real_spike.index_select(0, self._bit_reversed)
-        current_imag = input_imag_spike.index_select(0, self._bit_reversed)
+        current_real = input_real.index_select(0, self._bit_reversed)
+        current_imag = input_imag.index_select(0, self._bit_reversed)
 
         for stage in range(self.stages):
             first = getattr(self, f'_first_indices_{stage}')

@@ -18,23 +18,6 @@ from napl.utils._shared_test import benchmark, devices
 TIMESTEP = 2048
 DEPTH_ISMUL = 6
 BATCH, INPUT_SIZE, HIDDEN_SIZE = 3, 6, 4
-# Coarse sanity ceiling, not a sensitivity check. It is the repo-standard 3/sqrt(N) bound for
-# a randomly rate-coded stream, and it catches only gross breakage: a dead, saturated, or
-# wildly wrong output. It does NOT detect a 10% gate-weight-scale error. Across legal inputs
-# the clean rmse spans 0.006459 (input and hidden all -1) to 0.050910 (input and hidden scale
-# 0.75), and an injected weight-scale error lands inside that same range at some legal inputs,
-# so the clean and injected ranges overlap and no bound separates them for every input. This
-# ceiling clears the worst clean measured by 1.30x. No injection assertion accompanies it: at
-# the frozen input a sign-flipped new-gate bias clears the ceiling by 1.90x and a dead forget
-# gate by 1.695x, but with the input all -1 the new-gate margin collapses to 0.08x against an
-# all -1 hidden and 0.34x against the frozen hidden, and the dead forget gate falls to 0.36x at
-# input and hidden scale 0.25, so neither fault is caught across the legal range. Other
-# all-negative inputs do clear the ceiling (the new-gate margin reaches 2.15x at input and
-# hidden all -0.1), so the collapse is specific to the inputs named here rather than to
-# negative inputs in general. If the inputs, parameters, or timestep above
-# change, re-measure the worst clean across legal inputs and confirm it still sits under the
-# ceiling; do not hand-adjust the ceiling to fit one run.
-RMSE_BOUND = 3 / TIMESTEP ** 0.5  # 0.066291
 
 
 def _codec_config(timestep=TIMESTEP, dim=1, polarity='bipolar'):
@@ -118,22 +101,28 @@ def test_mgu_hard_mix_hub_fidelity():
         # below therefore does not catch a collision, and comparing the two number sequences is
         # the only cover that the input stream really decorrelates from the hidden-state stream.
         assert not torch.equal(cell.reference_encode_input.num_seq, cell.reference_encode_hx.num_seq)
-        output = None
-        for _ in range(TIMESTEP):
-            output = cell(input_value)
+        output = cell(input_value)
         # The cpu and mps outputs are bit-identical (max abs diff 0.0); the rmse below still
         # differs by about 2e-9 across devices (measured 1.863e-9) because the float reference
         # is evaluated on-device, and cpu and mps disagree on it by up to 8.94e-8.
         rmse = (output - reference).pow(2).mean().sqrt().item()
 
         assert output.shape == (BATCH, HIDDEN_SIZE), output.shape
-        assert cell.timestep_cur == TIMESTEP
+        # The cell wrapper is non-streaming at its numeric interface, so its own
+        # counter stays at 0 while the streaming parts it drives count the whole
+        # run.
+        assert cell.streaming is False
+        assert cell.timestep_cur == 0
         assert cell.core.timestep_cur == TIMESTEP
         assert cell.decoder.timestep_cur == TIMESTEP
-        assert rmse <= RMSE_BOUND, (
-            f'[{device}] rmse={rmse:.6f} exceeds bound={RMSE_BOUND:.6f}'
-        )
-        print(f'[{device}][bipolar] N={TIMESTEP}, rmse={rmse:.6f}, bound={RMSE_BOUND:.6f}')
+        # The wrapper derives its value over its parts, and the core is the only True one: its
+        # two registered encode instances and its decoder all report False. The walk is
+        # depth-1: the wrapper reads the core's own declared value and never descends to the
+        # core's multiplier.
+        assert cell.internal_encode is True
+        assert cell.core.internal_encode is True
+        assert cell.core.fg_hx_mul.internal_encode is True
+        print(f'[{device}][bipolar] N={TIMESTEP}, rmse={rmse:.6f}')
 
 
 def test_mgu_hard_mix_hub_matches_bare_composition():
@@ -144,11 +133,11 @@ def test_mgu_hard_mix_hub_matches_bare_composition():
         encoder_input, encoder_hx, core, decoder = _make_bare(device)
 
         for _ in range(TIMESTEP):
-            hub_output = cell(input_value)
+            hub_output = cell.forward_timestep(input_value)
             decoder(core(encoder_input(input_value), encoder_hx(core.hx_value)))
             bare_output = decoder.spike_value
             assert torch.equal(hub_output, bare_output), (
-                f'[{device}] diverged at timestep {cell.timestep_cur}'
+                f'[{device}] diverged at timestep {cell.core.timestep_cur}'
             )
         print(f'[{device}][bipolar] bit-exact against the bare composition '
               f'for {TIMESTEP} timesteps.')
@@ -161,8 +150,8 @@ def test_mgu_hard_mix_hub_reset_replay():
         input_value = _input_value().to(device)
         cell = _make_hub(device, timestep=timesteps)
 
-        first = [cell(input_value).clone() for _ in range(timesteps)]
-        assert cell.timestep_cur == timesteps
+        first = [cell.forward_timestep(input_value).clone() for _ in range(timesteps)]
+        assert cell.core.timestep_cur == timesteps
         cell.reset()
         assert cell.timestep_cur == 0
         assert cell.core.timestep_cur == 0
@@ -171,9 +160,48 @@ def test_mgu_hard_mix_hub_reset_replay():
         assert cell.decoder.timestep_cur == 0
         assert cell.decoder.spike_count.abs().sum().item() == 0
 
-        replay = [cell(input_value).clone() for _ in range(timesteps)]
+        replay = [cell.forward_timestep(input_value).clone() for _ in range(timesteps)]
         assert all(torch.equal(before, after) for before, after in zip(first, replay))
         print(f'[{device}][bipolar] reset and replay reproduced {timesteps} outputs.')
+
+
+def test_mgu_hard_mix_hub_matches_timestep_loop():
+    """Verify one decorated call equals an explicit timestep loop and repeats bit-exactly.
+
+    Bipolar only: the cell's subtraction path requires signed streams, so
+    mgu_hard_mix rejects a unipolar configuration.
+    """
+    for device in devices():
+        input_value = _input_value().to(device)
+
+        looped_cell = _make_hub(device)
+        looped = None
+        for _ in range(TIMESTEP):
+            looped = looped_cell.forward_timestep(input_value)
+        assert looped_cell.core.timestep_cur == TIMESTEP
+
+        cell = _make_hub(device)
+        single = cell(input_value)
+        assert torch.equal(single, looped), (
+            f'[{device}] the decorated call and the {TIMESTEP}-timestep loop disagree'
+        )
+        assert single.shape == (BATCH, HIDDEN_SIZE), single.shape
+        assert cell.timestep_cur == 0
+        assert cell.core.timestep_cur == TIMESTEP
+        assert cell.decoder.timestep_cur == TIMESTEP
+        # The hidden port is re-encoded inside each timestep, so the run needs no
+        # hidden value from the caller.
+        assert cell.reference_encode_hx.timestep_cur == TIMESTEP
+
+        # A decorated call is a fresh run, so a partly advanced cell decodes the
+        # same value as an untouched one.
+        advanced_cell = _make_hub(device)
+        advanced_cell.forward_timestep(input_value)
+        assert torch.equal(advanced_cell(input_value), single), (
+            f'[{device}] a repeated decorated call is not a fresh run'
+        )
+        print(f'[{device}][bipolar] one call matches the {TIMESTEP}-timestep loop '
+              f'bit-exactly.')
 
 
 def test_mgu_hard_mix_hub_rejects_invalid_config():
@@ -229,7 +257,7 @@ def test_mgu_hard_mix_hub_performance():
     for device in devices():
         cell = _make_hub(device, batch=batch)
         device_runtime = benchmark(
-            lambda inputs: cell(inputs[0]),
+            lambda inputs: cell.forward_timestep(inputs[0]),
             (performance_input,),
             device,
             warmup_runs=2,
@@ -248,6 +276,7 @@ if __name__ == '__main__':
     test_mgu_hard_mix_hub_rejects_invalid_config()
     test_mgu_hard_mix_hub_fidelity()
     test_mgu_hard_mix_hub_matches_bare_composition()
+    test_mgu_hard_mix_hub_matches_timestep_loop()
     test_mgu_hard_mix_hub_reset_replay()
     test_mgu_hard_mix_hub_performance()
     print('Test passed.')

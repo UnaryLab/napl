@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
-from .add_any import add_any
+from .add_scale import add_scale
 
 
 class sigmoid_hard(napl_base):
@@ -22,7 +22,7 @@ class sigmoid_hard(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sigmoid_hard
+        from napl.sim.operation import sigmoid_hard
 
         operation = sigmoid_hard({'polarity': 'bipolar'})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -51,10 +51,11 @@ class sigmoid_hard(napl_base):
         super().__init__(config, ['polarity'], optional_key_list=['width'], polarity_required=True)
 
         #: Scaled unary adder that implements the affine sigmoid transform.
-        self.scaled_add = add_any({
+        self.scaled_add = add_scale({
             'polarity': self.polarity,
             'scale' : 2,
-            'width' : config.get('width', 4),
+            'intwidth' : config.get('width', 4),
+            'fracwidth' : 0,
             })
         #: Hardware latency and timing metadata for the composed hard sigmoid.
         self.hw.pp_delay = 0
@@ -72,7 +73,7 @@ class sigmoid_hard(napl_base):
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Process one timestep of a unipolar or bipolar input stream.
 
@@ -91,8 +92,8 @@ class sigmoid_hard(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # Bipolar entry=0 folds the +1 term of (input + 1) / 2 into the offset.
-        # Unipolar mode requires the explicit +1 because its offset is zero.
+        # Bipolar folds the +1 of (input + 1) / 2 into the adder offset through entry=0,
+        # while unipolar has no offset and adds the +1 explicitly.
         if self.polarity == 'bipolar':
             return self.scaled_add(input, dim=None, entry=0)
         return self.scaled_add(input + 1, dim=None, entry=2)

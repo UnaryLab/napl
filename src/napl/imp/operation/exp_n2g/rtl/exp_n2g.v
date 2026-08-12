@@ -12,7 +12,7 @@ module exp_n2g #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
     localparam [DEPTH-1:0] CNT_INIT = {
@@ -28,7 +28,7 @@ module exp_n2g #(
 
     reg [DEPTH-1:0] cnt;
 
-    assign o_out = (cnt < THRESHOLD);
+    assign o_output = (cnt < THRESHOLD);
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

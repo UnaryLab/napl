@@ -11,13 +11,13 @@ module uni2bi_tb;
     reg  i_clk;
     reg  i_rst_n;
     reg  i_input;
-    wire o_out;
+    wire o_output;
 
     uni2bi #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk   (i_clk),
         .i_rst_n (i_rst_n),
         .i_input    (i_input),
-        .o_out   (o_out)
+        .o_output   (o_output)
     );
 
     integer fd, code, n, fails;
@@ -62,8 +62,8 @@ module uni2bi_tb;
                     i_input    = in_bit;
                     #1;
                     n = n + 1;
-                    if (o_out !== exp_out) begin
-                        $display("FAIL cyc=%0d i_input=%b : got %b exp %b", n, in_bit, o_out, exp_out);
+                    if (o_output !== exp_out) begin
+                        $display("FAIL cyc=%0d i_input=%b : got %b exp %b", n, in_bit, o_output, exp_out);
                         fails = fails + 1;
                     end
                     #1 i_clk = 1'b1; #1 i_clk = 1'b0; #1;

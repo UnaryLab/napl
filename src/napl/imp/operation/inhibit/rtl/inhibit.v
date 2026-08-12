@@ -8,7 +8,7 @@
 //
 //   set = i_input_data & ~i_input_inhibit                  set-dominant latch input
 //   latch_q holds 1 once set has been high; cleared only by !i_rst_n
-//   o_out = i_input_data | latch_q
+//   o_output = i_input_data | latch_q
 //
 // The latch is level-sensitive and clockless: set propagates into latch_q as soon
 // as the inputs arrive, so the output is available in the arrival cycle
@@ -28,13 +28,13 @@ module inhibit (
     input  wire i_rst_n,           // active-low; maps to Python reset()
     input  wire i_input_data,      // data temporal stream
     input  wire i_input_inhibit,   // inhibiting temporal stream
-    output wire o_out              // data spike held high by the inhibition latch
+    output wire o_output           // data spike held high by the inhibition latch
 );
     reg  latch_q;
 
     wire set = i_input_data & ~i_input_inhibit;
 
-    assign o_out = i_input_data | latch_q;
+    assign o_output = i_input_data | latch_q;
 
     always @* begin
         if (!i_rst_n)

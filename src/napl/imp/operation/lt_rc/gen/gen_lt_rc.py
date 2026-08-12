@@ -4,20 +4,19 @@ functional Python model (napl.sim.operation.lt_rc) -- so the testbench checks th
 Verilog against the *actual* simulator, not a hand-derived truth table.
 
 lt_rc is stateful: it embeds a sync_skewed (width=2 -> a 0..3 saturating
-counter, cnt) plus its own less-than dff. reset() zeroes both cnt and dff.
-The output each cycle is the *registered* dff value (the state from the
-previous cycle), so the op has one cycle of input->output latency.
+counter, cnt) plus its own less-than decision register. reset() zeroes both cnt
+and the decision. The output each cycle is the *registered* decision (the state
+from the previous cycle), so the op has one cycle of input->output latency.
 
 Output: ../vec/lt_rc.vec, one line per timestep of every stream:
 
     <rst> <in_0> <in_1> <out>      (each 0/1, space-separated)
 
 rst==1 marks the first cycle of a new reset segment: the model was reset()
-there, so the testbench pulses i_rst_n low to reload cnt<=0, dff<=0 before
-sampling that cycle. We replay several bit-streams (deterministic patterns that
-exercise counter saturation at both ends and all 00/01/10/11 input
-combinations), calling model.reset() before each stream and recording per-cycle
-(inputs, output).
+there, so the testbench pulses i_rst_n low to reload cnt<=0, decision<=0 before
+sampling that cycle. One segment per representative operand pair is encoded with
+the test's two encoders, calling model.reset() before each stream and recording
+per-cycle (inputs, output).
 
 Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_lt_rc.py
@@ -43,7 +42,7 @@ def stream_pairs():
 
     Each segment encodes one representative operand pair with the test's two
     encoders, so every segment is a test-derived stream; the per-segment reset
-    also exercises mid-stream reset equivalence (cnt<=0, dff<=0)."""
+    also exercises mid-stream reset equivalence (cnt<=0, decision<=0)."""
     for v0, v1 in rep_pairs("bipolar", "bipolar", n=4):
         s0 = encode_value(CODEC0, v0)
         s1 = encode_value(CODEC1, v1)

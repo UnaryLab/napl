@@ -9,14 +9,14 @@ module lt_rc_tb;
     reg  i_clk;
     reg  i_rst_n;
     reg  i_input_0, i_input_1;
-    wire o_out;
+    wire o_output;
 
     lt_rc dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
         .i_input_0 (i_input_0),
         .i_input_1 (i_input_1),
-        .o_out  (o_out)
+        .o_output  (o_output)
     );
 
     integer fd, code, n, fails;
@@ -53,11 +53,11 @@ module lt_rc_tb;
                 if (rst) do_reset;
                 i_input_0 = a;
                 i_input_1 = b;
-                #1;                       // let combinational o_out settle
+                #1;                       // let combinational o_output settle
                 n = n + 1;
-                if (o_out !== exp_out) begin
+                if (o_output !== exp_out) begin
                     $display("FAIL t=%0d rst=%b in_0=%b in_1=%b : got %b exp %b",
-                             n, rst, a, b, o_out, exp_out);
+                             n, rst, a, b, o_output, exp_out);
                     fails = fails + 1;
                 end
                 // advance the registered state to the next timestep.

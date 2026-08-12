@@ -10,7 +10,7 @@ module dff #(
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
     input  wire i_input,     // input spike stream
-    output wire o_out     // delayed spike stream (DEPTH cycles old)
+    output wire o_output  // delayed spike stream (DEPTH cycles old)
 );
     // reg_q[0] is the oldest cell (the one read out this cycle); reg_q[DEPTH-1]
     // is the most recently written. Each posedge: emit reg_q[0], shift left, and
@@ -38,6 +38,6 @@ module dff #(
         end
     endgenerate
 
-    assign o_out = reg_q[0];
+    assign o_output = reg_q[0];
 endmodule
 `default_nettype wire

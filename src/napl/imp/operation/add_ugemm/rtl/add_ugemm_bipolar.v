@@ -13,7 +13,7 @@ module add_ugemm_bipolar #(
     input  wire             i_clk,
     input  wire             i_rst_n,
     input  wire [ENTRY-1:0] i_input,
-    output wire             o_out
+    output wire             o_output
 );
     wire [COUNT_WIDTH-1:0] partial_count [0:ENTRY];
     assign partial_count[0] = {COUNT_WIDTH{1'b0}};
@@ -40,7 +40,7 @@ module add_ugemm_bipolar #(
                 ? (sum[COUNT_WIDTH-1:0] - bound[COUNT_WIDTH-1:0])
                 : sum[COUNT_WIDTH-1:0];
 
-            assign o_out = fire;
+            assign o_output = fire;
 
             always @(posedge i_clk or negedge i_rst_n) begin
                 if (!i_rst_n)
@@ -69,7 +69,7 @@ module add_ugemm_bipolar #(
                 + (fire ? {{(ACC_WIDTH-2){1'b0}}, 2'b10}
                         : {ACC_WIDTH{1'b0}});
 
-            assign o_out = fire;
+            assign o_output = fire;
 
             always @(posedge i_clk or negedge i_rst_n) begin
                 if (!i_rst_n) begin

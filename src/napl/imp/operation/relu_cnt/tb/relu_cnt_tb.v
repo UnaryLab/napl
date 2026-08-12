@@ -17,7 +17,7 @@ module relu_cnt_tb;
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in),
-        .o_out   (out)
+        .o_output   (out)
     );
 
     integer fd, code, n, fails;

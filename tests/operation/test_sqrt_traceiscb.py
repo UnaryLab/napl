@@ -50,8 +50,15 @@ def _kernel_specific_checks():
             sqrt_traceiscb_inst(input, timesteps=codec_config['timestep'])
 
         r_value = torch.sqrt(input)
-        sqrt_traceiscb_inst.accuracy.analyze(r_value, verbose=True)
+        _, result = sqrt_traceiscb_inst.accuracy.analyze(r_value, verbose=True)
+        print(f'[{device}] max_error={result.absolute_max.item():.6f}')
         assert sqrt_traceiscb_inst.sqrt_traceiscb.timestep_cur == codec_config['timestep']
+        # The kernel derives internal_encode over its registered parts. The
+        # div_cordiv trace kernel and the decorr shuffle buffer are both True;
+        # the bipolar bi2uni part is False.
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.internal_encode is True
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.cordiv_kernel.internal_encode is True
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.decorr.internal_encode is True
         sqrt_traceiscb_inst.reset()
         assert sqrt_traceiscb_inst.sqrt_traceiscb.timestep_cur == 0
         print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
@@ -67,7 +74,7 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(0.0, 1.0, 131072),)
 
 
@@ -76,16 +83,20 @@ def analytic_reference(values, _polarity):
 
 
 def known_answer_case(_polarity):
-    values = torch.tensor([0.25, 1.0])
-    return (values,), torch.sqrt(values), 0.35
+    # x = 0 and x = 1 are the fixed points of sqrt; x = 0.25 is where sqrt(x)
+    # and x sit furthest apart, 0.250. The tolerance is half that gap, so a
+    # kernel that returned its input would fail the case. The largest error
+    # measured at these three values across cpu and mps is 0.062500 unipolar
+    # and 0.046875 bipolar, so the tolerance clears the working kernel by 2.0x.
+    values = torch.tensor([0.0, 0.25, 1.0])
+    return (values,), torch.sqrt(values)
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

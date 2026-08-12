@@ -20,7 +20,7 @@ module div_cordiv_tb;
         .i_rst_n(rst_n),
         .i_dividend(dividend),
         .i_divisor(divisor),
-        .o_quotient(quotient)
+        .o_output(quotient)
     );
 
     integer fd, code, n, fails;

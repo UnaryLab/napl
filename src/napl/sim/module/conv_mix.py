@@ -29,13 +29,17 @@ class conv_mix(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import conv_mix
+        from napl.sim.module import conv_mix
 
         layer = conv_mix(torch.zeros(2, 1, 3, 3), padding=1,
                      config={"polarity": "bipolar", "timestep": 4,
                              "generator": "sobol"})
         output_spike = layer(torch.ones(1, 1, 4, 4))
     """
+    #: The weight, bias, and pad encoders are held inside the layer, so the RTL
+    #: counterpart encodes those operands itself from held numeric codes
+    #: instead of taking them as spikes from a shared encoder.
+    internal_encode = True
 
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
@@ -59,7 +63,7 @@ class conv_mix(napl_base):
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1`` and the bipolar pad stream on ``dim + 2``; the default is ``2``.
               - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scale', 'width'], polarity_required=True)
@@ -113,15 +117,17 @@ class conv_mix(napl_base):
         #: Optional trainable numeric bias encoded on its own sequence.
         self.bias = torch.nn.Parameter(bias) if bias is not None else None
 
-        # Bipolar zero-padding uses a decorrelated rate-0.5 stream.
+        # Bipolar zero-padding draws a decorrelated rate-0.5 stream from a separate pad encoder, not a deterministic toggle, so it does not correlate with the Sobol weight stream.
         if self.polarity == 'bipolar' and self.padding != (0, 0):
             #: Encoder supplying a decorrelated bipolar-zero padding stream.
             self.pad_encoder = encode({**cfg, 'dim': dim + 2})
-            # Python float pad bits avoid a device-to-host synchronization in F.pad.
             #: Period of the precomputed padding spike sequence.
             self.pad_len = self.pad_encoder.len
             pad_seq = torch.gt(torch.tensor(0.5, dtype=self.ntype),
                                self.pad_encoder.num_seq.detach()).type(self.stype)
+            # Stands in for encode: converting the whole padding sequence to Python
+            # floats once, because a per-timestep call would re-enter the encode
+            # instance (self.pad_encoder) mid-stream.
             #: Precomputed scalar padding spikes indexed by timestep.
             self.pad_bits = [float(b) for b in pad_seq.tolist()]
 
@@ -137,8 +143,8 @@ class conv_mix(napl_base):
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -154,11 +160,11 @@ class conv_mix(napl_base):
         self._out_hw = None
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one NCHW input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor shaped
+            input: ``0``/``1`` tensor shaped
                 ``(batch, in_channels, height, width)``.
 
         Returns:
@@ -171,10 +177,10 @@ class conv_mix(napl_base):
         device changes.
         """
         ph, pw = self.padding
-        if self._im2col_key != (input_spike.shape, input_spike.device):
-            self._build_im2col(input_spike)
+        if self._im2col_key != (input.shape, input.device):
+            self._build_im2col(input)
         # unfold requires floating input; converting 0/1 spikes is exact.
-        xf = input_spike.type(self.ntype)
+        xf = input.type(self.ntype)
         if self.polarity == 'bipolar' and self.padding != (0, 0):
             # A decorrelated rate-0.5 pad stream represents bipolar zero.
             pad_bit = self.pad_bits[(self.timestep_cur - 1) % self.pad_len]
@@ -187,8 +193,8 @@ class conv_mix(napl_base):
         self.core.weight = self.weight.reshape(self.out_channels, -1)
         self.core.bias = None if self.bias is None else self.bias.data
         acc = self.core(inp)
-        return acc.view(input_spike.size(0), -1, acc.size(-1)).transpose(1, 2) \
-                  .reshape(input_spike.size(0), acc.size(-1), *self._out_hw)
+        return acc.view(input.size(0), -1, acc.size(-1)).transpose(1, 2) \
+                  .reshape(input.size(0), acc.size(-1), *self._out_hw)
 
 
     @property
@@ -209,18 +215,18 @@ class conv_mix(napl_base):
         return self.core.acc
 
 
-    def _build_im2col(self, input_spike):
+    def _build_im2col(self, input):
         ph, pw = self.padding
         self._out_hw = conv2d_output_shape(
-            (input_spike.size(2), input_spike.size(3)),
+            (input.size(2), input.size(3)),
             kernel_size=self.kernel_size,
             dilation=self.dilation,
             pad=self.padding,
             stride=self.stride,
         )
-        c = input_spike.size(1)
-        hp = input_spike.size(2) + 2 * ph
-        wp = input_spike.size(3) + 2 * pw
+        c = input.size(1)
+        hp = input.size(2) + 2 * ph
+        wp = input.size(3) + 2 * pw
         # Build exact float64 indices on CPU because MPS lacks float64.
         ar = torch.arange(c * hp * wp, dtype=torch.float64).view(1, c, hp, wp)
         unfolded = torch.nn.functional.unfold(
@@ -228,5 +234,5 @@ class conv_mix(napl_base):
         )
         # Output-position-major indices map a flat gather to (positions, K).
         self._im2col_idx = unfolded.view(self.K, -1).t().contiguous().long().view(-1) \
-            .to(input_spike.device)
-        self._im2col_key = (input_spike.shape, input_spike.device)
+            .to(input.device)
+        self._im2col_key = (input.shape, input.device)

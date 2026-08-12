@@ -30,37 +30,33 @@ def make_operation(polarity, _timestep, _device):
                            'generator': 'sys', 'seed': 7})
 
 
-def make_values(_polarity):
-    first = torch.linspace(0.0, 1.0, 128)
-    second = torch.linspace(1.0, 0.0, 128)
-    return first, second
+def make_values(polarity, count=128):
+    if polarity == 'bipolar':
+        return torch.linspace(-1.0, 1.0, count), torch.linspace(1.0, -1.0, count)
+    return torch.linspace(0.0, 1.0, count), torch.linspace(1.0, 0.0, count)
 
 
-def make_performance_values(_polarity):
-    first = torch.linspace(0.0, 1.0, 131072)
-    second = torch.linspace(1.0, 0.0, 131072)
-    return first, second
+def make_random_perf_values(polarity):
+    return make_values(polarity, count=131072)
 
 
 def analytic_reference(values, _polarity):
     return values[0]
 
 
-def known_answer_case(_polarity):
+def known_answer_case(polarity):
+    if polarity == 'bipolar':
+        values = (torch.tensor([-1.0, 1.0, 0.0]), torch.tensor([1.0, -1.0, -0.5]))
+        return values, values[0]
     values = (torch.tensor([0.0, 1.0, 0.5]), torch.tensor([1.0, 0.0, 0.25]))
-    # Three stored bits are lost at the end of the run and three reset bits take
-    # their place, on top of the encoder's own resolution.
-    return values, values[0], 5.0 / 256
+    return values, values[0]
 
 
 CONFIG = {
-    # decorr is unipolar only: the buffer emits stored 0/1 bits whose
-    # rate meaning is unipolar.
-    'polarities': ['unipolar'],
-    'tolerance_scale': 2.0,
+    'polarities': ['unipolar', 'bipolar'],
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'apply_operation': lambda operation, spikes: operation(*spikes)[0],
@@ -94,11 +90,11 @@ def _run_pair(operation, value_0, value_1, timesteps, device):
 
 
 def test_decorr_config():
-    """Reject a bipolar polarity, missing keys, unknown keys, and an invalid depth."""
+    """Reject an illegal polarity, missing keys, unknown keys, and an invalid depth."""
     depth_message = 'Invalid depth: <{}>; legal values: an integer of at least 1.'
     for config, message in [
-            ({'polarity': 'bipolar', 'depth': 4, 'timestep': 256, 'generator': 'sys'},
-             'Invalid polarity: <bipolar>; decorr supports unipolar only.'),
+            ({'polarity': 'ternary', 'depth': 4, 'timestep': 256, 'generator': 'sys'},
+             "Invalid polarity: <ternary>; legal values: <['unipolar', 'bipolar']>."),
             ({'depth': 4, 'timestep': 256, 'generator': 'sys'},
              'Missing key <polarity> in the input configuration.'),
             ({'polarity': 'unipolar', 'timestep': 256, 'generator': 'sys'},
@@ -130,40 +126,44 @@ def test_decorr_config():
 
 
 def test_decorr_known_sequence():
-    """Reproduce the Fig. 4b depth-4 shuffle buffer step by step on a rank-2 input."""
+    """Reproduce the Fig. 4b depth-4 shuffle buffer step by step on a rank-2 input under both polarities."""
     for device in devices():
-        operation = decorr({'polarity': 'unipolar', 'depth': 4, 'timestep': 4,
-                                    'generator': 'tc'}).to(device)
-        assert operation.rand_seq_idx == [[0, 1, 2, 3], [0, 1, 2, 3]], operation.rand_seq_idx
-        collected = []
-        for step, (bit_0, bit_1, expected_0, expected_1) in enumerate(SHUFFLE_D4_SEQUENCE, start=1):
-            # Both rows carry the same bits, so the per-element buffers stay in step.
-            input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
-            input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
-            output_0, output_1 = operation(input_0, input_1)
-            assert output_0.shape == (2, 3), output_0.shape
-            assert output_1.shape == (2, 3), output_1.shape
-            assert operation.reg.shape == (2, 3, 2, 3), operation.reg.shape
-            assert torch.equal(output_0.cpu(), torch.full((2, 3), expected_0, dtype=global_config.stype)), \
-                f'step {step}: input=({bit_0},{bit_1}) output_0={output_0.cpu().tolist()}'
-            assert torch.equal(output_1.cpu(), torch.full((2, 3), expected_1, dtype=global_config.stype)), \
-                f'step {step}: input=({bit_1},{bit_1}) output_1={output_1.cpu().tolist()}'
-            assert operation.timestep_cur == step
-            collected.append((output_0.cpu(), output_1.cpu()))
+        # Polarity only reinterprets the rate, so both polarities emit these bits.
+        for polarity in ('unipolar', 'bipolar'):
+            operation = decorr({'polarity': polarity, 'depth': 4, 'timestep': 4,
+                                        'generator': 'tc'}).to(device)
+            assert operation.polarity_io['output_0'] == polarity
+            assert operation.polarity_io['output_1'] == polarity
+            assert operation.rand_seq_idx == [[0, 1, 2, 3], [0, 1, 2, 3]], operation.rand_seq_idx
+            collected = []
+            for step, (bit_0, bit_1, expected_0, expected_1) in enumerate(SHUFFLE_D4_SEQUENCE, start=1):
+                # Both rows carry the same bits, so the per-element buffers stay in step.
+                input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
+                input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
+                output_0, output_1 = operation(input_0, input_1)
+                assert output_0.shape == (2, 3), output_0.shape
+                assert output_1.shape == (2, 3), output_1.shape
+                assert operation.reg.shape == (2, 3, 2, 3), operation.reg.shape
+                assert torch.equal(output_0.cpu(), torch.full((2, 3), expected_0, dtype=global_config.stype)), \
+                    f'{polarity} step {step}: input=({bit_0},{bit_1}) output_0={output_0.cpu().tolist()}'
+                assert torch.equal(output_1.cpu(), torch.full((2, 3), expected_1, dtype=global_config.stype)), \
+                    f'{polarity} step {step}: input=({bit_0},{bit_1}) output_1={output_1.cpu().tolist()}'
+                assert operation.timestep_cur == step
+                collected.append((output_0.cpu(), output_1.cpu()))
 
-        operation.reset()
-        assert operation.timestep_cur == 0
-        assert operation.reg.shape == (2, 3), operation.reg.shape
-        assert torch.equal(operation.reg.cpu(),
-                           torch.tensor([[0, 1, 0], [0, 1, 0]], dtype=global_config.stype))
+            operation.reset()
+            assert operation.timestep_cur == 0
+            assert operation.reg.shape == (2, 3), operation.reg.shape
+            assert torch.equal(operation.reg.cpu(),
+                               torch.tensor([[0, 1, 0], [0, 1, 0]], dtype=global_config.stype))
 
-        # Replaying the same inputs after reset must reproduce the same bits.
-        for step, (bit_0, bit_1, _, _) in enumerate(SHUFFLE_D4_SEQUENCE):
-            input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
-            input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
-            output_0, output_1 = operation(input_0, input_1)
-            assert torch.equal(output_0.cpu(), collected[step][0]), step
-            assert torch.equal(output_1.cpu(), collected[step][1]), step
+            # Replaying the same inputs after reset must reproduce the same bits.
+            for step, (bit_0, bit_1, _, _) in enumerate(SHUFFLE_D4_SEQUENCE):
+                input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
+                input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
+                output_0, output_1 = operation(input_0, input_1)
+                assert torch.equal(output_0.cpu(), collected[step][0]), step
+                assert torch.equal(output_1.cpu(), collected[step][1]), step
 
 
 def test_decorr_correlation():
@@ -206,7 +206,9 @@ def test_decorr_correlation():
 
 
 def test_decorr():
-    """Verify decorr preserves the first unipolar stream value across the full range."""
+    """Verify decorr preserves the first stream value across the full unipolar and bipolar ranges."""
+    # The kernel holds its own buffer-position-sequence encoder.
+    assert make_operation('unipolar', 256, 'cpu').internal_encode is True
     streaming_suite(CONFIG)
 
 

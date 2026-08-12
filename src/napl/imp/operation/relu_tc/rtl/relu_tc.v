@@ -19,7 +19,7 @@ module relu_tc #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
     // Completed timesteps modulo the codeword length 2**WIDTH.
     reg [WIDTH-1:0] cycle;
@@ -28,7 +28,7 @@ module relu_tc #(
     wire reference;
 
     assign reference = ~cycle[WIDTH-1];
-    assign o_out = i_input | reference;
+    assign o_output = i_input | reference;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

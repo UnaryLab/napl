@@ -16,14 +16,14 @@ module sqrt_emit_tb;
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in_bit),
-        .o_out   (out_uni)
+        .o_output   (out_uni)
     );
 
     sqrt_emit_bipolar dut_bip (
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in_bit),
-        .o_out   (out_bip)
+        .o_output   (out_bip)
     );
 
     integer fd, code, n, fails;

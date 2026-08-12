@@ -1,12 +1,11 @@
 import torch
 from loguru import logger
 
-from napl.sim.operation import add_any_dyn
+from napl.sim.base import napl_base
+from napl.sim.operation import add_scale, add_scale_dyn, mul_ugemm
 
-from .butterfly_ugemm import butterfly_ugemm
 
-
-class butterfly_ugemm_dyn(butterfly_ugemm):
+class butterfly_ugemm_dyn(napl_base):
     r"""Evaluate a fully streaming radix-2 butterfly with a runtime adder scale.
 
     Use this class when a butterfly must stay in the spike domain on every data
@@ -17,7 +16,7 @@ class butterfly_ugemm_dyn(butterfly_ugemm):
 
     With the scale held constant from reset through a run, the output streams
     encode the exact butterfly divided by that scale, reported after each call
-    as :attr:`compensation`. ``add_any_dyn`` preserves accumulator mass at the
+    as :attr:`compensation`. ``add_scale_dyn`` preserves accumulator mass at the
     scale active when a spike fires, so a scale may change without reset, but
     the stream then mixes segments produced under different scales and no single
     compensation factor describes the whole run. Only bipolar encoding is
@@ -40,9 +39,9 @@ class butterfly_ugemm_dyn(butterfly_ugemm):
             mul_config: Bipolar conditional-spike multiplier configuration
                 containing ``polarity``, ``timestep``, and ``generator``.
             add_config: Dynamic adder configuration containing ``polarity``,
-                positive integer ``scale_max``, and ``width``. The width bound
-                documented on :class:`butterfly_ugemm` is checked against
-                ``scale_max``.
+                positive ``scale_max``, ``intwidth``, and ``fracwidth``. The
+                accumulator bound documented on :class:`butterfly_ugemm` is
+                checked against ``scale_max``.
         """
         if 'scale_max' not in add_config:
             message = 'Missing key <scale_max> in the dynamic adder configuration.'
@@ -58,22 +57,121 @@ class butterfly_ugemm_dyn(butterfly_ugemm):
             raise AssertionError(message)
         static_add_config = dict(add_config)
         static_add_config['scale'] = static_add_config.pop('scale_max')
-        super().__init__(twiddle_real, twiddle_imag, mul_config, static_add_config)
+        super().__init__(mul_config, ['polarity', 'timestep', 'generator'],
+                         polarity_required=True)
+        # y1 = x0 - w x1 is negative for positive operands, which a unipolar stream
+        # cannot represent, so the subtraction path requires bipolar encoding.
+        if self.polarity != 'bipolar':
+            message = f'Invalid polarity: <{self.polarity}>; legal values: <[\'bipolar\']>.'
+            logger.error(message)
+            raise AssertionError(message)
+
+        for label, value in (('twiddle_real', twiddle_real), ('twiddle_imag', twiddle_imag)):
+            if not isinstance(value, torch.Tensor) or value.ndim != 1 or value.numel() == 0:
+                shape = tuple(value.shape) if isinstance(value, torch.Tensor) \
+                    else type(value).__name__
+                message = (
+                    f'Invalid {label}: <{shape}>; legal values: a non-empty 1-D tensor.'
+                )
+                logger.error(message)
+                raise AssertionError(message)
+        if twiddle_real.numel() != twiddle_imag.numel():
+            message = (
+                f'butterfly_ugemm twiddle_real length <{twiddle_real.numel()}> must '
+                f'equal twiddle_imag length <{twiddle_imag.numel()}>.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
+
+        #: Number of independent butterfly lanes carried by the leading dimension.
+        self.lane = twiddle_real.numel()
+        #: Conditional-spike multiplier for the four stacked twiddle products.
+        self.mul_wx = mul_ugemm(dict(mul_config))
+        #: Adder fan-in covering the input spike and the two twiddle-product spikes.
+        self.add_entry = 3
+
+        # The static adder is a construction-time check that the largest runtime
+        # scale fits the requested accumulator width.
+        static_add = add_scale(static_add_config)
+        adder_scale = static_add.scale
+        # The fan-in and step bounds are restated in the accumulator's raw units of
+        # 2 ** -fracwidth to check that its rail holds the largest sub-threshold residue
+        # (scale - grid) plus one timestep's step delta_max, plus one worst-case burst
+        # timestep when scale is below the fan-in.
+        acc_max = static_add.acc_max
+        entry_raw = self.add_entry * 2**static_add.fracwidth
+        scale_raw = static_add.scale_raw
+        delta_max = (entry_raw + scale_raw) / 2
+        grid = 0.5 if (entry_raw - scale_raw) % 2 else 1
+        if (acc_max < (scale_raw - grid) + delta_max
+                or (scale_raw < entry_raw and acc_max + 1 <= entry_raw)):
+            message = (
+                f'butterfly_ugemm accumulator maximum <{acc_max}> raw units too small for fan-in '
+                f'<{self.add_entry}> and scale <{adder_scale}>: for this bipolar-only adder '
+                f'acc_max must be >= (scale_raw - grid) + delta_max, with grid <{grid}> '
+                f'and delta_max <{delta_max}> in raw units of <{static_add.grid}>, and acc_max + 1 '
+                f'must be > entry when scale < entry, or partial sums saturate. Increase intwidth.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
+
         #: Dynamic scaled adder used by the butterfly output paths.
-        self.add_y = add_any_dyn(dict(add_config))
+        self.add_y = add_scale_dyn(dict(add_config))
         #: Largest runtime carry scale accepted by this butterfly.
         self.scale_max = self.add_y.scale_max
         #: Factor the output streams of the most recent call are divided by.
         self.compensation = None
 
+        # The twiddle is a stage constant, so its stacked operand and the per-lane
+        # sign and bias constants are built once instead of per call.
+        #: Stacked twiddle components read by the multiplier on every timestep.
+        self.twiddle_stack: torch.Tensor
+        self.register_buffer(
+            'twiddle_stack',
+            torch.cat([twiddle_real, twiddle_real, twiddle_imag, twiddle_imag])
+            .detach().type(self.ntype),
+        )
+        sign = torch.cat([
+            torch.full((self.lane,), -1),
+            torch.full((self.lane,), 1),
+        ]).type(self.stype)
+        #: Per-lane sign that turns a subtraction into a complemented stream.
+        self.sign: torch.Tensor
+        self.register_buffer('sign', sign)
+        #: Bias absorbing the complement constant on the first output lane.
+        self.bias0: torch.Tensor
+        self.register_buffer('bias0', sign.eq(-1).type(self.stype))
+        #: Bias absorbing the complement constant on the second output lane.
+        self.bias1: torch.Tensor
+        self.register_buffer(
+            'bias1',
+            torch.cat([self.bias0.narrow(0, 0, self.lane),
+                       self.bias0.narrow(0, 0, self.lane) + 1]),
+        )
+
+        # Multiplication and addition are combinational within one timestep.
+        #: Hardware latency and timing metadata for the streaming butterfly.
+        self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
+
+        #: Rate coding on every spike port, which the class neither encodes nor decodes.
+        self.encoding_io = {port: 'rc' for port in
+                            ('x0r', 'x0i', 'x1r', 'x1i', 'y0r', 'y0i', 'y1r', 'y1i')}
+        #: Stream polarity of all eight spike ports, which share the class polarity.
+        self.polarity_io = {port: self.polarity for port in
+                            ('x0r', 'x0i', 'x1r', 'x1i', 'y0r', 'y0i', 'y1r', 'y1i')}
+        self.correlation_i = {}
+        self.stability_flux = 1.0
+
 
     def _reset(self):
-        """Clear the reported compensation after inherited children reset.
+        """Clear the reported compensation after the registered children reset.
 
-        The reported factor returns to ``None`` because no call has selected a
-        scale yet. This hook returns ``None``.
+        The twiddle, sign, and bias constants are fixed at construction, so the
+        reported factor is the only class-local state. It returns to ``None``
+        because no call has selected a scale yet. This hook returns ``None``.
         """
-        super()._reset()
         self.compensation = None
 
 
@@ -101,14 +199,14 @@ class butterfly_ugemm_dyn(butterfly_ugemm):
         scale = self._runtime_scale(scale)
         if not (x0r.shape == x0i.shape == x1r.shape == x1i.shape):
             message = (
-                f'butterfly_ugemm input shapes must match: got <{x0r.shape}>, '
+                f'butterfly_ugemm_dyn input shapes must match: got <{x0r.shape}>, '
                 f'<{x0i.shape}>, <{x1r.shape}>, and <{x1i.shape}>.'
             )
             logger.error(message)
             raise AssertionError(message)
         if x0r.ndim == 0 or x0r.shape[0] != self.lane:
             message = (
-                f'butterfly_ugemm first input dimension must equal lane <{self.lane}>: '
+                f'butterfly_ugemm_dyn first input dimension must equal lane <{self.lane}>: '
                 f'got shape <{x0r.shape}>.'
             )
             logger.error(message)
@@ -129,7 +227,6 @@ class butterfly_ugemm_dyn(butterfly_ugemm):
             product.narrow(0, 2 * lane, lane),
         ], 0)
 
-        # Bias terms absorb inverted spikes in the real-minus and imaginary-plus lanes.
         term = product_01 + self.sign.reshape((-1,) + tail) * product_32
         y0_sum = x0_spike + term + self.bias0.reshape((-1,) + tail)
         y1_sum = x0_spike - term + self.bias1.reshape((-1,) + tail)

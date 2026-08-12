@@ -10,7 +10,7 @@ operation-layer circuits that implement exactly those pieces:
 
     mul_ugemm_<polarity>  -- one per (output feature, input feature) weight bit
     encode                -- one per output feature, the free-running bias bit
-    add_any_<polarity>    -- one per output feature, the scaled accumulator
+    add_scale_<polarity>    -- one per output feature, the scaled accumulator
 
 Both `mul_ugemm_*` and `encode` $readmemb their number-sequence ROM from a path
 relative to the simulation cwd (module/linear_ugemm/), so this file writes
@@ -51,7 +51,7 @@ Output: ../vec/linear_ugemm.vec, one line per timestep:
     <out_b_s>
 
 `in_*_bits` is IN_FEATURES binary digits, MSB first, so input feature f occupies
-i_input_spike[f]. `out_*` is LANES binary digits, MSB first, with lane l the
+i_input[f]. `out_*` is LANES binary digits, MSB first, with lane l the
 output feature l.
 
 Weight and bias operands are held fixed-point codes, so they go to
@@ -73,7 +73,6 @@ Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_linear_ugemm.py
 """
 import math
-import sys
 from pathlib import Path
 
 import torch
@@ -82,9 +81,6 @@ from napl.sim.base import global_config
 from napl.sim.module import linear_ugemm
 from napl.sim.operation import encode
 from napl.syn import translate_node
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "operation"))
-from _gen_common import require_seeded_sys  # noqa: E402
 
 VEC_DIR = Path(__file__).resolve().parent.parent / "vec"
 VEC = VEC_DIR / "linear_ugemm.vec"
@@ -114,28 +110,14 @@ BIAS_CODES = operand_codes(LANES, 53, 7)
 INPUT_CODES = {'unipolar': operand_codes(IN_FEATURES, 71, 13),
                'bipolar': operand_codes(IN_FEATURES, 43, 97)}
 
-# A divisor below the fan-in, which is what lets the lane accumulator drift at
-# all: with scale == entry the bipolar offset (entry - scale) / 2 is zero, every
-# addend is non-negative and the accumulator never leaves [0, entry - 1]. The
-# scaled arms hold their weights at the top code and their bias at 0, so a
-# spiking input gives a partial sum of IN_FEATURES and a silent one gives 0.
+# A divisor below the fan-in, so the bipolar offset (entry - scale) / 2 is nonzero and the lane accumulator can drift.
 SCALE_S = 5
 RAIL_WEIGHT = LEN
 RAIL_BIAS = 0
-# An emitted carry subtracts SCALE_S again, so a charging accumulator climbs at
-# the partial sum less the offset less SCALE_S: 16 - 0 - 5 = 11 per cycle in
-# unipolar, which reaches the 2047 clamp of a 12-bit accumulator in 186 cycles,
-# and 16 - 6 - 5 = 5 per cycle in bipolar, which reaches 1275 over the whole
-# block. Every cycle advances a sequence index and the ROM is indexed without a
-# modulo, so a run holds at most LEN - 1 spiking cycles and, in bipolar, LEN - 1
-# silent ones; 1275 is what that budget allows, and it is past the 1023 clamp of
-# the next narrower width. The silent block then drains both arms.
+# Charge for LEN - 1 cycles then drain for LEN - 1, within the no-modulo sequence-index budget, to drive both scaled accumulators onto the positive clamp and back.
 SAT_CHARGE = LEN - 1
 SAT_DRAIN = LEN - 1
-# Negative-clamp block: only the bipolar accumulator moves down, by the offset 6
-# per silent cycle, so the same LEN - 1 budget reaches -1530: past the -1024 a
-# clamp one bit narrower would hold, short of the -2048 of the elaborated width.
-# The charge back up runs at 16 - 6 = 10 per cycle while the arm stays silent.
+# Drain for LEN - 1 cycles then recharge for 200, enough to drive the bipolar accumulator past the next narrower clamp and back.
 NEG_DRAIN = LEN - 1
 NEG_CHARGE = 200
 # Rails as model values: probability 1 and 0 in the polarity's own domain.
@@ -173,12 +155,10 @@ class arm:
         codec = {'polarity': polarity, 'timestep': TIMESTEP, 'generator': 'sobol', 'dim': 2}
         config = {'polarity': polarity, 'timestep': TIMESTEP, 'generator': 'sobol',
                   'dim': 1, 'scale': None, 'width': ACC_WIDTH}
-        require_seeded_sys(codec, config)
         weight = tensor(WEIGHT_CODES, (LANES, IN_FEATURES), polarity)
         bias = tensor(BIAS_CODES, (LANES,), polarity)
         self.value = tensor(INPUT_CODES[polarity], (IN_FEATURES,), polarity)
         self.config_s = dict(config, scale=SCALE_S)
-        require_seeded_sys(self.config_s)
         rail_weight = tensor([RAIL_WEIGHT] * (LANES * IN_FEATURES),
                              (LANES, IN_FEATURES), polarity)
         rail_bias = tensor([RAIL_BIAS] * LANES, (LANES,), polarity)
@@ -186,9 +166,7 @@ class arm:
         self.layer = linear_ugemm(weight, bias, config)
         self.layer_nb = linear_ugemm(weight, None, config)
         self.layer_s = linear_ugemm(rail_weight, rail_bias, self.config_s)
-        # A shadow of the scaled arm one bit narrower. It is never emitted: the
-        # saturation blocks require its output to part from the scaled arm's,
-        # which is what makes the elaborated WIDTH observable in a vector row.
+        # A one-bit-narrower shadow of the scaled arm, never emitted but required to part from it so the elaborated WIDTH is observable.
         self.layer_narrow = linear_ugemm(rail_weight, rail_bias,
                                          dict(self.config_s, width=ACC_WIDTH - 1))
         self.rail_weight = rail_weight
@@ -319,11 +297,7 @@ def run_saturation(rows):
         for slot, one in enumerate(arms):
             peak[slot] = max(peak[slot], int(one.layer_s.acc.accumulator.reshape(-1).max()))
     assert parted, 'the positive block never parted from a one-bit-narrower accumulator'
-    # One carry is subtracted after the clamp, so a clamped accumulator is
-    # retained at acc_max - SCALE_S. The bipolar arm climbs at the offset rather
-    # than at the fan-in, which the sequence-index budget stops short of the
-    # clamp, so it is required only to pass the clamp of the next narrower width,
-    # which is the corruption the block is here to catch.
+    # The post-clamp carry retains the clamped unipolar accumulator at acc_max - SCALE_S, while the bipolar arm, climbing only at the offset within the sequence-index budget, need only pass the next narrower clamp.
     acc_max = arms[0].layer_s.acc.acc_max
     assert peak[0] == acc_max - SCALE_S, \
         f'the unipolar scaled accumulator peaked at {peak[0]}, short of {acc_max}'
@@ -398,8 +372,7 @@ def write_operands():
         (VEC_DIR / f"linear_ugemm_operand_{suffix}.hex").write_text(
             "\n".join(f"{code:0{SEQ_WIDTH + 1}b}" for code in lines) + "\n"
         )
-    # The scaled arms' railed operands. An operand code is the probability code
-    # either polarity compares against, so one file serves both.
+    # The scaled arms' railed operands, shared by both polarities since an operand code is the probability code each compares against.
     rail = []
     for _ in range(LANES):
         rail += [RAIL_WEIGHT] * IN_FEATURES + [RAIL_BIAS]

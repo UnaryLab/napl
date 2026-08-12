@@ -1,6 +1,6 @@
 // Self-checking testbench for min_tc.
 // Reads vec/min_tc.vec (golden vectors from the napl Python model), applies
-// each (in_0, in_1) combinationally, and compares o_out to the expected column.
+// each (in_0, in_1) combinationally, and compares o_output to the expected column.
 // Prints "PASS" only on a full bit-exact match.
 `timescale 1ns / 1ps
 
@@ -21,7 +21,7 @@ module min_tc_tb;
     min_tc dut (
         .i_input_0 (r_in_0),
         .i_input_1 (r_in_1),
-        .o_out  (w_out)
+        .o_output  (w_out)
     );
 
     initial begin

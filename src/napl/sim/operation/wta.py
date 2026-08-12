@@ -19,7 +19,7 @@ class wta(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import wta
+        from napl.sim.operation import wta
 
         operation = wta()
         input_t = torch.tensor([[1, 1], [1, 0]], dtype=torch.int8)

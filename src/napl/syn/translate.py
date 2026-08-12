@@ -221,14 +221,6 @@ def _select_entry(mapping, class_name, config, requested_rtl=None):
         matches = [entry for entry in entries if entry.get("rtl_module") == expected]
         if matches:
             return matches[0]
-        # One RTL module may serve a simulation class whose node name differs from
-        # the RTL base name, for example linear_mix nodes map to linear_<polarity>.
-        # The polarity suffix still selects the variant whenever exactly one entry
-        # carries it.
-        matches = [entry for entry in entries
-                   if str(entry.get("rtl_module", "")).endswith(f"_{polarity}")]
-        if len(matches) == 1:
-            return matches[0]
 
     exact = [entry for entry in entries if entry.get("rtl_module") == class_name]
     if len(exact) == 1:
@@ -279,9 +271,22 @@ def _shape_from_value(value):
     return None
 
 
-def _input_descriptor(node):
+#: Input keys the evaluator reads directly rather than as declared RTL ports:
+#: the generic shape source and the scalar helpers bound in the eval context.
+_RESERVED_INPUT_KEYS = {"input", "dim", "entry", "segment"}
+
+
+def _input_descriptor(node, entry):
     inputs = node.get("inputs")
     if isinstance(inputs, Mapping):
+        declared = set(entry.get("inputs") or ())
+        for key in inputs:
+            if key not in declared and key not in _RESERVED_INPUT_KEYS:
+                raise TranslationError(
+                    f"Graph node for RTL module {entry.get('rtl_module')!r} supplies "
+                    f"unknown input {key!r}; declared inputs are "
+                    f"{sorted(declared)}"
+                )
         if "input" in inputs:
             return inputs["input"]
         for key, value in inputs.items():
@@ -294,7 +299,7 @@ def _input_descriptor(node):
 
 
 def _make_eval_context(node, config, entry):
-    shape = _shape_from_value(_input_descriptor(node))
+    shape = _shape_from_value(_input_descriptor(node, entry))
     if shape is None:
         for key in ("input_shape", "shape", "input_size"):
             if key in node:
@@ -321,9 +326,7 @@ def _make_eval_context(node, config, entry):
         segment = _Count(segment)
 
     context = dict(config)
-    # The reserved names are set after the config keys, so no config key can
-    # shadow one of them. A module node carries the class's own `config` mapping
-    # under an __init__ argument of that name, so the node config keeps `config`.
+    # Reserved names are set after the config keys so no config key shadows them, keeping a module node's own `config` mapping readable under the `config` name.
     context.update({
         "config": config,
         "input": _Shape(shape) if shape is not None else None,

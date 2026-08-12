@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
-from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_dyn, add_any
+from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_dyn, add_scale
 from .linear_mix import linear_mix
 from napl.sim.module._shared import _mgu_run_outlasts_ismul
 from loguru import logger
@@ -40,7 +40,7 @@ class mgu_hard_mix(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mgu_hard_mix
+        from napl.sim.module import mgu_hard_mix
 
         cell = mgu_hard_mix(torch.zeros(3, 5), torch.zeros(3),
                    torch.zeros(3, 5), torch.zeros(3), torch.zeros(1, 3),
@@ -54,6 +54,9 @@ class mgu_hard_mix(napl_base):
 
         *uBrain: A Unary Brain Computer Interface*, ISCA, 2022.
     """
+    #: The gate multipliers encode their own operands, so the RTL counterpart
+    #: holds encoders rather than sharing an external one.
+    internal_encode = True
 
 
     def __init__(self, weight_f, bias_f, weight_n, bias_n, hx_value,
@@ -117,14 +120,15 @@ class mgu_hard_mix(napl_base):
             'generator': gen,
         })
         #: Saturating unary adder that forms the next hidden-state stream.
-        self.hy_add = add_any({'polarity': 'bipolar', 'scale': 1, 'width': width})
+        self.hy_add = add_scale({'polarity': 'bipolar', 'scale': 1,
+                                 'intwidth': width, 'fracwidth': 0})
 
         # The composed gates, multipliers, and adders are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming cell.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'hx_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'hx_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'hx': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'hx': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -138,13 +142,13 @@ class mgu_hard_mix(napl_base):
         pass
 
 
-    def forward(self, input_spike, hx_spike):
+    def forward(self, input, hx):
         """Process one input and hidden-state spike timestep.
 
         Args:
-            input_spike: Current input spike tensor shaped
+            input: Current input spike tensor shaped
                 ``(batch, input_size)``.
-            hx_spike: Current hidden spike tensor shaped
+            hx: Current hidden spike tensor shaped
                 ``(batch, hidden_size)``.
 
         Returns:
@@ -153,11 +157,11 @@ class mgu_hard_mix(napl_base):
         The call updates registered streaming children and advances this cell's
         ``timestep_cur`` once. ``hx_value`` remains unchanged.
         """
-        fg_in = self.fg_ug_tanh(torch.cat((hx_spike, input_spike), dim=1))
+        fg_in = self.fg_ug_tanh(torch.cat((hx, input), dim=1))
         fg = self.fg_sigmoid(fg_in)
         fg_hx = self.fg_hx_mul(fg, self.hx_value)
-        ng = self.ng_ug_tanh(torch.cat((fg_hx, input_spike), dim=1))
+        ng = self.ng_ug_tanh(torch.cat((fg_hx, input), dim=1))
         fg_ng = self.fg_ng_mul(fg, ng)
         fg_ng_inv = 1 - fg_ng.type(self.stype)
-        # Three 0/1 operands sum exactly in ntype, and entry=3 matches their fan-in.
+        # Three 0/1 spikes sum exactly in stype, and entry=3 matches their fan-in.
         return self.hy_add(ng + fg_ng_inv + fg_hx, dim=None, entry=3)

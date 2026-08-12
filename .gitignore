@@ -70,7 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
-docs/source/api/generated/
+docs/source/api/sim/*/
 
 # PyBuilder
 .pybuilder/
@@ -227,3 +227,6 @@ src/napl/imp/module/*/vec/*.vh
 # Agent coordination state
 .peon-code-task*.md
 REVIEW.md
+.claude/
+.githooks/
+reports/

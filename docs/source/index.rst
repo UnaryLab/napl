@@ -2,7 +2,7 @@ About
 =====
 
 NAPL is UnaryLab's PyTorch framework for programmable spike processing. It
-supports per-timestep spike-stream simulation, single-shot binary-domain
+supports per-timestep spike-stream simulation, non-streaming binary-domain
 kernels, and verified Verilog counterparts for selected operations.
 
 This site separates system design from the generated API reference. Design
@@ -26,7 +26,7 @@ render signatures and docstrings from the source tree.
 
 .. toctree::
    :maxdepth: 2
-   :caption: API
+   :caption: SIM API
 
    Reference <api/index>
 

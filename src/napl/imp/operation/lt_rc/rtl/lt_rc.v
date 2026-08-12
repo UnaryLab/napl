@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 // Rate-coded lt_rc equivalent with a width-2 sync_skewed counter.
-// o_out is the pre-update result register, so pp_delay=1.
+// o_output is the pre-update result register, so pp_delay=1.
 // Each posedge is one Python timestep; active-low reset clears result and cnt.
 
 
@@ -10,7 +10,7 @@ module lt_rc (
     input  wire i_rst_n,  // active-low; maps to Python reset()
     input  wire i_input_0,   // spike stream 0 (the "smaller" operand to sync)
     input  wire i_input_1,   // spike stream 1 (kept unchanged through sync)
-    output wire o_out     // registered less-than spike
+    output wire o_output  // registered less-than spike
 );
     // sync_skewed state: 2-bit saturating counter, range 0..3.
     reg  [1:0] cnt;
@@ -47,8 +47,8 @@ module lt_rc (
     wire d_en    = sync_0 ^ sync_1;
     wire dff_nxt = d_en ? sync_1 : dff;
 
-    // o_out is the dff value before this cycle's update (registered output).
-    assign o_out = dff;
+    // o_output is the dff value before this cycle's update (registered output).
+    assign o_output = dff;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

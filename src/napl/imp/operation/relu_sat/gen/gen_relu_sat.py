@@ -3,10 +3,10 @@ Generate golden test vectors for the relu_sat RTL straight from napl's functiona
 Python model (napl.sim.operation.relu_sat) -- so the testbench checks the Verilog
 against the *actual* simulator, not a hand-derived truth table.
 
-relu_sat is a stateful per-timestep streaming op (two chained add_any
+relu_sat is a stateful per-timestep streaming op (two chained add_scale
 accumulators) and is bipolar/rate-coded only, so there is a single variant
 (no polarity split). It carries NO config-derived sizing key: its
-super().__init__(config, [], ...) key_list is empty, and the inner add_any
+super().__init__(config, [], ...) key_list is empty, and the inner add_scale
 widths/scales are intrinsic algorithm constants baked into the Python model, not
 config sizes. So there is NO sizing parameter to inherit and NO *_params.vh is
 emitted; the RTL is validate-only.

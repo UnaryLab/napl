@@ -1,39 +1,16 @@
 # Simulation class -> RTL module bindings, read by napl/syn/translate.py.
 # Keys, the allowed `layer` values and its default, the expression language, and
 # the generator self-check contract are documented in RULE_IMP.md ("mapping.yaml").
-- rtl_module: add_any_bipolar
+- rtl_module: add_desync
   layer: operation
-  sim_module: sim/operation/add_any.py
+  sim_module: sim/operation/add_desync.py
   inputs:
-    input: i_input
-    entry: null
-    dim: null
+    input_0: i_input_0
+    input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters:
-    SCALE: "config['scale']"
-    WIDTH: "config['width']"
-    ENTRY: input.size(dim)
-  requires:
-    - "WIDTH <= 30"
-    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
-
-- rtl_module: add_any_unipolar
-  layer: operation
-  sim_module: sim/operation/add_any.py
-  inputs:
-    input: i_input
-    entry: null
-    dim: null
-  outputs:
-    output: o_out
-  parameters:
-    SCALE: "config['scale']"
-    WIDTH: "config['width']"
-    ENTRY: input.size(dim)
-  requires:
-    - "WIDTH <= 30"
-    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
+    DEPTH: "config['depth']"
 
 - rtl_module: add_gaines
   layer: operation
@@ -42,11 +19,107 @@
     input: i_input
     dim: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     SCALED: "config['scaled']"
     ENTRY: "config['entry']"
     SELECT_WIDTH: "log2(config['entry'])"
+
+- rtl_module: add_scale_bipolar
+  layer: operation
+  sim_module: sim/operation/add_scale.py
+  inputs:
+    input: i_input
+    entry: null
+    dim: null
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+    ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the simulation model rounds the requested scale to an integer
+    # and compares against the rounded value, so SCALE tracks it only when the
+    # request is already integral.
+    - "config['scale'] == int(config['scale'])"
+
+- rtl_module: add_scale_dyn_bipolar
+  layer: operation
+  sim_module: sim/operation/add_scale_dyn.py
+  inputs:
+    input: i_input
+    scale: i_scale
+    entry: null
+    dim: null
+  outputs:
+    output: o_output
+  parameters:
+    SCALE_W: "ceil(log2(config['scale_max'] + 1))"
+    WIDTH: "config['intwidth']"
+    ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    # The accumulator, the scale bus and the reduction all land in one 32-bit
+    # elaboration constant, and the Python constructor caps scale_max at
+    # 2 ** (WIDTH - 1) - 1, so the scale term is bounded by 2 ** (WIDTH - 1).
+    - "2 ** WIDTH + 2 ** (WIDTH - 1) + 3 * ENTRY + 1 <= 2 ** 31 - 1"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+
+- rtl_module: add_scale_dyn_unipolar
+  layer: operation
+  sim_module: sim/operation/add_scale_dyn.py
+  inputs:
+    input: i_input
+    scale: i_scale
+    entry: null
+    dim: null
+  outputs:
+    output: o_output
+  parameters:
+    SCALE_W: "ceil(log2(config['scale_max'] + 1))"
+    WIDTH: "config['intwidth']"
+    ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    # The accumulator, the scale bus and the reduction all land in one 32-bit
+    # elaboration constant, and the Python constructor caps scale_max at
+    # 2 ** (WIDTH - 1) - 1, so the scale term is bounded by 2 ** (WIDTH - 1).
+    - "2 ** WIDTH + 2 ** (WIDTH - 1) + 3 * ENTRY + 1 <= 2 ** 31 - 1"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+
+- rtl_module: add_scale_unipolar
+  layer: operation
+  sim_module: sim/operation/add_scale.py
+  inputs:
+    input: i_input
+    entry: null
+    dim: null
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+    ENTRY: input.size(dim)
+  requires:
+    - "WIDTH <= 30"
+    - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the simulation model rounds the requested scale to an integer
+    # and compares against the rounded value, so SCALE tracks it only when the
+    # request is already integral.
+    - "config['scale'] == int(config['scale'])"
 
 - rtl_module: add_ugemm_bipolar
   layer: operation
@@ -55,7 +128,7 @@
     input: i_input
     dim: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     SCALED: "config['scaled']"
     ENTRY: input.size(dim)
@@ -69,7 +142,7 @@
     input: i_input
     dim: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     SCALED: "config['scaled']"
     ENTRY: input.size(dim)
@@ -82,7 +155,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -90,11 +163,38 @@
   layer: operation
   sim_module: sim/operation/decode.py
   inputs:
-    spike: i_spike
+    input: i_input
   outputs:
-    self.spike_count: o_spike_count
+    spike_count: o_spike_count
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: decorr
+  layer: operation
+  sim_module: sim/operation/decorr.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output_0: o_output_0
+    output_1: o_output_1
+  parameters:
+    DEPTH: "config['depth']"
+    IDX_W: "1 if config['depth'] <= 2 else int(ceil(log2(config['depth'])))"
+    SEQ_LEN: "config['timestep']"
+    SEQ_W: "1 if config['timestep'] <= 2 else int(ceil(log2(config['timestep'])))"
+
+- rtl_module: desync
+  layer: operation
+  sim_module: sim/operation/desync.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output_0: o_output_0
+    output_1: o_output_1
+  parameters:
+    DEPTH: "config['depth']"
 
 - rtl_module: dff
   layer: operation
@@ -102,7 +202,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -113,7 +213,7 @@
     dividend: i_dividend
     divisor: i_divisor
   outputs:
-    quotient: o_quotient
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
     WIDTH: "log2(config['depth'])"
@@ -127,7 +227,7 @@
     dividend: i_dividend
     divisor: i_divisor
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -138,18 +238,9 @@
     dividend: i_dividend
     divisor: i_divisor
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
-
-- rtl_module: div_iscb_bi2uni
-  layer: operation
-  sim_module: sim/operation/bi2uni.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_out
-  parameters: {}
 
 - rtl_module: div_iscb_bipolar
   layer: operation
@@ -158,26 +249,7 @@
     dividend: i_dividend
     divisor: i_divisor
   outputs:
-    output: o_quotient
-  parameters: {}
-
-- rtl_module: div_iscb_signabs
-  layer: operation
-  sim_module: sim/operation/signabs.py
-  inputs:
-    input: i_input
-  outputs:
-    sign: o_sign
-    abs: o_abs
-  parameters: {}
-
-- rtl_module: div_iscb_uni2bi
-  layer: operation
-  sim_module: sim/operation/uni2bi.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: div_iscb_unipolar
@@ -187,8 +259,78 @@
     dividend: i_dividend
     divisor: i_divisor
   outputs:
-    output: o_quotient
+    output: o_output
   parameters: {}
+
+- rtl_module: div_scale_bipolar
+  layer: operation
+  sim_module: sim/operation/div_scale.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+  requires:
+    - "WIDTH <= 30"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the simulation model rounds the requested scale to an integer
+    # and divides by the rounded value, so SCALE tracks it only when the request
+    # is already integral.
+    - "config['scale'] == int(config['scale'])"
+
+- rtl_module: div_scale_dyn_bipolar
+  layer: operation
+  sim_module: sim/operation/div_scale_dyn.py
+  inputs:
+    input: i_input
+    scale: i_scale
+  outputs:
+    output: o_output
+  parameters:
+    SCALE_W: "ceil(log2(config['scale_max'] + 1))"
+    WIDTH: "config['intwidth']"
+  requires:
+    - "WIDTH <= 30"
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+
+- rtl_module: div_scale_dyn_unipolar
+  layer: operation
+  sim_module: sim/operation/div_scale_dyn.py
+  inputs:
+    input: i_input
+    scale: i_scale
+  outputs:
+    output: o_output
+  parameters:
+    SCALE_W: "ceil(log2(config['scale_max'] + 1))"
+  requires:
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+
+- rtl_module: div_scale_unipolar
+  layer: operation
+  sim_module: sim/operation/div_scale.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+  requires:
+    # The RTL accumulator counts whole spikes, so only the integer grid of the
+    # simulation model, fracwidth 0, has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the simulation model rounds the requested scale to an integer
+    # and divides by the rounded value, so SCALE tracks it only when the request
+    # is already integral.
+    - "config['scale'] == int(config['scale'])"
 
 - rtl_module: encode
   layer: operation
@@ -207,7 +349,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
 
@@ -217,7 +359,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
     GAIN: "config['gain']"
@@ -229,7 +371,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: inhibit
@@ -239,7 +381,7 @@
     input_data: i_input_data
     input_inhibit: i_input_inhibit
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: jkff
@@ -249,7 +391,7 @@
     input_j: i_input_j
     input_k: i_input_k
   outputs:
-    self.q: o_q
+    q: o_q
   parameters: {}
 
 - rtl_module: lt_rc
@@ -259,7 +401,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: max_rc
@@ -269,9 +411,20 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_max
-    self.dff: o_arg
+    output: o_output
+    index: o_index
   parameters: {}
+
+- rtl_module: max_sync
+  layer: operation
+  sim_module: sim/operation/max_sync.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters:
+    DEPTH: "config['depth']"
 
 - rtl_module: max_tc
   layer: operation
@@ -280,7 +433,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: min_rc
@@ -290,9 +443,20 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_min
-    1 - self.dff: o_argmin
+    output: o_output
+    index: o_index
   parameters: {}
+
+- rtl_module: min_sync
+  layer: operation
+  sim_module: sim/operation/min_sync.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters:
+    DEPTH: "config['depth']"
 
 - rtl_module: min_tc
   layer: operation
@@ -301,7 +465,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: mul_gaines_bipolar
@@ -311,7 +475,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: mul_gaines_unipolar
@@ -321,7 +485,7 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: mul_ugemm_bipolar
@@ -331,29 +495,29 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    path | path_inv: o_out
+    output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
 
-- rtl_module: mul_ugemm_sr_bipolar
+- rtl_module: mul_ugemm_dyn_bipolar
   layer: operation
-  sim_module: sim/operation/mul_ugemm_sr.py
+  sim_module: sim/operation/mul_ugemm_dyn.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
-- rtl_module: mul_ugemm_sr_unipolar
+- rtl_module: mul_ugemm_dyn_unipolar
   layer: operation
-  sim_module: sim/operation/mul_ugemm_sr.py
+  sim_module: sim/operation/mul_ugemm_dyn.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -364,9 +528,38 @@
     input_0: i_input_0
     input_1: i_input_1
   outputs:
-    path: o_out
+    output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+
+- rtl_module: mul_unibi
+  layer: operation
+  sim_module: sim/operation/mul_unibi.py
+  inputs:
+    input_u: i_input_u
+    input_b: i_input_b
+  outputs:
+    output: o_output
+  parameters: {}
+
+- rtl_module: mul_unibi_mux
+  layer: operation
+  sim_module: sim/operation/mul_unibi_mux.py
+  inputs:
+    input_u: i_input_u
+    input_b: i_input_b
+  outputs:
+    output: o_output
+  parameters: {}
+
+- rtl_module: negate
+  layer: operation
+  sim_module: sim/operation/negate.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters: {}
 
 - rtl_module: relu_cnt
   layer: operation
@@ -374,7 +567,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -384,7 +577,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: relu_shiftreg
@@ -393,7 +586,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -403,7 +596,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -413,7 +606,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -423,7 +616,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: signabs
@@ -433,7 +626,7 @@
     input: i_input
   outputs:
     sign: o_sign
-    abs: o_abs
+    magnitude: o_magnitude
   parameters:
     WIDTH: "config['width']"
 
@@ -465,7 +658,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: sqrt_emit_unipolar
@@ -474,7 +667,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: sqrt_gaines_bipolar
@@ -483,7 +676,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -493,7 +686,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
@@ -503,7 +696,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: sqrt_traceiscb_unipolar
@@ -512,7 +705,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: sqrt_tracejkff_bipolar
@@ -521,7 +714,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: sqrt_tracejkff_unipolar
@@ -530,7 +723,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: square_dff_bipolar
@@ -539,7 +732,7 @@
   inputs:
     input: i_input
   outputs:
-    out: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -549,7 +742,29 @@
   inputs:
     input: i_input
   outputs:
-    out: o_out
+    output: o_output
+  parameters:
+    DEPTH: "config['depth']"
+
+- rtl_module: subabs
+  layer: operation
+  sim_module: sim/operation/subabs.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters: {}
+
+- rtl_module: sync
+  layer: operation
+  sim_module: sim/operation/sync.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output_0: o_output_0
+    output_1: o_output_1
   parameters:
     DEPTH: "config['depth']"
 
@@ -557,23 +772,11 @@
   layer: operation
   sim_module: sim/operation/sync_skewed.py
   inputs:
+    input_0: i_input_0
     input_1: i_input_1
-    input_2: i_input_2
   outputs:
-    output_1: o_out_1
-    input_2: o_out_2
-  parameters:
-    WIDTH: "config['width']"
-
-- rtl_module: sync_skewed_int
-  layer: operation
-  sim_module: sim/operation/sync_skewed_int.py
-  inputs:
-    input_1: i_input_1
-    input_2: i_input_2
-  outputs:
-    output_1: o_out_1
-    input_2: o_out_2
+    output_0: o_output_0
+    output_1: o_output_1
   parameters:
     WIDTH: "config['width']"
 
@@ -583,7 +786,7 @@
   inputs:
     input: i_input
   outputs:
-    input: o_out
+    output: o_output
   parameters: {}
 
 - rtl_module: tanh_p1
@@ -592,7 +795,7 @@
   inputs:
     input: i_input
   outputs:
-    out: o_out
+    output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
 
@@ -602,7 +805,7 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -612,33 +815,46 @@
   inputs:
     input: i_input
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     WIDTH: "config['width']"
 
-- rtl_module: avgpool2d
-  layer: module
-  sim_module: sim/module/avgpool2d.py
+- rtl_module: wta
+  layer: operation
+  sim_module: sim/operation/wta.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
+    dim: null
   outputs:
-    output: o_out
+    output: o_output
+  parameters:
+    ENTRY: input.size(dim)
+
+- rtl_module: avgpool2d_ugemm
+  layer: module
+  sim_module: sim/module/avgpool2d_ugemm.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
   parameters:
     KERNEL_AREA: "area(config['kernel_size'])"
     LANES: "config['lanes']"
   requires:
     - "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']"
 
-- rtl_module: conv_bipolar
+- rtl_module: conv_mix_bipolar
   layer: module
-  sim_module: sim/module/conv.py
+  sim_module: sim/module/conv_mix.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
-    pad_bits: i_pad_bits
+    # The bipolar pad encoder is held inside the RTL now, so the pad spike is
+    # generated internally and no port carries it.
+    pad_bits: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -651,6 +867,7 @@
     STRIDE: "int(get(config, 'stride', 1))"
     PADDING: "int(get(config, 'padding', 0))"
     DILATION: "int(get(config, 'dilation', 1))"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     WIDTH: "get(config['config'], 'width', 12)"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
@@ -659,19 +876,23 @@
     - "shape(config['weight'])[1] == input.size(1)"
     - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
-- rtl_module: conv_unipolar
+- rtl_module: conv_mix_unipolar
   layer: module
-  sim_module: sim/module/conv.py
+  sim_module: sim/module/conv_mix.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
     # A unipolar zero pad is a constant zero spike, so this variant has no
     # pad port and the model builds no pad stream to drive one.
     pad_bits: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -684,6 +905,7 @@
     STRIDE: "int(get(config, 'stride', 1))"
     PADDING: "int(get(config, 'padding', 0))"
     DILATION: "int(get(config, 'dilation', 1))"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     WIDTH: "get(config['config'], 'width', 12)"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
@@ -692,17 +914,20 @@
     - "shape(config['weight'])[1] == input.size(1)"
     - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
-- rtl_module: conv_pc_bipolar
+- rtl_module: conv_gaines_bipolar
   layer: module
-  sim_module: sim/module/conv_pc.py
+  sim_module: sim/module/conv_gaines.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
-    pad_bits: i_pad_bits
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -715,26 +940,28 @@
     STRIDE: "int(get(config, 'stride', 1))"
     PADDING: "int(get(config, 'padding', 0))"
     DILATION: "int(get(config, 'dilation', 1))"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # Bits per lane count; the lane publishes a count bus, not one spike.
-    COUNT_W: "ceil(log2(IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS + 1))"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS) + 0.5)"
     LANES: "config['lanes']"
   requires:
     - "shape(config['weight'])[1] == input.size(1)"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+    - "get(config['config'], 'scaled', True)"
+    - "IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS >= 2"
+    - "2 ** SCALE_WIDTH == IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
 
-- rtl_module: conv_pc_unipolar
+- rtl_module: conv_gaines_unipolar
   layer: module
-  sim_module: sim/module/conv_pc.py
+  sim_module: sim/module/conv_gaines.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
-    # A unipolar zero pad is a constant zero spike, so this variant has no
-    # pad port and the model builds no pad stream to drive one.
-    pad_bits: null
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -747,23 +974,28 @@
     STRIDE: "int(get(config, 'stride', 1))"
     PADDING: "int(get(config, 'padding', 0))"
     DILATION: "int(get(config, 'dilation', 1))"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # Bits per lane count; the lane publishes a count bus, not one spike.
-    COUNT_W: "ceil(log2(IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS + 1))"
+    # round(log2(entry)), the model's scale_width; log2 of an integer is never
+    # exactly a half, so floor(x + 0.5) is that rounding.
+    SCALE_WIDTH: "floor(log2(IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS) + 0.5)"
+    SCALED: "int(get(config['config'], 'scaled', True))"
     LANES: "config['lanes']"
   requires:
     - "shape(config['weight'])[1] == input.size(1)"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
+    - "SCALED == 0 or IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS >= 2"
+    - "SCALED == 0 or 2 ** SCALE_WIDTH == IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
 
 - rtl_module: conv_ugemm_bipolar
   layer: module
   sim_module: sim/module/conv_ugemm.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -785,18 +1017,22 @@
     - "shape(config['weight'])[1] == input.size(1)"
     - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
-    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
 - rtl_module: conv_ugemm_unipolar
   layer: module
   sim_module: sim/module/conv_ugemm.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     BATCH: input.size(0)
     IN_CHANNELS: "shape(config['weight'])[1]"
@@ -818,56 +1054,70 @@
     - "shape(config['weight'])[1] == input.size(1)"
     - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
-    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
-- rtl_module: linear_bipolar
+- rtl_module: linear_mix_bipolar
   layer: module
-  sim_module: sim/module/linear.py
+  sim_module: sim/module/linear_mix.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     WIDTH: "get(config['config'], 'width', 12)"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
-- rtl_module: linear_unipolar
+- rtl_module: linear_mix_unipolar
   layer: module
-  sim_module: sim/module/linear.py
+  sim_module: sim/module/linear_mix.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
+    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
     WIDTH: "get(config['config'], 'width', 12)"
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
 - rtl_module: linear_gaines_bipolar
   layer: module
-  sim_module: sim/module/linear_gaines1.py
+  sim_module: sim/module/linear_gaines.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
@@ -876,20 +1126,21 @@
     # round(log2(entry)), the model's scale_width; log2 of an integer is never
     # exactly a half, so floor(x + 0.5) is that rounding.
     SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
-    DEPTH: "get(config['config'], 'depth', 8)"
-    SCALED: "int(get(config['config'], 'scaled', True))"
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
+    - "get(config['config'], 'scaled', True)"
+    - "IN_FEATURES + HAS_BIAS >= 2"
+    - "2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS"
 
 - rtl_module: linear_gaines_unipolar
   layer: module
-  sim_module: sim/module/linear_gaines1.py
+  sim_module: sim/module/linear_gaines.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
@@ -901,103 +1152,18 @@
     SCALED: "int(get(config['config'], 'scaled', True))"
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
-
-- rtl_module: linear_gaines_bipolar
-  layer: module
-  sim_module: sim/module/linear_gaines2.py
-  inputs:
-    input_spike: i_input_spike
-    weight: i_weight
-    bias: i_bias
-  outputs:
-    output: o_out
-  parameters:
-    IN_FEATURES: "shape(config['weight'])[1]"
-    LANES: "config['lanes']"
-    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
-    HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # round(log2(entry)), the model's scale_width; log2 of an integer is never
-    # exactly a half, so floor(x + 0.5) is that rounding.
-    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
-    DEPTH: "get(config['config'], 'depth', 8)"
-    SCALED: "int(get(config['config'], 'scaled', True))"
-  requires:
-    - "shape(config['weight'])[0] == config['lanes']"
-    # The scaled adder builds its threshold sequence over 2**SCALE_WIDTH entries,
-    # and an lfsr image of width 1 has no feedback polynomial, so an lfsr-driven
-    # scaled arm needs entry >= 3.
-    - "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3"
-
-- rtl_module: linear_gaines_unipolar
-  layer: module
-  sim_module: sim/module/linear_gaines2.py
-  inputs:
-    input_spike: i_input_spike
-    weight: i_weight
-    bias: i_bias
-  outputs:
-    output: o_out
-  parameters:
-    IN_FEATURES: "shape(config['weight'])[1]"
-    LANES: "config['lanes']"
-    SEQ_WIDTH: "ceil(log2(config['config']['timestep']))"
-    HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # round(log2(entry)), the model's scale_width; log2 of an integer is never
-    # exactly a half, so floor(x + 0.5) is that rounding.
-    SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
-    SCALED: "int(get(config['config'], 'scaled', True))"
-  requires:
-    - "shape(config['weight'])[0] == config['lanes']"
-    # The scaled adder builds its threshold sequence over 2**SCALE_WIDTH entries,
-    # and an lfsr image of width 1 has no feedback polynomial, so an lfsr-driven
-    # scaled arm needs entry >= 3.
-    - "SCALED == 0 or get(config['config'], 'generator') != 'lfsr' or IN_FEATURES + HAS_BIAS >= 3"
-
-- rtl_module: linear_pc_bipolar
-  layer: module
-  sim_module: sim/module/linear_pc.py
-  inputs:
-    input_spike: i_input_spike
-    weight: i_weight
-    bias: i_bias
-  outputs:
-    output: o_out
-  parameters:
-    IN_FEATURES: "shape(config['weight'])[1]"
-    LANES: "config['lanes']"
-    HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # Bits per lane count; the lane publishes a count bus, not one spike.
-    COUNT_W: "ceil(log2(IN_FEATURES + HAS_BIAS + 1))"
-  requires:
-    - "shape(config['weight'])[0] == config['lanes']"
-
-- rtl_module: linear_pc_unipolar
-  layer: module
-  sim_module: sim/module/linear_pc.py
-  inputs:
-    input_spike: i_input_spike
-    weight: i_weight
-    bias: i_bias
-  outputs:
-    output: o_out
-  parameters:
-    IN_FEATURES: "shape(config['weight'])[1]"
-    LANES: "config['lanes']"
-    HAS_BIAS: "int(get(config, 'bias') is not None)"
-    # Bits per lane count; the lane publishes a count bus, not one spike.
-    COUNT_W: "ceil(log2(IN_FEATURES + HAS_BIAS + 1))"
-  requires:
-    - "shape(config['weight'])[0] == config['lanes']"
+    - "SCALED == 0 or IN_FEATURES + HAS_BIAS >= 2"
+    - "SCALED == 0 or 2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS"
 
 - rtl_module: linear_ugemm_bipolar
   layer: module
   sim_module: sim/module/linear_ugemm.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
@@ -1008,18 +1174,22 @@
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
-    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
 - rtl_module: linear_ugemm_unipolar
   layer: module
   sim_module: sim/module/linear_ugemm.py
   inputs:
-    input_spike: i_input_spike
+    input: i_input
     weight: i_weight
     bias: i_bias
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     IN_FEATURES: "shape(config['weight'])[1]"
     LANES: "config['lanes']"
@@ -1030,22 +1200,26 @@
   requires:
     - "shape(config['weight'])[0] == config['lanes']"
     - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
-    # The lane accumulator is add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
+    # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
+    # the requested scale to an integer and compares against the rounded value,
+    # so SCALE tracks it only when the request is already integral.
+    - "SCALE == int(SCALE)"
 
-- rtl_module: mgu_bipolar
+- rtl_module: mgu_hard_mix_bipolar
   layer: module
-  sim_module: sim/module/mgu.py
+  sim_module: sim/module/mgu_hard_mix.py
   inputs:
-    input_spike: i_input_spike
-    hx_spike: i_hx_spike
+    input: i_input
+    hx: i_hx
     weight_f: i_weight_f
     bias_f: i_bias_f
     weight_n: i_weight_n
     bias_n: i_bias_n
     hx_value: i_hx_value
   outputs:
-    output: o_out
+    output: o_output
   parameters:
     LANES: "config['lanes']"
     # Both gate layers read cat(hidden, input), so the gate width minus the
@@ -1062,7 +1236,7 @@
     - "shape(config['weight_n'])[1] == shape(config['weight_f'])[1]"
     - "IN_SIZE >= 1"
     - "2 ** (WIDTH - 1) > LANES + IN_SIZE + (1 if HAS_BIAS_F or HAS_BIAS_N else 0)"
-    # The lane accumulators are add_any_*, whose 32-bit elaboration constants cap WIDTH.
+    # The lane accumulators are add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
     # timestep > 2 ** depth_ismul, restated on the parameters the RTL carries.
     - "SEQ_WIDTH > SR_WIDTH"

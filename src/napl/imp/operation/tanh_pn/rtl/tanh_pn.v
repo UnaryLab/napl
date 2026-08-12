@@ -11,7 +11,7 @@ module tanh_pn #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
     localparam [DEPTH-1:0] CNT_HALF = {
@@ -20,7 +20,7 @@ module tanh_pn #(
 
     reg [DEPTH-1:0] cnt;
 
-    assign o_out = (cnt >= CNT_HALF);
+    assign o_output = (cnt >= CNT_HALF);
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

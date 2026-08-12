@@ -19,14 +19,14 @@ class subabs(napl_base):
     only when the two input streams have SCC ``+1``. Decorrelated inputs make
     the output rate approach :math:`p_0 + p_1 - 2 p_0 p_1` instead, so a caller
     that cannot guarantee positively correlated operands passes them through
-    :class:`napl.sim.operation.sync` first.
+    :class:`~napl.sim.operation.sync` first.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import subabs
+        from napl.sim.operation import subabs
 
         difference = subabs({'polarity': 'unipolar'})
         output = difference(torch.tensor([1], dtype=torch.int8),
@@ -77,15 +77,12 @@ class subabs(napl_base):
 
     def _reset(self):
         """
-        Return the kernel to its initial state.
-
-        The kernel keeps no local state across timesteps, so this hook does
-        nothing and returns ``None``.
+        Reset no local state; the kernel keeps nothing across timesteps.
         """
         pass
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Process one timestep of the two input streams.
 

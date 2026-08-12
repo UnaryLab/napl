@@ -34,7 +34,7 @@ class tanh_p1(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import tanh_p1
+        from napl.sim.operation import tanh_p1
 
         operation = tanh_p1()
         output = operation(torch.tensor([0.0, 1.0]))
@@ -45,6 +45,9 @@ class tanh_p1(napl_base):
 
         *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
+    #: The coefficient streams are encoded from held coefficient codes, so the
+    #: RTL counterpart holds its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(
@@ -66,7 +69,7 @@ class tanh_p1(napl_base):
 
               - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
               - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"sobol"``.
+              - **generator**: Number-sequence generator accepted by ``gen_num_seq``; the default is ``"sobol"``.
               - **dim**: First Sobol dimension used for the four coefficient streams; the default is ``1``.
               - **name**: Optional module name.
         """
@@ -92,10 +95,7 @@ class tanh_p1(napl_base):
 
         # Width-bit quantization on consecutive dimensions matches the hardware generator.
         dim = config.get('dim', 1)
-        # Quantizing to width bits turns the integer threshold comparison into the
-        # encoder's own probability comparison, since self.len is a power of two.
-        # Each encoder generates its full period once, here, so the hot path keeps
-        # reading Python ints.
+        # Quantizing to width bits makes the integer threshold comparison match the encoder's probability comparison, and each encoder is run over its full period once here so the hot path reads Python ints.
         coef_q = torch.tensor([62/153, 17/42, 2/5, 1/3],
                               dtype=self.ntype).mul(self.len).round().div(self.len)
         coef_seq = []
@@ -125,8 +125,8 @@ class tanh_p1(napl_base):
         #: Hardware latency and timing metadata for the combinational output path.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input': 'rc', 'out': 'rc'}
-        self.polarity_io = {'input': 'unipolar', 'out': 'unipolar'}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'unipolar', 'output': 'unipolar'}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -138,7 +138,7 @@ class tanh_p1(napl_base):
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Process one timestep of a unipolar input stream.
 

@@ -26,14 +26,11 @@ Output: ../vec/encode.vec, one line per timestep:
 Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_encode.py
 """
-import sys
 from pathlib import Path
 
 import torch
 from napl.sim.operation import encode
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _gen_common import require_seeded_sys
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "encode.vec"
 PARAMS = Path(__file__).resolve().parent.parent / "vec" / "encode_params.vh"
@@ -50,9 +47,6 @@ TIE_VALUES = {"bipolar": [0.0, 0.5], "unipolar": [0.5, 0.25]}
 
 def cfg(polarity):
     return {"polarity": polarity, "timestep": TIMESTEP, "generator": GENERATOR, "dim": 1}
-
-
-require_seeded_sys(cfg("unipolar"), cfg("bipolar"))
 
 
 def values(polarity, frac):

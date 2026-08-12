@@ -39,7 +39,7 @@ class exp_n1(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import exp_n1
+        from napl.sim.operation import exp_n1
 
         operation = exp_n1()
         output = operation(torch.tensor([0.0, 1.0]))
@@ -50,6 +50,9 @@ class exp_n1(napl_base):
 
         *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
+    #: The coefficient streams are encoded from held coefficient codes, so the
+    #: RTL counterpart holds its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(
@@ -72,7 +75,7 @@ class exp_n1(napl_base):
 
               - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
               - **timestep**: Positive target stream length used to select the sequence width; the default is ``256``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"sobol"``.
+              - **generator**: Number-sequence generator accepted by ``gen_num_seq``; the default is ``"sobol"``.
               - **dim**: First Sobol dimension used for the four constant streams; the default is ``1``.
               - **name**: Optional module name.
         """
@@ -94,12 +97,12 @@ class exp_n1(napl_base):
         self.len = 2**self.width
         dim = config.get('dim', 1)
 
-        # Rounded width-bit constants match the RTL registers and UnarySim SourceGen.
+        # Round the series coefficients to self.len levels, matching the RTL constant registers.
         const_q = torch.tensor([0.2000, 0.2500, 0.3333, 0.5000]).mul(self.len).round().div(self.len)
-        # Consecutive dimensions provide four decorrelated sequences of period self.len.
-        # One encoder per coefficient generates its full period once, here, so the
-        # hot path keeps reading Python ints.
         const_q = const_q.type(self.ntype)
+        # One encoder per coefficient on consecutive dimensions gives four decorrelated
+        # sequences under a sobol generator; a dim-insensitive generator such as lfsr
+        # yields four identical sequences.
         reference_encode = [encode({'polarity': 'unipolar', 'timestep': self.len,
                                     'generator': config['generator'], 'dim': dim + i})
                             for i in range(4)]
@@ -110,9 +113,10 @@ class exp_n1(napl_base):
             torch.stack([torch.cat([reference_encode_i(const_q[i:i + 1]) for _ in range(self.len)])
                          for i, reference_encode_i in enumerate(reference_encode)], dim=1).type(torch.int8),
         )
+        # Cache one full coefficient period as Python ints so the hot path skips tensor indexing.
         self._const_bits = self.const_spike.tolist()
 
-        # Scalar delay taps broadcast to the input shape on first use.
+        # Delay taps start scalar and resize to the input shape on the first call.
         #: Most recent input spike tensor in the four-stage delay line.
         self.input_d1: torch.Tensor
         self.register_buffer('input_d1', torch.zeros(1).type(self.stype))
@@ -145,7 +149,7 @@ class exp_n1(napl_base):
         self.input_d4.resize_(1).zero_()
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Process one timestep of a unipolar input stream.
 
@@ -185,7 +189,6 @@ class exp_n1(napl_base):
         d4 = self.input_d4.type(torch.int8)
         output = 1 - (n_4 & d4) if c3 else 1 - d4
         if output.shape != input.shape:
-            # The scalar initial tap expands to the input shape.
             output = output.expand(input.shape)
         # Shift the delay line oldest first.
         self.input_d4.resize_as_(self.input_d3).copy_(self.input_d3.detach())

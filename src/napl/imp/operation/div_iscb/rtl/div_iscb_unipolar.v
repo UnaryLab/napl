@@ -10,7 +10,7 @@ module div_iscb_unipolar (
     input  wire i_rst_n,      // active-low; maps to Python reset()
     input  wire i_dividend,   // dividend spike stream
     input  wire i_divisor,    // divisor spike stream
-    output wire o_quotient    // quotient spike stream
+    output wire o_output    // quotient spike stream
 );
     // ----- sync_skewed (width = 3) ------------------------------------------
     localparam [2:0] CNT_MAX = 3'd7;
@@ -22,10 +22,10 @@ module div_iscb_unipolar (
     wire cnt_notmax = (cnt_q != CNT_MAX);
 
     // select = cnt_notmin - (cnt_notmin + cnt_notmax) * dividend  (in {-1, 0, +1})
-    // output_1 = dividend + in_01_10 * select, which is a single {0,1} spike:
-    //   - if in_01_10 == 0: output_1 = dividend
-    //   - if dividend == 0: output_1 = in_01_10 & cnt_notmin
-    //   - if dividend == 1: output_1 = 1 - (in_01_10 & cnt_notmax)
+    // output_0 = dividend + in_01_10 * select, which is a single {0,1} spike:
+    //   - if in_01_10 == 0: output_0 = dividend
+    //   - if dividend == 0: output_0 = in_01_10 & cnt_notmin
+    //   - if dividend == 1: output_0 = 1 - (in_01_10 & cnt_notmax)
     wire sync_out =
         (~in_01_10) ? i_dividend
         : (i_dividend ? (~cnt_notmax) : cnt_notmin);
@@ -45,7 +45,7 @@ module div_iscb_unipolar (
     wire rand_q       = idx_q ? buf1_q : buf0_q;      // buf[rand_seq_idx[idx]]
     wire quotient     = divisor_eq_1 ? sync_out : rand_q;
 
-    assign o_quotient = quotient;
+    assign o_output = quotient;
 
     // buffer update (low-to-high): buf[0] <= deq ? buf[1] : buf[0];
     //                              buf[1] <= deq ? quotient : buf[1];

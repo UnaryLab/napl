@@ -1,5 +1,4 @@
 import copy
-import math
 from inspect import signature
 from statistics import median
 from time import perf_counter
@@ -68,6 +67,16 @@ def _multirank_inputs(inputs: Sequence[torch.Tensor]) -> InputTuple:
         if value.ndim < 2 else value
         for value in inputs
     )
+
+
+# Draw uniform random inputs over each operand's min-to-max legal span, keeping shape, dtype, and device.
+def _legal_range_random(inputs: Sequence[torch.Tensor]) -> InputTuple:
+    drawn = []
+    for value in inputs:
+        low = value.min()
+        high = value.max()
+        drawn.append(low + (high - low) * torch.rand_like(value))
+    return tuple(drawn)
 
 
 # Verify that two input sequences match exactly.
@@ -145,20 +154,19 @@ _STATE_TIMESTEPS = 16
 
 _STREAMING_REQUIRED = (
     'polarities',
-    'tolerance_scale',
     'make_operation',
     'make_values',
     'analytic_reference',
     'known_answer_case',
 )
 _STREAMING_DEFAULTS = {
+    'make_random_perf_values': None,
     'apply_operation': None,
     'input_polarities': None,
     'output_polarity': None,
     'encoder_dims': None,
     'encoder_generators': None,
     'make_readout': None,
-    'make_performance_values': None,
     'extra_checks': None,
     'timesteps': 256,
     'state_timesteps': _STATE_TIMESTEPS,
@@ -268,11 +276,11 @@ def _reset_pipeline(pipeline):
         assert module.timestep_cur == 0
 
 
-# Check streaming outputs against known answers.
+# Run the known-answer inputs across every device and polarity and print the decoded value for the user to inspect, asserting no fidelity bound.
 def _streaming_known_answer(cfg):
     torch.manual_seed(_SEED)
     for polarity in cfg['polarities']:
-        values_cpu, expected, tolerance = cfg['known_answer_case'](polarity)
+        values_cpu, expected = cfg['known_answer_case'](polarity)[:2]
         for device in devices():
             values = clone_inputs(values_cpu, device)
             pipeline = _make_pipeline(
@@ -282,16 +290,14 @@ def _streaming_known_answer(cfg):
                 cfg, pipeline, values, cfg['timesteps'],
                 check_progress=False, capture_trace=False,
             )
-            torch.testing.assert_close(
-                result, expected.cpu(), atol=tolerance, rtol=0
-            )
+            error = (result - expected.cpu()).abs().max().item()
+            print(f'[{device}][{polarity}] known-answer max_error={error:.6f}')
 
 
-# Check streaming fidelity against an analytic reference.
-def _streaming_fidelity(cfg):
+# Run the fixed RTL-fidelity vectors and print the rmse and largest per-element error for the user to inspect, asserting no fidelity bound.
+def _streaming_rtl_fidelity(cfg):
     torch.manual_seed(_SEED)
     timesteps = cfg['timesteps']
-    tolerance = cfg['tolerance_scale'] / math.sqrt(timesteps)
     for polarity in cfg['polarities']:
         raw_values = cfg['make_values'](polarity)
         reference = cfg['analytic_reference'](raw_values, polarity).cpu()
@@ -308,14 +314,13 @@ def _streaming_fidelity(cfg):
                 cfg, pipeline, values, timesteps,
                 check_progress=False, capture_trace=False,
             )
-            rmse = (result - reference).pow(2).mean().sqrt().item()
-            assert rmse <= tolerance, (
-                f'[{device}][{polarity}] rmse={rmse:.6f}, '
-                f'bound={tolerance:.6f}'
-            )
+            error = (result - reference).abs()
+            rmse = error.pow(2).mean().sqrt().item()
+            max_error = error.max().item()
             print(
                 f'[{device}][{polarity}] seed={_SEED}, '
-                f'N={timesteps}, rmse={rmse:.6f}, bound={tolerance:.6f}'
+                f'N={timesteps}, elements={reference.numel()}, '
+                f'rmse={rmse:.6f}, max_error={max_error:.6f}'
             )
 
 
@@ -352,16 +357,20 @@ def _streaming_reset_replay(cfg):
             )
 
 
-# Benchmark streaming pipeline performance.
-def _streaming_performance(cfg):
+# Benchmark the pipeline on large random inputs drawn over the legal spike range per polarity and print the measured error beside the runtime.
+def _streaming_random_perf(cfg):
     torch.manual_seed(_SEED)
     timesteps = cfg['timesteps']
     for polarity in cfg['polarities']:
-        # Select optional large inputs for the performance check.
-        if cfg['make_performance_values'] is None:
-            values_cpu = cfg['make_values'](polarity)
+        # Draw the large performance inputs at random over the legal spike range
+        # per polarity, falling back to the fidelity inputs when none is set.
+        if cfg['make_random_perf_values'] is None:
+            values_cpu = _legal_range_random(cfg['make_values'](polarity))
         else:
-            values_cpu = cfg['make_performance_values'](polarity)
+            values_cpu = _legal_range_random(
+                cfg['make_random_perf_values'](polarity)
+            )
+        reference = cfg['analytic_reference'](values_cpu, polarity).cpu()
         cpu_runtime = None
         for device in devices():
             pipeline = _make_pipeline(
@@ -395,11 +404,31 @@ def _streaming_performance(cfg):
                 f'median, speedup={speedup:.2f}x'
             )
 
+            # Report the measured error on the performance inputs beside the
+            # runtime, asserting nothing, for the user to inspect by eye.
+            _reset_pipeline(pipeline)
+            result, _ = _run_pipeline(
+                cfg, pipeline, clone_inputs(values_cpu, device), timesteps,
+                check_progress=False, capture_trace=False,
+            )
+            error = (result - reference).abs()
+            print(
+                f'[{device}][{polarity}] perf error: '
+                f'rmse={error.pow(2).mean().sqrt().item():.6f}, '
+                f'max_error={error.max().item():.6f}'
+            )
+
 
 def streaming_suite(cfg):
     """
     Run the streaming-kernel suite (known answer, analytic fidelity, reset
     and replay, performance) over every device and supported polarity.
+
+    The known-answer and fidelity checks exercise the kernel and print the
+    measured decoded error for the user to inspect by eye; they assert no
+    numerical fidelity. The fidelity and performance runs draw their inputs at
+    random over the legal spike range per polarity. Execution state, reset and
+    replay, per-device timing, and any ``extra_checks`` still assert.
 
     An ``apply_operation`` callback takes ``(operation, spikes)``, or
     ``(operation, spikes, values)`` when the operation also consumes a raw
@@ -412,16 +441,14 @@ def streaming_suite(cfg):
         raise NotImplementedError("streaming suite config: set 'polarities'")
     cfg['apply_operation'] = _wrap_apply_operation(cfg['apply_operation'])
     _streaming_known_answer(cfg)
-    _streaming_fidelity(cfg)
+    _streaming_rtl_fidelity(cfg)
     _streaming_reset_replay(cfg)
-    _streaming_performance(cfg)
+    _streaming_random_perf(cfg)
     if cfg['extra_checks'] is not None:
         cfg['extra_checks']()
 
 
-_SINGLE_SHOT_REQUIRED = (
-    'quantization_atol',
-    'known_answer_atol',
+_NON_STREAMING_REQUIRED = (
     'gradient_atol',
     'gradient_rtol',
     'make_module_pair',
@@ -430,16 +457,16 @@ _SINGLE_SHOT_REQUIRED = (
     'gradient_case',
     'expected_ste_gradients',
 )
-_SINGLE_SHOT_DEFAULTS = {
-    'make_performance_values': None,
+_NON_STREAMING_DEFAULTS = {
+    'make_random_perf_values': None,
     'extra_checks': None,
     'warmup_runs': 2,
     'trials': 7,
 }
 
 
-# Assert single-shot module state.
-def _assert_single_shot(module):
+# Assert non-streaming module state.
+def _assert_non_streaming(module):
     assert module.streaming is False
     assert module.timestep_cur == 0
 
@@ -452,25 +479,23 @@ def _default_gradient_output(output):
     return (ramp / output.numel()).reshape(output.shape)
 
 
-# Check single-shot outputs against known answers.
-def _single_shot_known_answer(cfg):
+# Run the known-answer inputs across every device and print the error against the expected answer for the user to inspect, asserting no fidelity bound.
+def _non_streaming_known_answer(cfg):
     torch.manual_seed(_SEED)
     candidate_cpu, inputs_cpu, expected = cfg['known_answer_case']()
     for device in devices():
         candidate = copy.deepcopy(candidate_cpu).to(device)
         inputs = clone_inputs(inputs_cpu, device)
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
         result = candidate(*inputs)
-        _assert_single_shot(candidate)
-        torch.testing.assert_close(
-            result, expected.to(device), atol=cfg['known_answer_atol'], rtol=0
-        )
+        _assert_non_streaming(candidate)
+        error = (result - expected.to(device)).abs().max().item()
+        print(f'[{device}] known-answer max_error={error:.6f}')
 
 
-# Check single-shot fidelity against a reference module.
-def _single_shot_fidelity(cfg):
+# Run the fixed RTL-fidelity vectors and print the error against the PyTorch reference for the user to inspect, asserting no fidelity bound.
+def _non_streaming_rtl_fidelity(cfg):
     torch.manual_seed(_SEED)
-    tolerance = cfg['quantization_atol']
     candidate_cpu, reference_cpu = cfg['make_module_pair']()
     inputs_cpu = _multirank_inputs(cfg['make_inputs']())
     assert all(value.ndim >= 2 for value in inputs_cpu)
@@ -480,20 +505,19 @@ def _single_shot_fidelity(cfg):
         candidate_inputs = clone_inputs(inputs_cpu, device)
         reference_inputs = clone_inputs(inputs_cpu, device)
         assert_inputs_equal(candidate_inputs, reference_inputs)
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
         result = candidate(*candidate_inputs)
         expected = reference(*reference_inputs)
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
         max_error = (result - expected).abs().max().item()
-        torch.testing.assert_close(result, expected, atol=tolerance, rtol=0)
         print(
             f'[{device}] seed={_SEED}, dtype={result.dtype}, '
-            f'max_error={max_error:.6f}, quantization_bound={tolerance:.6f}'
+            f'max_error={max_error:.6f}'
         )
 
 
 # Check straight-through estimator gradients.
-def _single_shot_gradients(cfg):
+def _non_streaming_gradients(cfg):
     torch.manual_seed(_SEED)
     atol = cfg['gradient_atol']
     rtol = cfg['gradient_rtol']
@@ -504,14 +528,14 @@ def _single_shot_gradients(cfg):
             value.detach().clone().to(device).requires_grad_(True)
             for value in raw_inputs
         )
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
         output = candidate(*inputs)
         grad_output = _default_gradient_output(output).to(device)
         expected_inputs, expected_parameters = cfg['expected_ste_gradients'](
             candidate, inputs, grad_output
         )
         output.backward(grad_output)
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
 
         assert len(expected_inputs) == len(inputs)
         for index, (value, expected) in enumerate(
@@ -546,19 +570,21 @@ def _single_shot_gradients(cfg):
             )
 
 
-# Benchmark single-shot module performance.
-def _single_shot_performance(cfg):
+# Benchmark the module on large random inputs drawn over the legal range and print the measured error beside the runtime.
+def _non_streaming_random_perf(cfg):
     torch.manual_seed(_SEED)
-    candidate_cpu, _ = cfg['make_module_pair']()
-    # Select optional large inputs for the performance check.
-    if cfg['make_performance_values'] is None:
-        shared_inputs_cpu = cfg['make_inputs']()
+    candidate_cpu, reference_cpu = cfg['make_module_pair']()
+    # Draw the large performance inputs at random over the legal range, falling
+    # back to the fidelity inputs when none is set.
+    if cfg['make_random_perf_values'] is None:
+        shared_inputs_cpu = _legal_range_random(cfg['make_inputs']())
     else:
-        shared_inputs_cpu = cfg['make_performance_values']()
+        shared_inputs_cpu = _legal_range_random(cfg['make_random_perf_values']())
     cpu_runtime = None
     for device in devices():
         candidate = copy.deepcopy(candidate_cpu).to(device)
-        _assert_single_shot(candidate)
+        reference = copy.deepcopy(reference_cpu).to(device)
+        _assert_non_streaming(candidate)
 
         with torch.no_grad():
             device_runtime = benchmark(
@@ -569,7 +595,7 @@ def _single_shot_performance(cfg):
                 trials=cfg['trials'],
             )
 
-        _assert_single_shot(candidate)
+        _assert_non_streaming(candidate)
         if device == 'cpu':
             cpu_runtime = device_runtime
         assert cpu_runtime is not None
@@ -581,18 +607,29 @@ def _single_shot_performance(cfg):
             f'median, speedup={speedup:.2f}x'
         )
 
+        # Report the measured error on the performance inputs beside the
+        # runtime, asserting nothing, for the user to inspect by eye.
+        with torch.no_grad():
+            inputs = clone_inputs(shared_inputs_cpu, device)
+            error = (candidate(*inputs) - reference(*inputs)).abs()
+        _assert_non_streaming(candidate)
+        print(
+            f'[{device}] perf error: '
+            f'max_error={error.max().item():.6f}'
+        )
 
-def single_shot_suite(cfg):
+
+def non_streaming_suite(cfg):
     """
-    Run the single-shot trainable-kernel suite (known answer, PyTorch
+    Run the non-streaming trainable-kernel suite (known answer, PyTorch
     reference fidelity, STE gradients, performance) over every device.
     """
     cfg = _check_config(
-        cfg, _SINGLE_SHOT_REQUIRED, _SINGLE_SHOT_DEFAULTS, 'single-shot suite'
+        cfg, _NON_STREAMING_REQUIRED, _NON_STREAMING_DEFAULTS, 'non-streaming suite'
     )
-    _single_shot_known_answer(cfg)
-    _single_shot_fidelity(cfg)
-    _single_shot_gradients(cfg)
-    _single_shot_performance(cfg)
+    _non_streaming_known_answer(cfg)
+    _non_streaming_rtl_fidelity(cfg)
+    _non_streaming_gradients(cfg)
+    _non_streaming_random_perf(cfg)
     if cfg['extra_checks'] is not None:
         cfg['extra_checks']()

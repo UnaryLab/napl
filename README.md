@@ -4,7 +4,7 @@ A neuro-adaptive programming language for general-purpose neuromorphic computing
 
 ## Overview
 
-NAPL is UnaryLab's PyTorch framework for programmable spike processing. It runs per-timestep spike-stream simulation and single-shot binary-domain kernels, with verified Verilog counterparts for a subset of operations.
+NAPL is UnaryLab's PyTorch framework for programmable spike processing. It runs per-timestep spike-stream simulation and non-streaming binary-domain kernels, with verified Verilog counterparts for a subset of operations.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): dataflow, execution models, package map, and the Python-to-RTL contract. Read it before editing execution semantics.
 - [RULE_SIM.md](RULE_SIM.md) and [RULE_IMP.md](RULE_IMP.md): the simulation test policy and the hardware design/verification policy.
@@ -30,7 +30,7 @@ The `napl` command line entry point currently prints a banner; it is a placehold
 
 ## Quick start
 
-Every public class is importable at the top level, e.g. `from napl import linear, mul_gaines, accuracy`.
+Import each public class or function from the simulation subpackage that defines it, using the form `from napl.sim.<subpackage> import <name>` (subpackages: `operation`, `module`, `metric`, `algorithm`, `base`), e.g. `from napl.sim.operation import mul_gaines` or `from napl.sim.metric import accuracy`.
 
 Run a single kernel test:
 
@@ -57,7 +57,7 @@ The output is written to `docs/_build/html/`.
 
 ## Reproducing results
 
-[`zoo/`](zoo/) holds three end-to-end applications implemented with NAPL's public API, each with its own README and `results/*.csv` outputs: `mlp` (MLP3 on MNIST), `ubrain` (uBrain BCI CNN+RNN), and `usystolic` (uSystolic convnet).
+[`zoo/`](zoo/) is reserved for end-to-end applications built on NAPL's public API. It is currently empty.
 
 ## Configuration
 

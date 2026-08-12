@@ -25,7 +25,7 @@ class accuracy(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import accuracy
+        from napl.sim.metric import accuracy
 
         metric = accuracy()
         metric(torch.tensor([1.0, 0.0]))
@@ -68,6 +68,8 @@ class accuracy(napl_base):
         self.spike_count: torch.Tensor
         self.register_buffer('spike_count', torch.zeros(1, dtype=self.ntype))
 
+        self.polarity_io = {'input': self.polarity}
+
 
     def _reset(self):
         """
@@ -79,7 +81,7 @@ class accuracy(napl_base):
         self.spike_count.resize_(1).zero_()
 
 
-    def forward(self, spike: torch.Tensor):
+    def forward(self, input: torch.Tensor):
         """
         Record one timestep of a spike stream.
 
@@ -88,7 +90,7 @@ class accuracy(napl_base):
         running count, and returns ``None``.
 
         Args:
-            spike: Spike values for the current timestep.
+            input: Spike values for the current timestep.
 
         **Example:**
 
@@ -99,10 +101,10 @@ class accuracy(napl_base):
         # A float accumulator avoids overflow, and 0/1 spikes promote exactly.
         sc = self.spike_count
         # The scalar seed broadcasts once; matching shapes then accumulate in place.
-        if sc.shape == spike.shape:
-            sc.add_(spike)
+        if sc.shape == input.shape:
+            sc.add_(input)
         else:
-            expanded = sc.add(spike).detach()
+            expanded = sc.add(input).detach()
             self.spike_count.resize_as_(expanded).copy_(expanded)
 
 
@@ -148,7 +150,7 @@ class accuracy(napl_base):
             scale_ref: Divisor applied to ``reference``; the comparison uses ``reference / scale_ref``. The default is ``1``.
 
         Returns:
-            A pair containing the per-element signed progressive error and its complete :class:`napl.sim.metric._shared.Analysis` summary.
+            A pair containing the per-element signed progressive error and its complete ``Analysis`` summary.
 
         This method does not change the accumulated metric state.
 

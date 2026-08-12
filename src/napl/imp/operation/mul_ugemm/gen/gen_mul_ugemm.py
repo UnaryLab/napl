@@ -29,7 +29,7 @@ import torch
 from napl.sim.operation import mul_ugemm
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
-from _gen_common import require_seeded_sys, encode_value
+from _gen_common import encode_value
 
 # WIDTH derives from the model timestep and sizes counters, operands, and the ROM.
 TIMESTEP = 1024  # timestep of the verified golden vectors
@@ -45,9 +45,6 @@ CODEC_IN0 = {"polarity": "bipolar", "timestep": LEN, "generator": "sobol", "dim"
 
 CFG_UNI = {"polarity": "unipolar", "timestep": LEN, "generator": "sobol"}
 CFG_BI = {"polarity": "bipolar", "timestep": LEN, "generator": "sobol"}
-
-
-require_seeded_sys(CODEC_IN0, CFG_UNI, CFG_BI)
 
 
 def _drive(model, stream, in1_value):

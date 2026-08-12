@@ -148,6 +148,12 @@ def test_reset():
             flux.stability_1.timestep_cur == 0
             and flux.stability_2.timestep_cur == 0
         )
+        # The flux property returns zeros while invalid, so line-144 alone passes even
+        # if a nested reset assignment is deleted. Pin the nested accumulators directly:
+        # each child stability's cycle_to_stable and its accuracy spike_count must be zero.
+        for nested in (flux.stability_1, flux.stability_2):
+            assert nested.cycle_to_stable.abs().sum() == 0
+            assert nested.accuracy.spike_count.abs().sum() == 0
         second, _, _, _ = run_flux(
             val_1, val_2, device, timestep, modules
         )

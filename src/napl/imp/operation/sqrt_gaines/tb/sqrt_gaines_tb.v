@@ -8,20 +8,20 @@ module sqrt_gaines_tb;
     reg i_rst_n;
     reg i_input_uni;
     reg i_input_bi;
-    wire o_out_uni;
-    wire o_out_bi;
+    wire o_output_uni;
+    wire o_output_bi;
 
     sqrt_gaines_unipolar #(.WIDTH(`GEN_WIDTH)) dut_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_input_uni),
-        .o_out(o_out_uni)
+        .o_output(o_output_uni)
     );
     sqrt_gaines_bipolar #(.WIDTH(`GEN_WIDTH)) dut_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_input_bi),
-        .o_out(o_out_bi)
+        .o_output(o_output_bi)
     );
 
     integer fd;
@@ -74,17 +74,17 @@ module sqrt_gaines_tb;
                     reset_duts;
                 #1;
                 count = count + 1;
-                if (o_out_uni !== expected_uni) begin
+                if (o_output_uni !== expected_uni) begin
                     $display(
                         "FAIL sqrt_gaines unipolar cycle %0d: got=%b expected=%b",
-                        count, o_out_uni, expected_uni
+                        count, o_output_uni, expected_uni
                     );
                     fails = fails + 1;
                 end
-                if (o_out_bi !== expected_bi) begin
+                if (o_output_bi !== expected_bi) begin
                     $display(
                         "FAIL sqrt_gaines bipolar cycle %0d: got=%b expected=%b",
-                        count, o_out_bi, expected_bi
+                        count, o_output_bi, expected_bi
                     );
                     fails = fails + 1;
                 end

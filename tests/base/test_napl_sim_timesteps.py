@@ -1,7 +1,7 @@
+import importlib
 import math
 
 import torch
-import napl
 
 from napl.sim.base import napl_base, napl_sim_timesteps
 from napl.sim.operation import encode, decode
@@ -25,6 +25,21 @@ class codec(napl_base):
         # The composite ticks once per call; inner modules tick once per iteration.
         assert self.encoder.timestep_cur == self.decoder.timestep_cur, \
             f'Timestep mismatch: {self.encoder.timestep_cur}, {self.decoder.timestep_cur}.'
+
+
+class auto_codec(napl_base):
+    """Codec that carries its own run length, as a hub wrapper does."""
+    def __init__(self, config):
+        super().__init__()
+        self.timestep = config['timestep']
+        self.encoder = encode(config)
+        self.decoder = decode(config)
+
+
+    @napl_sim_timesteps
+    def forward(self, input):
+        self.decoder(self.encoder(input))
+        return self.decoder.spike_value
 
 
 class reset_leaf(napl_base):
@@ -108,6 +123,40 @@ def test_napl_sim_timesteps_class_rank2():
         )
 
 
+def test_napl_sim_timesteps_module_run():
+    """Verify a module carrying a timestep runs it in one call, freshly, and steps one at a time."""
+    config = {
+        'polarity': 'bipolar',
+        'timestep': 64,
+        'generator': 'sobol',
+    }
+    input_cpu = torch.tensor([[0.1, 0.5], [0.9, -0.3]])
+
+    for device in devices():
+        input = input_cpu.to(device)
+        module = auto_codec(config).to(device)
+
+        output = module(input)
+        assert output.shape == input.shape
+        assert module.timestep_cur == config['timestep']
+        assert module.encoder.timestep_cur == config['timestep']
+        assert module.decoder.timestep_cur == config['timestep']
+        assert (output - input).pow(2).mean().sqrt() <= 1.0 / math.sqrt(config['timestep'])
+
+        # The call resets at entry, so a repeat on the same input is the same run.
+        assert torch.equal(module(input), output)
+
+        stepped = auto_codec(config).to(device)
+        for timestep in range(1, config['timestep'] + 1):
+            partial = stepped.forward_timestep(input)
+            assert stepped.timestep_cur == timestep
+            assert stepped.encoder.timestep_cur == timestep
+        assert torch.equal(partial, output)
+        print(f'[{device}] one call and {config["timestep"]} steps agree.')
+
+    print('Test passed.')
+
+
 def test_napl_sim_timesteps_free_function_positional():
     """Verify the decorator repeats free functions with positional arguments."""
     calls = []
@@ -152,14 +201,18 @@ def test_reset_lifecycle():
 
 def test_reset_hook_format():
     """Verify every concrete streaming NAPL class defines its own reset hook."""
-    classes = {
-        value
-        for value in vars(napl).values()
-        if isinstance(value, type)
-        and issubclass(value, napl_base)
-        and value is not napl_base
-        and value.__module__.startswith('napl.sim.')
-    }
+    classes = set()
+    for sub in ('base', 'operation', 'module', 'metric', 'structure', 'algorithm'):
+        pkg = importlib.import_module(f'napl.sim.{sub}')
+        for name in getattr(pkg, '__all__', ()):
+            value = getattr(pkg, name)
+            if (
+                isinstance(value, type)
+                and issubclass(value, napl_base)
+                and value is not napl_base
+                and value.__module__.startswith('napl.sim.')
+            ):
+                classes.add(value)
     missing = sorted(
         cls.__name__
         for cls in classes
@@ -171,6 +224,7 @@ def test_reset_hook_format():
 if __name__ == '__main__':
     test_napl_sim_timesteps_class()
     test_napl_sim_timesteps_class_rank2()
+    test_napl_sim_timesteps_module_run()
     test_napl_sim_timesteps_free_function_positional()
     test_napl_sim_timesteps_free_function_keyword_only()
     test_reset_lifecycle()

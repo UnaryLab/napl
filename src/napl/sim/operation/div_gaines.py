@@ -27,7 +27,7 @@ class div_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import div_gaines
+        from napl.sim.operation import div_gaines
 
         divider = div_gaines({'polarity': 'unipolar', 'width': 5,
                               'generator': 'Sobol', 'dim': 1})
@@ -40,6 +40,10 @@ class div_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: The counter-comparison reference is encoded from a held number sequence,
+    #: so the RTL counterpart holds its own encoder instead of sharing an
+    #: external one.
+    internal_encode = True
 
 
     def __init__(
@@ -84,7 +88,7 @@ class div_gaines(napl_base):
 
         #: Largest value retained by the quotient counter.
         self.scnt_max = 2 ** self.width - 1
-        #: Half-scale quotient-counter value restored by :meth:`_reset`.
+        #: Half-scale quotient-counter value restored by ``_reset``.
         self.scnt_init = 2 ** (self.width - 1)
         # The half-scale scalar counter broadcasts to the input shape on first use.
         #: Saturating error counter that controls quotient spike probability.
@@ -148,7 +152,6 @@ class div_gaines(napl_base):
         else:
             dividend_i8 = dividend.type(torch.int8)
             divisor_i8 = divisor.type(torch.int8)
-            # inc - dec = XNOR(divisor_d ^ divisor ^ output) - (dividend ^ divisor).
             inc = (self.divisor_d ^ divisor_i8 ^ output) ^ 1
             dec = dividend_i8 ^ divisor_i8
             if self.divisor_d.shape == divisor_i8.shape:

@@ -9,13 +9,13 @@ module sigmoid_hard_tb;
     reg  i_clk;
     reg  i_rst_n;
     reg  i_input;
-    wire o_out;
+    wire o_output;
 
     sigmoid_hard dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
         .i_input   (i_input),
-        .o_out  (o_out)
+        .o_output  (o_output)
     );
 
     // 10 ns clock period.
@@ -46,9 +46,9 @@ module sigmoid_hard_tb;
                 i_input    = in_s;
                 #1;
                 n = n + 1;
-                if (o_out !== exp_out) begin
+                if (o_output !== exp_out) begin
                     $display("FAIL cycle %0d: i_rst_n=%b i_input=%b got %b exp %b",
-                             n, rst_n_s, in_s, o_out, exp_out);
+                             n, rst_n_s, in_s, o_output, exp_out);
                     fails = fails + 1;
                 end
                 @(posedge i_clk);

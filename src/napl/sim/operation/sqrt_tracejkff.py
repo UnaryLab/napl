@@ -2,6 +2,7 @@ import torch
 
 from napl.sim.base import napl_base
 from .bi2uni import bi2uni
+from .decorr import decorr
 from .jkff import jkff
 
 
@@ -29,7 +30,7 @@ class sqrt_tracejkff(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sqrt_tracejkff
+        from napl.sim.operation import sqrt_tracejkff
 
         operation = sqrt_tracejkff({'polarity': 'unipolar'})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -66,14 +67,20 @@ class sqrt_tracejkff(napl_base):
 
         #: JK flip-flop that stores the square-root trace state.
         self.jkff = jkff()
-        # K is a shape-, device-, and dtype-matched constant-one tensor cached until reset.
-        #: Constant-one JK input tensor cached for the current input shape.
+        # The flip-flop's own output reaches its J input through the inserted trace and collapses the relation, settling the trace at min(u, 0.5) unipolar or p_x / 2 bipolar and returning the input instead of its square root, so this decorrelating shuffle buffer cuts that path to restore an approximate p_q = u / (u + 1); its depth, period, and generator are an empirical local optimum, and the bipolar bound holds only under the tests' Sobol input encoder.
+        #: Shuffle buffer that decorrelates the JK input from the stored trace.
+        self.decorr = decorr({'polarity': 'unipolar', 'depth': 4,
+                              'timestep': 256, 'generator': 'lfsr', 'seed': 1})
+        #: Constant-one JK input tensor cached for the current input shape, device, and dtype.
         self.jkff_k = None
         if self.polarity == 'bipolar':
-            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
+            #: Converter that re-encodes the bipolar output value ``2p - 1`` as a
+            #: unipolar rate in bipolar mode.
             self.bi2uni = bi2uni({'width': 2})
         #: Hardware latency and timing metadata for the composed square-root path.
         self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
 
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
@@ -124,8 +131,10 @@ class sqrt_tracejkff(napl_base):
 
     def _unipolar_trace(self, output):
         """Update the JK flip-flop trace from a unipolar output spike."""
+        # decorr returns one reordered stream per port; the second is unused.
+        shuffled, _ = self.decorr(output, output)
         k = self.jkff_k
-        if k is None or k.shape != output.shape or k.device != output.device or k.dtype != output.dtype:
-            k = torch.ones_like(output)
+        if k is None or k.shape != shuffled.shape or k.device != shuffled.device or k.dtype != shuffled.dtype:
+            k = torch.ones_like(shuffled)
             self.jkff_k = k
-        self.jkff(output, k)
+        self.jkff(shuffled, k)

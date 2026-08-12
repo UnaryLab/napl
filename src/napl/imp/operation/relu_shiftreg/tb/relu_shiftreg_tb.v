@@ -7,10 +7,10 @@
 
 module relu_shiftreg_tb;
     reg i_clk, i_rst_n, i_input;
-    wire o_out;
+    wire o_output;
 
     relu_shiftreg #(.DEPTH(`GEN_DEPTH)) dut (
-        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_input(i_input), .o_out(o_out)
+        .i_clk(i_clk), .i_rst_n(i_rst_n), .i_input(i_input), .o_output(o_output)
     );
 
     integer fd, code, n, fails;
@@ -53,8 +53,8 @@ module relu_shiftreg_tb;
                     reset_dut;
                 #1;
                 n = n + 1;
-                if (o_out !== expected) begin
-                    $display("FAIL cycle=%0d in=%b got=%b exp=%b", n, i_input, o_out, expected);
+                if (o_output !== expected) begin
+                    $display("FAIL cycle=%0d in=%b got=%b exp=%b", n, i_input, o_output, expected);
                     fails = fails + 1;
                 end
                 @(posedge i_clk);

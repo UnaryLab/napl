@@ -27,7 +27,7 @@ class stability_flux(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import stability_flux
+        from napl.sim.metric import stability_flux
 
         metric = stability_flux(torch.ones(1), torch.ones(1))
         for _ in range(2):
@@ -81,6 +81,8 @@ class stability_flux(napl_base):
         #: Stability monitor for the denominator spike stream.
         self.stability_2 = stability(source_2, config)
 
+        self.polarity_io = {'input_1': self.polarity, 'input_2': self.polarity}
+
 
     def _reset(self):
         """
@@ -92,13 +94,13 @@ class stability_flux(napl_base):
         pass
 
 
-    def forward(self, spike_1, spike_2):
+    def forward(self, input_1, input_2):
         """
         Record one timestep from each spike stream.
 
         Args:
-            spike_1: Current 0/1 spike tensor for the numerator stream.
-            spike_2: Current 0/1 spike tensor for the denominator stream.
+            input_1: Current 0/1 spike tensor for the numerator stream.
+            input_2: Current 0/1 spike tensor for the denominator stream.
 
         Calling the metric increments its timestep and advances both child
         stability monitors. The method returns ``None``.
@@ -109,8 +111,8 @@ class stability_flux(napl_base):
 
             metric(torch.ones(1), torch.ones(1))
         """
-        self.stability_1(spike_1)
-        self.stability_2(spike_2)
+        self.stability_1(input_1)
+        self.stability_2(input_2)
 
 
     @property
@@ -145,7 +147,7 @@ class stability_flux(napl_base):
 
         Returns:
             A pair containing the per-element stability-ratio tensor and its
-            complete :class:`napl.sim.metric._shared.Analysis` summary.
+            complete ``Analysis`` summary.
 
         This method does not change the accumulated metric state.
 
@@ -159,12 +161,12 @@ class stability_flux(napl_base):
             message = 'Metric is not valid. Please call forward() before analyze().'
             logger.error(message)
             raise AssertionError(message)
-        stability_flux = self.stability_flux
+        stability_flux_val = self.stability_flux
         result = analyze(
-            stability_flux,
+            stability_flux_val,
             verbose=verbose,
             report='Flux Stability',
             value='flux stability',
             timestep=self.timestep_cur,
         )
-        return stability_flux, result
+        return stability_flux_val, result

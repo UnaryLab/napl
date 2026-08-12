@@ -7,23 +7,15 @@ from loguru import logger
 from pylfsr import LFSR
 
 
-def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
+def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.Tensor:
     """
-    return a lfsr sequence of length 2**width within [0, 1]
+    Return an LFSR sequence of length ``2**width`` with values within ``[0, 1]``.
 
-    The seed is reduced modulo ``2**width`` to a register state. An LFSR has no
-    all-zero state, so a seed that reduces to zero takes the all-ones state
-    instead; callers that derive a seed arithmetically, such as one per input
-    feature, otherwise fail on whichever term lands on a multiple of
-    ``2**width``. Every seed that already mapped to a valid state keeps its
-    former sequence.
-
-    The substitution aliases: a seed reducing to zero returns the same sequence
-    as seed ``2**width - 1``, so those two seeds do not decorrelate. Some
-    collision is unavoidable rather than an artifact of this choice, because
-    ``2**width`` seed values map onto ``2**width - 1`` states. A caller that
-    needs distinct sequences checks the sequences it derived, not the seeds it
-    passed.
+    The seed is reduced modulo ``2**width`` to a register state, and a seed that
+    reduces to zero takes the all-ones state instead, since an LFSR has no
+    all-zero state. That substitution makes a seed reducing to zero return the
+    same sequence as seed ``2**width - 1``, so a caller needing distinct
+    sequences checks the sequences it derived rather than the seeds it passed.
     """
     if width < 2:
         message = (
@@ -38,6 +30,7 @@ def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.tensor:
         # The default seed makes generated sequences reproducible.
         seed = [0 for _ in range(width-1)] + [1]
     else:
+        # 2**width seed values map onto 2**width - 1 states, so some seed collision is unavoidable.
         state = int(seed) % (2**width)
         if state == 0:
             state = 2**width - 1
@@ -167,7 +160,7 @@ class encode(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import encode
+        from napl.sim.operation import encode
 
         enc = encode({"polarity": "unipolar", "timestep": 4,
                        "generator": "sobol"})
@@ -215,7 +208,7 @@ class encode(napl_base):
 
         Construction generates and stores the complete number sequence.
         """
-        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'dim', 'seed', 'taps'], polarity_required=True)
+        super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'seed', 'taps'], polarity_required=True)
 
         #: Requested number of output-spike timesteps in the stream.
         self.timestep = config['timestep']

@@ -31,16 +31,16 @@ module conv_ugemm_tb;
 
     reg                     i_clk;
     reg                     i_rst_n;
-    reg  [IN_WIDTH-1:0]     i_input_spike_u;
-    reg  [IN_WIDTH-1:0]     i_input_spike_b;
-    wire [`GEN_LANES_A-1:0] o_out_u_a;
-    wire [`GEN_LANES_B-1:0] o_out_u_b;
-    wire [`GEN_LANES_C-1:0] o_out_u_c;
-    wire [`GEN_LANES_D-1:0] o_out_u_d;
-    wire [`GEN_LANES_A-1:0] o_out_b_a;
-    wire [`GEN_LANES_B-1:0] o_out_b_b;
-    wire [`GEN_LANES_C-1:0] o_out_b_c;
-    wire [`GEN_LANES_D-1:0] o_out_b_d;
+    reg  [IN_WIDTH-1:0]     i_input_u;
+    reg  [IN_WIDTH-1:0]     i_input_b;
+    wire [`GEN_LANES_A-1:0] o_output_u_a;
+    wire [`GEN_LANES_B-1:0] o_output_u_b;
+    wire [`GEN_LANES_C-1:0] o_output_u_c;
+    wire [`GEN_LANES_D-1:0] o_output_u_d;
+    wire [`GEN_LANES_A-1:0] o_output_b_a;
+    wire [`GEN_LANES_B-1:0] o_output_b_b;
+    wire [`GEN_LANES_C-1:0] o_output_b_c;
+    wire [`GEN_LANES_D-1:0] o_output_b_d;
 
     // Held fixed-point operands: OUT_CHANNELS*K weight codes, then OUT_CHANNELS
     // bias codes. Generated from the model, so the DUT sees its exact operands.
@@ -92,10 +92,10 @@ module conv_ugemm_tb;
     ) dut_u_a (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_u_a)
+        .o_output      (o_output_u_a)
     );
 
     // HAS_BIAS = 0 drops the bias addend, so entry and the default scale shrink;
@@ -119,10 +119,10 @@ module conv_ugemm_tb;
     ) dut_u_b (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_u_b)
+        .o_output      (o_output_u_b)
     );
 
     conv_ugemm_unipolar #(
@@ -144,10 +144,10 @@ module conv_ugemm_tb;
     ) dut_u_c (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_u_c)
+        .o_output      (o_output_u_c)
     );
 
 
@@ -174,10 +174,10 @@ module conv_ugemm_tb;
     ) dut_u_d (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_u),
+        .i_input (i_input_u),
         .i_weight      (i_weight_d),
         .i_bias        (i_bias_d),
-        .o_out         (o_out_u_d)
+        .o_output      (o_output_u_d)
     );
 
     conv_ugemm_bipolar #(
@@ -199,10 +199,10 @@ module conv_ugemm_tb;
     ) dut_b_a (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_b_a)
+        .o_output      (o_output_b_a)
     );
 
     conv_ugemm_bipolar #(
@@ -224,10 +224,10 @@ module conv_ugemm_tb;
     ) dut_b_b (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_b_b)
+        .o_output      (o_output_b_b)
     );
 
     conv_ugemm_bipolar #(
@@ -249,10 +249,10 @@ module conv_ugemm_tb;
     ) dut_b_c (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight),
         .i_bias        (i_bias),
-        .o_out         (o_out_b_c)
+        .o_output      (o_output_b_c)
     );
 
 
@@ -275,10 +275,10 @@ module conv_ugemm_tb;
     ) dut_b_d (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
-        .i_input_spike (i_input_spike_b),
+        .i_input (i_input_b),
         .i_weight      (i_weight_d),
         .i_bias        (i_bias_d),
-        .o_out         (o_out_b_d)
+        .o_output      (o_output_b_d)
     );
 
     // One character wider than the widest golden column, which the generator
@@ -358,8 +358,8 @@ module conv_ugemm_tb;
     initial begin
         i_clk           = 1'b0;
         i_rst_n         = 1'b1;
-        i_input_spike_u = {IN_WIDTH{1'b0}};
-        i_input_spike_b = {IN_WIDTH{1'b0}};
+        i_input_u = {IN_WIDTH{1'b0}};
+        i_input_b = {IN_WIDTH{1'b0}};
 
         fd = $fopen("vec/conv_ugemm.vec", "r");
         if (fd == 0) begin
@@ -406,8 +406,8 @@ module conv_ugemm_tb;
                     #1;
                 end
 
-                i_input_spike_u = token_bits(tok_in_u);
-                i_input_spike_b = token_bits(tok_in_b);
+                i_input_u = token_bits(tok_in_u);
+                i_input_b = token_bits(tok_in_b);
                 exp_u_a         = token_bits(tok_u_a);
                 exp_u_b         = token_bits(tok_u_b);
                 exp_u_c         = token_bits(tok_u_c);
@@ -419,37 +419,37 @@ module conv_ugemm_tb;
                 #1;
 
                 n = n + 1;
-                if (o_out_u_a !== exp_u_a) begin
-                    $display("FAIL n=%0d unipolar pad1 bias : got %b exp %b", n, o_out_u_a, exp_u_a);
+                if (o_output_u_a !== exp_u_a) begin
+                    $display("FAIL n=%0d unipolar pad1 bias : got %b exp %b", n, o_output_u_a, exp_u_a);
                     fails = fails + 1;
                 end
-                if (o_out_u_b !== exp_u_b) begin
-                    $display("FAIL n=%0d unipolar pad0 nobias : got %b exp %b", n, o_out_u_b, exp_u_b);
+                if (o_output_u_b !== exp_u_b) begin
+                    $display("FAIL n=%0d unipolar pad0 nobias : got %b exp %b", n, o_output_u_b, exp_u_b);
                     fails = fails + 1;
                 end
-                if (o_out_u_c !== exp_u_c) begin
-                    $display("FAIL n=%0d unipolar strided : got %b exp %b", n, o_out_u_c, exp_u_c);
+                if (o_output_u_c !== exp_u_c) begin
+                    $display("FAIL n=%0d unipolar strided : got %b exp %b", n, o_output_u_c, exp_u_c);
                     fails = fails + 1;
                 end
-                if (o_out_u_d !== exp_u_d) begin
-                    $display("FAIL n=%0d unipolar scaled : got %b exp %b", n, o_out_u_d, exp_u_d);
+                if (o_output_u_d !== exp_u_d) begin
+                    $display("FAIL n=%0d unipolar scaled : got %b exp %b", n, o_output_u_d, exp_u_d);
                     fails = fails + 1;
                 end
-                if (o_out_b_a !== exp_b_a) begin
-                    $display("FAIL n=%0d bipolar pad1 bias : got %b exp %b", n, o_out_b_a, exp_b_a);
+                if (o_output_b_a !== exp_b_a) begin
+                    $display("FAIL n=%0d bipolar pad1 bias : got %b exp %b", n, o_output_b_a, exp_b_a);
                     fails = fails + 1;
                 end
-                if (o_out_b_b !== exp_b_b) begin
-                    $display("FAIL n=%0d bipolar pad0 nobias : got %b exp %b", n, o_out_b_b, exp_b_b);
+                if (o_output_b_b !== exp_b_b) begin
+                    $display("FAIL n=%0d bipolar pad0 nobias : got %b exp %b", n, o_output_b_b, exp_b_b);
                     fails = fails + 1;
                 end
-                if (o_out_b_c !== exp_b_c) begin
-                    $display("FAIL n=%0d bipolar strided : got %b exp %b", n, o_out_b_c, exp_b_c);
+                if (o_output_b_c !== exp_b_c) begin
+                    $display("FAIL n=%0d bipolar strided : got %b exp %b", n, o_output_b_c, exp_b_c);
                     fails = fails + 1;
                 end
 
-                if (o_out_b_d !== exp_b_d) begin
-                    $display("FAIL n=%0d bipolar scaled : got %b exp %b", n, o_out_b_d, exp_b_d);
+                if (o_output_b_d !== exp_b_d) begin
+                    $display("FAIL n=%0d bipolar scaled : got %b exp %b", n, o_output_b_d, exp_b_d);
                     fails = fails + 1;
                 end
 

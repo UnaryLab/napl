@@ -43,7 +43,8 @@ def main():
     model = inhibit(config={})
 
     rows = []  # (rst_n, in_data, in_inhibit, out)
-    for pair in rep_pairs("bipolar", "bipolar"):
+    # The operand range is test_inhibit.py's make_values range.
+    for pair in rep_pairs("bipolar", "bipolar", range0=(-1.0, 1.0), range1=(-1.0, 1.0)):
         model.reset()
         rows.append((0, 0, 0, 0))
         s0, s1 = pair_streams(CODEC0, CODEC1, [pair])

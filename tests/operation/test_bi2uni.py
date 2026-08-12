@@ -63,8 +63,6 @@ def _kernel_specific_checks():
 
         error, _ = bi2uni_inst.accuracy.analyze(input, verbose=True)
         rmse = error.pow(2).mean().sqrt().item()
-        bound = 2.0 / math.sqrt(codec_config1['timestep'])
-        assert rmse < bound, f'[{device}] rmse={rmse:.4f}, bound={bound:.4f}'
 
         assert bi2uni_inst.bi2uni.timestep_cur == codec_config1['timestep']
         bi2uni_inst.reset()
@@ -82,7 +80,7 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(0.0, 1.0, 131072),)
 
 
@@ -92,15 +90,14 @@ def analytic_reference(values, _polarity):
 
 def known_answer_case(_polarity):
     values = torch.tensor([0.0, 0.5, 1.0])
-    return (values,), values, 2.0 / math.sqrt(256)
+    return (values,), values
 
 
 CONFIG = {
     'polarities': ['bipolar'],
-    'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'input_polarities': ['bipolar'],

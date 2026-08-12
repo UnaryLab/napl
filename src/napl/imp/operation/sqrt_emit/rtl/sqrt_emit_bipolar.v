@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 // Bipolar sqrt_emit equivalent. The unipolar accumulator path uses feedback
-// from a depth-2 alternating shift register gated by bi2uni(o_out).
+// from a depth-2 alternating shift register gated by bi2uni(o_output).
 // Output is combinational (pp_delay=0); state advances each posedge.
 // Active-low reset clears emit/accumulators and loads sr[i]=i%2.
 
@@ -10,7 +10,7 @@ module sqrt_emit_bipolar (
     input  wire i_clk,    // one posedge == one Python forward() timestep
     input  wire i_rst_n,  // active-low; maps to Python reset()
     input  wire i_input,     // input spike stream
-    output wire o_out     // square-root spike stream
+    output wire o_output  // square-root spike stream
 );
     reg signed [3:0] acc;      // nsadd accumulator, clamped to [-4, 3]
     reg signed [2:0] acc_b;    // bi2uni accumulator, clamped to [-2, 1]
@@ -23,14 +23,14 @@ module sqrt_emit_bipolar (
     wire signed [4:0] acc_add =
         (acc_pre > 5'sd3)  ? 5'sd3  :
         (acc_pre < -5'sd4) ? -5'sd4 : acc_pre;
-    assign o_out = (acc_add >= 5'sd1) ? 1'b1 : 1'b0;
-    // acc_add in [-4,3]; subtract o_out only where acc_add>=1 -> acc_next [-4,2].
-    wire signed [3:0] acc_next = acc_add[3:0] - $signed({3'b000, o_out});
+    assign o_output = (acc_add >= 5'sd1) ? 1'b1 : 1'b0;
+    // acc_add in [-4,3]; subtract o_output only where acc_add>=1 -> acc_next [-4,2].
+    wire signed [3:0] acc_next = acc_add[3:0] - $signed({3'b000, o_output});
 
-    // --- bi2uni: out_uni = bi2uni(o_out) ------------------------------------
-    // acc_b + 2*o_out - 1, clamped to [-2, 1].
+    // --- bi2uni: out_uni = bi2uni(o_output) ------------------------------------
+    // acc_b + 2*o_output - 1, clamped to [-2, 1].
     wire signed [3:0] accb_pre = $signed({acc_b[2], acc_b})
-                               + $signed({2'b00, o_out, 1'b0})   // +2*o_out
+                               + $signed({2'b00, o_output, 1'b0})   // +2*o_output
                                - 4'sd1;
     wire signed [3:0] accb_add =
         (accb_pre > 4'sd1)  ? 4'sd1  :
@@ -52,7 +52,7 @@ module sqrt_emit_bipolar (
             acc      <= acc_next;
             acc_b    <= accb_next;
             emit_out <= scrambled & out_uni;
-            sr       <= {~o_out, sr[1]};  // emit oldest, push (1-output) at tail
+            sr       <= {~o_output, sr[1]};  // emit oldest, push (1-output) at tail
         end
     end
 endmodule

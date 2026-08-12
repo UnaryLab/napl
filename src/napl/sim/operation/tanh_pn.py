@@ -22,7 +22,7 @@ class tanh_pn(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import tanh_pn
+        from napl.sim.operation import tanh_pn
 
         operation = tanh_pn({'depth': 5})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -60,7 +60,7 @@ class tanh_pn(napl_base):
 
         #: Largest value retained by the tanh state counter.
         self.cnt_max = 2**self.depth - 1
-        #: Half-scale counter value restored by :meth:`_reset`.
+        #: Half-scale counter value restored by ``_reset``.
         self.cnt_half = 2**(self.depth - 1)
         # The scalar initial counter broadcasts to the input shape on first use.
         #: Saturating state counter that drives the bipolar tanh output.
@@ -102,7 +102,6 @@ class tanh_pn(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
-        # Output reflects the pre-update counter state.
         output = torch.ge(self.cnt, self.cnt_half).type(self.stype).expand_as(input)
         if self.cnt.shape == input.shape:
             self.cnt.add_(input, alpha=2).sub_(1).clamp_(0, self.cnt_max)

@@ -50,7 +50,7 @@ CODEC1 = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 
 
 
 def proper_pairs():
-    """Representative (dividend, divisor) pairs with 0 < dividend <= divisor,
+    """Representative (dividend, divisor) pairs with 0 <= dividend <= divisor,
     mirroring the test's sort + non-zero-divisor masking."""
     pairs = []
     for x, y in rep_pairs("unipolar", "unipolar"):

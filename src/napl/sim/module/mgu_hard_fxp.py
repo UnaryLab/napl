@@ -18,7 +18,7 @@ _DEFAULT_CONFIG = {
 class mgu_hard_fxp(napl_base):
     r"""Apply a quantization-aware MGU cell with hard range bounds.
 
-    Use this single-shot cell to train or evaluate an MGU while rounding operands
+    Use this non-streaming cell to train or evaluate an MGU while rounding operands
     to the configured fixed-point format. ``round_fxp`` supplies the
     straight-through gradient.
 
@@ -53,7 +53,7 @@ class mgu_hard_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mgu_hard_fxp
+        from napl.sim.module import mgu_hard_fxp
 
         cell = mgu_hard_fxp(2, 3, config={"hard": True,
                                           "intwidth": 3, "fracwidth": 4})
@@ -65,7 +65,7 @@ class mgu_hard_fxp(napl_base):
 
         *Simplified minimal gated unit variations for recurrent neural networks*, MWSCAS, 2017.
     """
-    #: Whether calls process one stream timestep; this cell is single-shot.
+    #: Whether calls process one stream timestep; this cell is non-streaming.
     streaming = False
 
 

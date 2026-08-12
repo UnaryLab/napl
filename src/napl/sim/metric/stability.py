@@ -21,14 +21,14 @@ class stability(napl_base):
     .. math::
 
        S_T = 1 - \frac{k_T}{T},\qquad
-       k_T = \max\left(\{0\}\cup\{t \leq T : |\hat x_t - x| > \theta\}\right).
+       k_T = \max\left(\{1\}\cup\{t \leq T : |\hat x_t - x| > \theta\}\right).
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import stability
+        from napl.sim.metric import stability
 
         metric = stability(torch.tensor([1.0]))
         for _ in range(4):
@@ -87,6 +87,8 @@ class stability(napl_base):
         self.cycle_to_stable: torch.Tensor
         self.register_buffer('cycle_to_stable', torch.zeros_like(source))
 
+        self.polarity_io = {'input': self.polarity}
+
 
     def _reset(self):
         """
@@ -98,12 +100,12 @@ class stability(napl_base):
         self.cycle_to_stable.zero_()
 
 
-    def forward(self, spike):
+    def forward(self, input):
         """
         Record one timestep and update the last unstable timestep per element.
 
         Args:
-            spike: Current 0/1 spike tensor with the same logical shape as
+            input: Current 0/1 spike tensor with the same logical shape as
                 ``source``.
 
         Calling the metric increments its timestep, advances the child accuracy
@@ -116,7 +118,7 @@ class stability(napl_base):
 
             metric(torch.tensor([1.0]))
         """
-        self.accuracy(spike)
+        self.accuracy(input)
         spike_value = self.accuracy.spike_value
         # spike_value is fresh float state, so in-place error math cannot alias stored data.
         unstable = spike_value.sub_(self.source).abs_() > self.threshold
@@ -157,7 +159,7 @@ class stability(napl_base):
 
         Returns:
             A pair containing the per-element stability tensor and its complete
-            :class:`napl.sim.metric._shared.Analysis` summary.
+            ``Analysis`` summary.
 
         This method does not change the accumulated metric state.
 
@@ -171,12 +173,12 @@ class stability(napl_base):
             message = 'Metric is not valid. Please call forward() before analyze().'
             logger.error(message)
             raise AssertionError(message)
-        stability = self.stability
+        stability_val = self.stability
         result = analyze(
-            stability,
+            stability_val,
             verbose=verbose,
             report='Stability',
             value='stability',
             timestep=self.timestep_cur,
         )
-        return stability, result
+        return stability_val, result

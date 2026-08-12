@@ -16,14 +16,14 @@ module sqrt_traceiscb_tb;
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in_bit),
-        .o_out   (out_uni)
+        .o_output   (out_uni)
     );
 
     sqrt_traceiscb_bipolar dut_bi (
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in_bit),
-        .o_out   (out_bi)
+        .o_output   (out_bi)
     );
 
     integer fd, code, n, fails;

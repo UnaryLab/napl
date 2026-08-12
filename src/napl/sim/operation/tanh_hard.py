@@ -21,7 +21,7 @@ class tanh_hard(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import tanh_hard
+        from napl.sim.operation import tanh_hard
 
         operation = tanh_hard()
         output = operation(torch.tensor([0.0, 1.0]))
@@ -39,7 +39,7 @@ class tanh_hard(napl_base):
 
             **Parameters:**
 
-            - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
+            - **config** – Configuration mapping. It has no required keys; **polarity** and **name** are accepted and optional.
         """
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
         #: Hardware latency and timing metadata for the combinational hard tanh.
@@ -58,7 +58,7 @@ class tanh_hard(napl_base):
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Pass through one timestep of a bounded spike stream.
 

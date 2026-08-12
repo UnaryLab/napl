@@ -67,7 +67,7 @@ def make_values(_polarity):
     return (torch.linspace(0.0, 1.0, 128),)
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(0.0, 1.0, 131072),)
 
 
@@ -77,15 +77,14 @@ def analytic_reference(values, _polarity):
 
 def known_answer_case(_polarity):
     values = torch.tensor([0.0, 0.25, 1.0])
-    return (values,), torch.sqrt(values), 0.35
+    return (values,), torch.sqrt(values)
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'encoder_dims': [4],

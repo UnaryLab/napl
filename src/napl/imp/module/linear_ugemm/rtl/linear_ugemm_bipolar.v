@@ -4,7 +4,7 @@
 // Each lane is one output feature: IN_FEATURES conditionally generated weight
 // bits, an optional free-running bias bit, and a scaled unary accumulator over
 // the resulting ENTRY addends. Those are exactly the operation-layer circuits
-// mul_ugemm_bipolar, encode, and add_any_bipolar, so they are instantiated
+// mul_ugemm_bipolar, encode, and add_scale_bipolar, so they are instantiated
 // rather than rebuilt. Generated parameters mirror Python.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every sequence index and accumulator to match reset().
@@ -29,10 +29,10 @@ module linear_ugemm_bipolar #(
 ) (
     input  wire                                       i_clk,
     input  wire                                       i_rst_n,
-    input  wire [IN_FEATURES-1:0]                     i_input_spike,
+    input  wire [IN_FEATURES-1:0]                     i_input,
     input  wire [LANES*IN_FEATURES*(SEQ_WIDTH+1)-1:0] i_weight,  // lane l, feature f at [(l*IN_FEATURES+f)*(SEQ_WIDTH+1) +: SEQ_WIDTH+1]
     input  wire [LANES*(SEQ_WIDTH+1)-1:0]             i_bias,    // lane l at [l*(SEQ_WIDTH+1) +: SEQ_WIDTH+1]
-    output wire [LANES-1:0]                           o_out
+    output wire [LANES-1:0]                           o_output
 );
 
 
@@ -72,9 +72,9 @@ module linear_ugemm_bipolar #(
                 ) u_mul (
                     .i_clk     (i_clk),
                     .i_rst_n   (i_rst_n),
-                    .i_input_0 (i_input_spike[feature]),
+                    .i_input_0 (i_input[feature]),
                     .i_input_1 (i_weight[(lane*IN_FEATURES + feature)*OPW +: OPW]),
-                    .o_out     (addend[lane][feature])
+                    .o_output  (addend[lane][feature])
                 );
             end
 
@@ -92,7 +92,7 @@ module linear_ugemm_bipolar #(
                 );
             end
 
-            add_any_bipolar #(
+            add_scale_bipolar #(
                 .SCALE (SCALE),
                 .WIDTH (WIDTH),
                 .ENTRY (ENTRY)
@@ -100,7 +100,7 @@ module linear_ugemm_bipolar #(
                 .i_clk   (i_clk),
                 .i_rst_n (i_rst_n),
                 .i_input (addend[lane]),
-                .o_out   (o_out[lane])
+                .o_output   (o_output[lane])
             );
         end
     endgenerate

@@ -8,6 +8,9 @@ from napl.utils._shared_test import devices, streaming_suite
 
 _DEPTH = 2
 _TIMESTEPS = 256
+# Element count of the per-element delay drive, wide enough to expose a register
+# that holds its state for only part of the input.
+_WIDE = 1024
 
 
 def make_operation(polarity, timestep, device):
@@ -21,7 +24,7 @@ def make_values(polarity):
     )
 
 
-def make_performance_values(polarity):
+def make_random_perf_values(polarity):
     low = -1 if polarity == 'bipolar' else 0
     return (
         torch.linspace(low, 1, 131072, dtype=global_config.ntype),
@@ -36,16 +39,14 @@ def known_answer_case(polarity):
     return (
         (torch.tensor([1.0]),),
         torch.tensor([1.0]),
-        2 * _DEPTH / _TIMESTEPS,
     )
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 1.0,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': _TIMESTEPS,
@@ -55,6 +56,24 @@ CONFIG = {
 def test_shiftreg():
     """Verify shiftreg against analytic and known-answer streams, including reset and timing."""
     streaming_suite(CONFIG)
+
+
+def test_wide_delay():
+    """Verify every element of a wide input is delayed by depth, which the decoded rate cannot see."""
+    torch.manual_seed(0)
+    steps = 16
+    pattern = torch.randint(0, 2, (steps, _WIDE), dtype=global_config.stype)
+    for device in devices():
+        operation = shiftreg({'depth': _DEPTH}).to(device)
+        for step in range(steps):
+            output = operation(pattern[step].to(device)).cpu()
+            if step < _DEPTH:
+                # The register starts on the alternating reset pattern.
+                expected = torch.full((_WIDE,), step % 2, dtype=global_config.stype)
+            else:
+                expected = pattern[step - _DEPTH]
+            wrong = int((output != expected).sum())
+            assert wrong == 0, f'[{device}] step {step}: {wrong} of {_WIDE} elements not delayed by {_DEPTH}'
 
 
 def test_device_migration():
@@ -102,6 +121,7 @@ def test_float_input_delay():
 
 if __name__ == '__main__':
     test_shiftreg()
+    test_wide_delay()
     # pytest collects this on its own and skips it; a bare script run cannot
     # handle that skip, so the script decides for itself whether to call it.
     if len(devices()) > 1:

@@ -17,7 +17,7 @@ module shiftreg_tb;
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input    (in_bit),
-        .o_out   (out_bit)
+        .o_output   (out_bit)
     );
 
     integer fd, code, n, fails;

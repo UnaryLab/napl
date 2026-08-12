@@ -24,7 +24,7 @@ class uni2bi(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import uni2bi
+        from napl.sim.operation import uni2bi
 
         converter = uni2bi({'width': 3})
         output = converter(torch.tensor([1, 0], dtype=torch.int8))
@@ -106,7 +106,6 @@ class uni2bi(napl_base):
 
             output = converter(torch.tensor([1, 0], dtype=torch.int8))
         """
-        # ntype accumulation widens stype input without truncation.
         acc = self.accumulator
         # The scalar initial state broadcasts out of place; matching shapes update in place.
         if acc.shape == input.shape:

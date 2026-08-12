@@ -21,7 +21,7 @@ class dff(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import dff
+        from napl.sim.operation import dff
 
         delay = dff({'depth': 1})
         first = delay(torch.tensor([1], dtype=torch.int8))
@@ -48,8 +48,7 @@ class dff(napl_base):
         super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
         #: Number of timesteps between an input and its delayed output.
         self.depth = config['depth']
-        # This buffer anchors lazy state to the module device.
-        #: Device and spike-dtype anchor used when the delay queue is initialized.
+        #: Device anchor used when the delay queue is allocated.
         self.reg: torch.Tensor
         self.register_buffer('reg', torch.zeros(1, dtype=self.stype))
         # FIFO rows hold tensor references and are overwritten through a circular index.
@@ -74,7 +73,7 @@ class dff(napl_base):
         self.is_first_call = True
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Push one input timestep through the delay line.
 

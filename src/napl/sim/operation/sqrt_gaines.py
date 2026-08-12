@@ -27,7 +27,7 @@ class sqrt_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sqrt_gaines
+        from napl.sim.operation import sqrt_gaines
 
         operation = sqrt_gaines({'polarity': 'unipolar', 'width': 5, 'generator': 'Sobol'})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -38,6 +38,10 @@ class sqrt_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: The counter-comparison reference is encoded from a held number sequence,
+    #: so the RTL counterpart holds its own encoder instead of sharing an
+    #: external one.
+    internal_encode = True
 
 
     def __init__(
@@ -59,10 +63,8 @@ class sqrt_gaines(napl_base):
 
               - **polarity**: Stream encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **width**: Counter and number-sequence bit width; the default is ``5``.
-              - **generator**: Number-sequence generator accepted by :func:`napl.sim.operation.encode.gen_num_seq`; the default is ``"Sobol"``.
+              - **generator**: Number-sequence generator accepted by ``gen_num_seq``; the default is ``"Sobol"``.
               - **dim**: Optional Sobol dimension; the sequence generator defaults to ``1``.
-              - **seed**: Optional LFSR seed used when **generator** is ``"lfsr"``; the default is ``None``.
-              - **taps**: Optional LFSR tap list used when **generator** is ``"lfsr"``; the default is ``None``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['polarity', 'width', 'generator'], optional_key_list=['dim'], polarity_required=True)
@@ -71,7 +73,7 @@ class sqrt_gaines(napl_base):
         self.width = config['width']
         #: Largest value retained by the square-root counter.
         self.cnt_max = 2**self.width - 1
-        #: Half-scale counter value restored by :meth:`_reset`.
+        #: Half-scale counter value restored by ``_reset``.
         self.cnt_half = 2**(self.width - 1)
 
         #: Encoder supplying the periodic counter-threshold comparison.
@@ -90,7 +92,6 @@ class sqrt_gaines(napl_base):
         #: Saturating error counter that controls square-root spike generation.
         self.scnt: torch.Tensor
         self.register_buffer('scnt', torch.zeros(1, dtype=self.ntype).fill_(self.cnt_half))
-        # Squared-output feedback uses a one-cycle delayed output.
         #: Previous output spike tensor used by the squared-output feedback term.
         self.out_d: torch.Tensor
         self.register_buffer('out_d', torch.zeros(1, dtype=torch.int8))

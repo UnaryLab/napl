@@ -5,7 +5,7 @@
 // per-timestep partial sum is the plain count of the conditionally generated
 // product spikes over the im2col patch, plus the optional bias spike, so the
 // lane is K = IN_CHANNELS*KERNEL_H*KERNEL_W mul_ugemm_bipolar cells and one
-// encode cell feeding one add_any_bipolar. Those are operation-layer circuits
+// encode cell feeding one add_scale_bipolar. Those are operation-layer circuits
 // and are instantiated rather than rebuilt. Generated parameters mirror Python.
 // The im2col patch is wiring: tap (ic, kh, kw) of lane (b, oc, oh, ow) reads
 // input row oh*STRIDE + kh*DILATION - PADDING and column ow*STRIDE +
@@ -31,7 +31,7 @@
 // lane here holds its own pair per tap, so the OUT_CHANNELS lanes of one spatial
 // position hold OUT_CHANNELS copies of the model's one pair. Both premises of
 // that equality have exact sites. The index update reads only the patch spike
-// and never the comparator: sim/operation/mul_ugemm.py:171 in the model,
+// and never the comparator: sim/operation/mul_ugemm.py:172 in the model,
 // operation/mul_ugemm/rtl/mul_ugemm_bipolar.v:49 in the RTL. And every copy of
 // one tap is driven by the same x_bit, assigned once per (spatial position, tap)
 // in the g_input / g_pad branch below and fanned out to the OUT_CHANNELS lanes.
@@ -62,10 +62,10 @@ module conv_ugemm_bipolar #(
 ) (
     input  wire                                                                 i_clk,
     input  wire                                                                 i_rst_n,
-    input  wire [BATCH*IN_CHANNELS*IN_H*IN_W-1:0]                               i_input_spike,  // (b, ic, ih, iw) row-major
+    input  wire [BATCH*IN_CHANNELS*IN_H*IN_W-1:0]                               i_input,        // (b, ic, ih, iw) row-major
     input  wire [OUT_CHANNELS*IN_CHANNELS*KERNEL_H*KERNEL_W*(SEQ_WIDTH+1)-1:0]  i_weight,       // out channel oc, tap t at [(oc*K + t)*(SEQ_WIDTH+1) +: SEQ_WIDTH+1]
     input  wire [OUT_CHANNELS*(SEQ_WIDTH+1)-1:0]                                i_bias,         // out channel oc at [oc*(SEQ_WIDTH+1) +: SEQ_WIDTH+1]
-    output wire [LANES-1:0]                                                     o_out           // (b, oc, oh, ow) row-major
+    output wire [LANES-1:0]                                                     o_output        // (b, oc, oh, ow) row-major
 );
 
 
@@ -139,7 +139,7 @@ module conv_ugemm_bipolar #(
 
                 wire x_bit;
                 if (IH >= 0 && IH < IN_H && IW >= 0 && IW < IN_W) begin : g_input
-                    assign x_bit = i_input_spike[((b*IN_CHANNELS + ic)*IN_H + IH)*IN_W + IW];
+                    assign x_bit = i_input[((b*IN_CHANNELS + ic)*IN_H + IH)*IN_W + IW];
                 end else begin : g_pad
                     assign x_bit = pad_bit;
                 end
@@ -151,7 +151,7 @@ module conv_ugemm_bipolar #(
                     .i_rst_n   (i_rst_n),
                     .i_input_0 (x_bit),
                     .i_input_1 (i_weight[(oc*K + TAP)*OPW +: OPW]),
-                    .o_out     (addend[LANE][TAP])
+                    .o_output  (addend[LANE][TAP])
                 );
             end
             end
@@ -171,7 +171,7 @@ module conv_ugemm_bipolar #(
                 );
             end
 
-            add_any_bipolar #(
+            add_scale_bipolar #(
                 .SCALE (SCALE),
                 .WIDTH (WIDTH),
                 .ENTRY (ENTRY)
@@ -179,7 +179,7 @@ module conv_ugemm_bipolar #(
                 .i_clk   (i_clk),
                 .i_rst_n (i_rst_n),
                 .i_input (addend[LANE]),
-                .o_out   (o_out[LANE])
+                .o_output   (o_output[LANE])
             );
         end
         end

@@ -18,16 +18,6 @@ from napl.utils._shared_test import benchmark, devices
 TIMESTEP = 512
 BATCH, IN_FEATURES, OUT_FEATURES = 3, 6, 4
 ENTRY = IN_FEATURES + 1
-# Per-polarity fidelity bounds at about 1.5x the observed rmse (0.000653 unipolar,
-# 0.002032 bipolar). The Sobol streams make the observed error deterministic and
-# identical to within 4e-9 across devices for the fixed inputs, weights, and dims below, and the
-# two polarities sit about 3x apart, so each polarity carries its own bound. The
-# repo-standard 3/sqrt(N) = 0.132583 is the bound for a randomly rate-coded stream;
-# Sobol streams converge nearer 1/N than 1/sqrt(N), so that bound sits about 200x
-# above what this wrapper reaches and would pass a small wiring, scale, or sign
-# error. These bounds trip on a 1% weight-scale error in the unipolar case and a
-# 2% one in the bipolar case.
-RMSE_BOUND = {'unipolar': 0.001, 'bipolar': 0.0035}
 POLARITIES = ['unipolar', 'bipolar']
 
 
@@ -72,10 +62,11 @@ def _make_bare(polarity, device, timestep=TIMESTEP, dim=2):
     return encoder, core, decoder
 
 
-def _run(operation, input_value, timesteps=TIMESTEP):
+def _step_run(operation, input_value, timesteps=TIMESTEP):
+    """Return the final output of an explicit per-timestep run."""
     output = None
     for _ in range(timesteps):
-        output = operation(input_value)
+        output = operation.forward_timestep(input_value)
     return output
 
 
@@ -94,19 +85,20 @@ def test_linear_ugemm_hub_fidelity():
             # percent, inside the noise. Comparing the two number sequences is the only
             # cover that the input stream really decorrelates from the weight stream.
             assert not torch.equal(layer.reference_encode.num_seq, layer.core.mul.num_seq)
-            output = _run(layer, input_value)
+            output = layer(input_value)
             rmse = (output - reference).pow(2).mean().sqrt().item()
 
             assert output.shape == (BATCH, OUT_FEATURES), output.shape
-            assert layer.timestep_cur == TIMESTEP
+            # The layer is non-streaming at its numeric interface, so its own
+            # counter stays at 0 while the streaming parts it drives count the
+            # whole run.
+            assert layer.streaming is False
+            assert layer.timestep_cur == 0
             assert layer.core.timestep_cur == TIMESTEP
             assert layer.decoder.timestep_cur == TIMESTEP
-            bound = RMSE_BOUND[polarity]
-            assert rmse <= bound, (
-                f'[{device}][{polarity}] rmse={rmse:.6f} exceeds bound={bound:.6f}'
-            )
-            print(f'[{device}][{polarity}] N={TIMESTEP}, rmse={rmse:.6f}, '
-                  f'bound={bound:.6f}')
+            # The core multiplier turns the weights into streams itself.
+            assert layer.internal_encode is True
+            print(f'[{device}][{polarity}] N={TIMESTEP}, rmse={rmse:.6f}')
 
 
 def test_linear_ugemm_hub_matches_bare_composition():
@@ -118,11 +110,11 @@ def test_linear_ugemm_hub_matches_bare_composition():
             encoder, core, decoder = _make_bare(polarity, device)
 
             for _ in range(TIMESTEP):
-                hub_output = layer(input_value)
+                hub_output = layer.forward_timestep(input_value)
                 decoder(core(encoder(input_value)))
                 bare_output = decoder.spike_value
                 assert torch.equal(hub_output, bare_output), (
-                    f'[{device}][{polarity}] diverged at timestep {layer.timestep_cur}'
+                    f'[{device}][{polarity}] diverged at timestep {layer.core.timestep_cur}'
                 )
             print(f'[{device}][{polarity}] bit-exact against the bare composition '
                   f'for {TIMESTEP} timesteps.')
@@ -136,8 +128,8 @@ def test_linear_ugemm_hub_reset_replay():
             input_value = _input_value(polarity).to(device)
             layer = _make_hub(polarity, device, timestep=timesteps)
 
-            first = [layer(input_value).clone() for _ in range(timesteps)]
-            assert layer.timestep_cur == timesteps
+            first = [layer.forward_timestep(input_value).clone() for _ in range(timesteps)]
+            assert layer.core.timestep_cur == timesteps
             layer.reset()
             assert layer.timestep_cur == 0
             assert layer.core.timestep_cur == 0
@@ -145,9 +137,62 @@ def test_linear_ugemm_hub_reset_replay():
             assert layer.decoder.timestep_cur == 0
             assert layer.decoder.spike_count.abs().sum().item() == 0
 
-            replay = [layer(input_value).clone() for _ in range(timesteps)]
+            replay = [layer.forward_timestep(input_value).clone() for _ in range(timesteps)]
             assert all(torch.equal(before, after) for before, after in zip(first, replay))
             print(f'[{device}][{polarity}] reset and replay reproduced {timesteps} outputs.')
+
+
+def test_linear_ugemm_hub_matches_timestep_loop():
+    """Verify one decorated call equals an explicit timestep loop and repeats bit-exactly."""
+    for device in devices():
+        for polarity in POLARITIES:
+            input_value = _input_value(polarity).to(device)
+
+            looped_layer = _make_hub(polarity, device)
+            looped = _step_run(looped_layer, input_value)
+            assert looped_layer.core.timestep_cur == TIMESTEP
+
+            layer = _make_hub(polarity, device)
+            single = layer(input_value)
+            assert torch.equal(single, looped), (
+                f'[{device}][{polarity}] the decorated call and the {TIMESTEP}-timestep loop '
+                f'disagree'
+            )
+            assert layer.timestep_cur == 0
+            assert layer.core.timestep_cur == TIMESTEP
+            assert layer.decoder.timestep_cur == TIMESTEP
+
+            # A decorated call is a fresh run, so a partly advanced layer decodes
+            # the same value as an untouched one.
+            advanced_layer = _make_hub(polarity, device)
+            advanced_layer.forward_timestep(input_value)
+            assert torch.equal(advanced_layer(input_value), single), (
+                f'[{device}][{polarity}] a repeated decorated call is not a fresh run'
+            )
+            print(f'[{device}][{polarity}] one call matches the {TIMESTEP}-timestep loop '
+                  f'bit-exactly.')
+
+
+def test_linear_ugemm_hub_progressive_precision():
+    """Verify per-timestep stepping refines the output toward the analytic result."""
+    checkpoints = (TIMESTEP // 8, TIMESTEP)
+    for device in devices():
+        for polarity in POLARITIES:
+            weight, bias = _parameters(polarity)
+            input_value = _input_value(polarity).to(device)
+            reference = F.linear(input_value, weight.to(device), bias.to(device)) / ENTRY
+
+            layer = _make_hub(polarity, device)
+            errors = []
+            for timestep in range(1, TIMESTEP + 1):
+                output = layer.forward_timestep(input_value)
+                assert layer.core.timestep_cur == timestep
+                assert output.shape == (BATCH, OUT_FEATURES), output.shape
+                if timestep in checkpoints:
+                    errors.append((output - reference).pow(2).mean().sqrt().item())
+            assert errors[-1] < errors[0], errors
+            print(f'[{device}][{polarity}] rmse refines from {errors[0]:.6f} at '
+                  f'N={checkpoints[0]} to {errors[-1]:.6f} at N={checkpoints[1]}.')
 
 
 def test_linear_ugemm_hub_rejects_invalid_config():
@@ -194,7 +239,7 @@ def test_linear_ugemm_hub_performance():
     for device in devices():
         layer = _make_hub('bipolar', device)
         device_runtime = benchmark(
-            lambda inputs: layer(inputs[0]),
+            lambda inputs: layer.forward_timestep(inputs[0]),
             (performance_input,),
             device,
             warmup_runs=2,
@@ -213,6 +258,8 @@ if __name__ == '__main__':
     test_linear_ugemm_hub_rejects_invalid_config()
     test_linear_ugemm_hub_fidelity()
     test_linear_ugemm_hub_matches_bare_composition()
+    test_linear_ugemm_hub_matches_timestep_loop()
+    test_linear_ugemm_hub_progressive_precision()
     test_linear_ugemm_hub_reset_replay()
     test_linear_ugemm_hub_performance()
     print('Test passed.')

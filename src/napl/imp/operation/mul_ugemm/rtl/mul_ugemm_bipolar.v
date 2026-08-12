@@ -12,7 +12,7 @@ module mul_ugemm_bipolar #(
     input  wire             i_rst_n,
     input  wire             i_input_0,
     input  wire [WIDTH:0]   i_input_1,   // fixed-point operand in [0, 2**WIDTH]
-    output wire             o_out
+    output wire             o_output
 );
 
     reg  [WIDTH-1:0] seq_idx;
@@ -39,7 +39,7 @@ module mul_ugemm_bipolar #(
     assign spike_inv = (i_input_1 > {1'b0, num_seq_inv}) ? 1'b1 : 1'b0;
     assign path      = i_input_0 & spike;
     assign path_inv  = (~i_input_0) & (~spike_inv);
-    assign o_out     = path | path_inv;
+    assign o_output     = path | path_inv;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

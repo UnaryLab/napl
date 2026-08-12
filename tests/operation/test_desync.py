@@ -33,34 +33,33 @@ def make_operation(polarity, _timestep, _device):
     return desync({'polarity': polarity, 'depth': 1})
 
 
-def make_values(_polarity):
-    first = torch.linspace(0.0, 1.0, 128)
-    second = torch.linspace(1.0, 0.0, 128)
-    return first, second
+def make_values(polarity, count=128):
+    if polarity == 'bipolar':
+        return torch.linspace(-1.0, 1.0, count), torch.linspace(1.0, -1.0, count)
+    return torch.linspace(0.0, 1.0, count), torch.linspace(1.0, 0.0, count)
 
 
-def make_performance_values(_polarity):
-    first = torch.linspace(0.0, 1.0, 131072)
-    second = torch.linspace(1.0, 0.0, 131072)
-    return first, second
+def make_random_perf_values(polarity):
+    return make_values(polarity, count=131072)
 
 
 def analytic_reference(values, _polarity):
     return values[0]
 
 
-def known_answer_case(_polarity):
+def known_answer_case(polarity):
+    if polarity == 'bipolar':
+        values = (torch.tensor([-1.0, 1.0, 0.0]), torch.tensor([1.0, -1.0, -0.5]))
+        return values, values[0]
     values = (torch.tensor([0.0, 1.0, 0.5]), torch.tensor([1.0, 0.0, 0.25]))
-    return values, values[0], 2.0 / 256
+    return values, values[0]
 
 
 CONFIG = {
-    # desync is unipolar only: unpairing ones has no bipolar meaning.
-    'polarities': ['unipolar'],
-    'tolerance_scale': 2.0,
+    'polarities': ['unipolar', 'bipolar'],
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'apply_operation': lambda operation, spikes: operation(*spikes)[0],
@@ -93,11 +92,11 @@ def _run_pair(operation, value_0, value_1, timesteps, device):
 
 
 def test_desync_config():
-    """Reject a bipolar polarity, missing keys, unknown keys, and an invalid depth."""
+    """Reject an illegal polarity, missing keys, unknown keys, and an invalid depth."""
     depth_message = 'Invalid depth: <{}>; legal values: an integer of at least 1.'
     for config, message in [
-            ({'polarity': 'bipolar', 'depth': 1},
-             'Invalid polarity: <bipolar>; desync supports unipolar only.'),
+            ({'polarity': 'ternary', 'depth': 1},
+             "Invalid polarity: <ternary>; legal values: <['unipolar', 'bipolar']>."),
             ({'depth': 1},
              'Missing key <polarity> in the input configuration.'),
             ({'polarity': 'unipolar'},
@@ -118,26 +117,29 @@ def test_desync_config():
 
 
 def test_desync_known_sequence():
-    """Reproduce the Fig. 3b depth-1 state machine step by step on a rank-2 input."""
+    """Reproduce the Fig. 3b depth-1 state machine step by step on a rank-2 input under both polarities."""
     for device in devices():
-        operation = desync({'polarity': 'unipolar', 'depth': 1}).to(device)
-        for step, (bit_0, bit_1, expected_0, expected_1) in enumerate(FSM_D1_SEQUENCE, start=1):
-            # Both rows carry the same bits, so the per-element machines stay in step.
-            input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
-            input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
-            output_0, output_1 = operation(input_0, input_1)
-            assert output_0.shape == (2, 3), output_0.shape
-            assert output_1.shape == (2, 3), output_1.shape
-            assert operation.cnt.shape == (2, 3), operation.cnt.shape
-            assert torch.equal(output_0.cpu(), torch.full((2, 3), expected_0, dtype=global_config.stype)), \
-                f'step {step}: input=({bit_0},{bit_1}) output_0={output_0.cpu().tolist()}'
-            assert torch.equal(output_1.cpu(), torch.full((2, 3), expected_1, dtype=global_config.stype)), \
-                f'step {step}: input=({bit_0},{bit_1}) output_1={output_1.cpu().tolist()}'
-            assert operation.timestep_cur == step
-        operation.reset()
-        assert operation.timestep_cur == 0
-        assert operation.cnt.numel() == 1 and operation.cnt.item() == 0
-        assert operation.side.numel() == 1 and operation.side.item() == 1
+        # Polarity only reinterprets the rate, so both polarities emit these bits.
+        for polarity in ('unipolar', 'bipolar'):
+            operation = desync({'polarity': polarity, 'depth': 1}).to(device)
+            assert operation.polarity_io['output_0'] == polarity
+            for step, (bit_0, bit_1, expected_0, expected_1) in enumerate(FSM_D1_SEQUENCE, start=1):
+                # Both rows carry the same bits, so the per-element machines stay in step.
+                input_0 = torch.full((2, 3), bit_0, dtype=global_config.stype).to(device)
+                input_1 = torch.full((2, 3), bit_1, dtype=global_config.stype).to(device)
+                output_0, output_1 = operation(input_0, input_1)
+                assert output_0.shape == (2, 3), output_0.shape
+                assert output_1.shape == (2, 3), output_1.shape
+                assert operation.cnt.shape == (2, 3), operation.cnt.shape
+                assert torch.equal(output_0.cpu(), torch.full((2, 3), expected_0, dtype=global_config.stype)), \
+                    f'{polarity} step {step}: input=({bit_0},{bit_1}) output_0={output_0.cpu().tolist()}'
+                assert torch.equal(output_1.cpu(), torch.full((2, 3), expected_1, dtype=global_config.stype)), \
+                    f'{polarity} step {step}: input=({bit_0},{bit_1}) output_1={output_1.cpu().tolist()}'
+                assert operation.timestep_cur == step
+            operation.reset()
+            assert operation.timestep_cur == 0
+            assert operation.cnt.numel() == 1 and operation.cnt.item() == 0
+            assert operation.side.numel() == 1 and operation.side.item() == 1
 
 
 def test_desync_correlation():
@@ -172,7 +174,7 @@ def test_desync_correlation():
 
 
 def test_desync():
-    """Verify desync preserves the first unipolar stream value across the full range."""
+    """Verify desync preserves the first stream value across the full unipolar and bipolar ranges."""
     streaming_suite(CONFIG)
 
 

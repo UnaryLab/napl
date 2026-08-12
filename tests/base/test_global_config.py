@@ -6,7 +6,6 @@ import torch
 
 import napl
 import napl.utils as napl_utils
-from napl.sim import algorithm, base, metric, module, operation, structure
 from napl.sim.base import global_config
 
 
@@ -79,18 +78,14 @@ def test_global_config_rejects_invalid_dtypes():
 
 
 def test_package_exports():
-    """Verify the package export list covers exactly the simulation subpackage exports."""
-    subpackage = set().union(*(
-        pkg.__all__ for pkg in (base, operation, module, metric, structure, algorithm)
-    ))
+    """Verify the package root re-exports no simulation classes."""
+    for name in ('mul_gaines', 'linear_ugemm', 'accuracy', 'napl_base'):
+        assert not hasattr(napl, name), (
+            f'napl still re-exports {name!r}; public classes are imported from '
+            'napl.sim.<subpackage>, not the package root.'
+        )
+    assert not getattr(napl, '__all__', None), 'napl.__all__ must not list re-exports.'
 
-    assert set(napl.__all__) == subpackage, (
-        'napl.__all__ diverged from the subpackage exports; '
-        f'missing: {sorted(subpackage - set(napl.__all__))}, '
-        f'extra: {sorted(set(napl.__all__) - subpackage)}.'
-    )
-
-    print(f'Exported names: {len(napl.__all__)}')
     print('Test passed.')
 
 

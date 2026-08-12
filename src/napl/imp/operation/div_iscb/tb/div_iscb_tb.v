@@ -16,19 +16,20 @@ module div_iscb_tb;
     div_iscb_unipolar dut_uni (
         .i_clk(clk), .i_rst_n(rst_n),
         .i_dividend(dividend), .i_divisor(divisor),
-        .o_quotient(q_uni)
+        .o_output(q_uni)
     );
     div_iscb_bipolar dut_bi (
         .i_clk(clk), .i_rst_n(rst_n),
         .i_dividend(dividend), .i_divisor(divisor),
-        .o_quotient(q_bi)
+        .o_output(q_bi)
     );
 
-    // Standalone bi2uni helper: its low clamp is unreachable through
-    // div_iscb_bipolar, so it is driven on its own stimulus column.
-    div_iscb_bi2uni dut_b2u (
+    // The bi2uni helper's low clamp is unreachable through div_iscb_bipolar, so
+    // a second copy is driven on its own stimulus column at the same width the
+    // bipolar variant elaborates.
+    bi2uni #(.WIDTH(3)) dut_b2u (
         .i_clk(clk), .i_rst_n(rst_n),
-        .i_input(b2u_in), .o_out(b2u_out)
+        .i_input(b2u_in), .o_output(b2u_out)
     );
 
     integer fd, code, n, fails;

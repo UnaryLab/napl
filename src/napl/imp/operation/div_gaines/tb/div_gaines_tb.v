@@ -10,22 +10,22 @@ module div_gaines_tb;
     reg i_divisor_uni;
     reg i_dividend_bi;
     reg i_divisor_bi;
-    wire o_out_uni;
-    wire o_out_bi;
+    wire o_output_uni;
+    wire o_output_bi;
 
     div_gaines_unipolar #(.WIDTH(`GEN_WIDTH)) dut_uni (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_dividend(i_dividend_uni),
         .i_divisor(i_divisor_uni),
-        .o_out(o_out_uni)
+        .o_output(o_output_uni)
     );
     div_gaines_bipolar #(.WIDTH(`GEN_WIDTH)) dut_bi (
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_dividend(i_dividend_bi),
         .i_divisor(i_divisor_bi),
-        .o_out(o_out_bi)
+        .o_output(o_output_bi)
     );
 
     integer fd;
@@ -82,17 +82,17 @@ module div_gaines_tb;
                     reset_duts;
                 #1;
                 count = count + 1;
-                if (o_out_uni !== expected_uni) begin
+                if (o_output_uni !== expected_uni) begin
                     $display(
                         "FAIL div_gaines unipolar cycle %0d: got=%b expected=%b",
-                        count, o_out_uni, expected_uni
+                        count, o_output_uni, expected_uni
                     );
                     fails = fails + 1;
                 end
-                if (o_out_bi !== expected_bi) begin
+                if (o_output_bi !== expected_bi) begin
                     $display(
                         "FAIL div_gaines bipolar cycle %0d: got=%b expected=%b",
-                        count, o_out_bi, expected_bi
+                        count, o_output_bi, expected_bi
                     );
                     fails = fails + 1;
                 end

@@ -18,7 +18,7 @@ module uni2bi #(
     input  wire i_clk,
     input  wire i_rst_n,   // active-low reset -> Python reset(): acc = 0
     input  wire i_input,      // input spike (unipolar stream)
-    output wire o_out      // output spike (bipolar stream)
+    output wire o_output   // output spike (bipolar stream)
 );
     // acc range [0, 1]; a (WIDTH+1)-bit signed bus also covers the sum
     // acc+addend (addend in {1,2}).
@@ -27,9 +27,9 @@ module uni2bi #(
     wire signed [WIDTH:0] addend = i_input ? 2 : 1;
     wire signed [WIDTH:0] sum    = acc + addend;
 
-    assign o_out = (sum >= 2);
+    assign o_output = (sum >= 2);
 
-    wire signed [WIDTH:0] acc_nxt = o_out ? (sum - 2) : sum;
+    wire signed [WIDTH:0] acc_nxt = o_output ? (sum - 2) : sum;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

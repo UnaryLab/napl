@@ -7,11 +7,11 @@ conv_ugemm reduces one lane per output pixel-channel (batch, out_channel,
 out_row, out_col). Its per-timestep partial sum is the plain count of the
 conditionally generated product spikes over the im2col patch plus the optional
 bias spike -- no Gaines rewrite is involved, because the model already sums 0/1
-spikes -- and add_any popcounts its ENTRY-bit input. So the RTL lane is exactly
+spikes -- and add_scale popcounts its ENTRY-bit input. So the RTL lane is exactly
 
     mul_ugemm_<polarity>  -- one per (output position, patch tap) weight bit
     encode                -- one per output position, the bias bit
-    add_any_<polarity>    -- one per output position, the scaled accumulator
+    add_scale_<polarity>    -- one per output position, the scaled accumulator
 
 all of them operation-layer circuits, instantiated rather than rebuilt.
 
@@ -80,7 +80,7 @@ Output: ../vec/conv_ugemm.vec, one line per timestep:
     <out_b_a> <out_b_b> <out_b_c> <out_b_d>
 
 `in_*` is BATCH*IN_CHANNELS*IN_H*IN_W binary digits, MSB first, so input element
-(b, ic, ih, iw) occupies i_input_spike[((b*IN_CHANNELS + ic)*IN_H + ih)*IN_W + iw].
+(b, ic, ih, iw) occupies i_input[((b*IN_CHANNELS + ic)*IN_H + ih)*IN_W + iw].
 Each `out_*` column is that configuration's LANES digits with lane (b, oc, oh, ow)
 row-major.
 
@@ -97,7 +97,6 @@ Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_conv_ugemm.py
 """
 import math
-import sys
 from pathlib import Path
 
 import torch
@@ -106,9 +105,6 @@ from napl.sim.base import global_config
 from napl.sim.module import conv_ugemm
 from napl.sim.operation import encode
 from napl.syn import translate_node
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "operation"))
-from _gen_common import require_seeded_sys  # noqa: E402
 
 VEC_DIR = Path(__file__).resolve().parent.parent / "vec"
 VEC = VEC_DIR / "conv_ugemm.vec"
@@ -134,22 +130,11 @@ TIMESTEPS = min(TIMESTEP, LEN)
 # values, so a reset that misses either shows up in the replayed block.
 DIRTY = TIMESTEPS // 2 + 1
 
-# A divisor below the fan-in for geometry d, so it resolves SCALE through the
-# explicit-scale branch of the mapping expression and its accumulator charges
-# under the saturation block. With the bias code at 0 a railed lane's partial sum
-# is K, so the unipolar accumulator climbs at K - SCALE_D = 6 per cycle: the
-# pre-carry sum reaches 6 * SAT_CHARGE + SCALE_D = 1086, past the 1023 clamp of
-# an 11-bit accumulator and short of the 2047 of the elaborated 12. The drain
-# then falls at SCALE_D per cycle, so the clamped arm runs out of charge 10
-# cycles before the elaborated one and their columns part. Both blocks stay
-# inside the LEN - 1 spiking and LEN - 1 silent budget the sequence indices set.
+# A divisor below geometry d's fan-in so its accumulator charges under the saturation block; charge for 180 cycles then drain for 190 drives the unipolar accumulator past the next narrower clamp and back.
 SCALE_D = 6
 SAT_CHARGE = 180
 SAT_DRAIN = 190
-# Stored excursions geometry d's accumulators reach under that block, as measured
-# from the model. RULE_IMP.md and reports/napl-gen-rtl-report.md quote them, and
-# run_saturation asserts each exactly, so a quoted figure that drifts from the
-# model fails the generator instead of standing uncontradicted.
+# Stored excursions geometry d's accumulators reach under that block, measured from the model and asserted exactly in run_saturation so a drifted figure in RULE_IMP.md or the report fails the generator.
 SAT_PEAK_UNI = 1080.0
 SAT_PEAK_BI = 450.0
 SAT_TROUGH_BI = -497.0
@@ -195,9 +180,7 @@ BIAS_CODES = operand_codes(OUT_CHANNELS, 53, 7)
 # bias at 0, so it never spikes and a silent lane counts 0.
 WEIGHT_CODES_D = [LEN] * (OUT_CHANNELS * K)
 BIAS_CODES_D = [0] * OUT_CHANNELS
-# One code pair per polarity: a shared pair would put the same probability grid
-# through both encoders, so the bipolar input column would copy the unipolar one.
-# The weight and bias codes stay shared, since one operand file feeds both DUTs.
+# One code pair per polarity so the bipolar input column does not copy the unipolar one, while the weight and bias codes stay shared since one operand file feeds both DUTs.
 INPUT_CODES = {
     'unipolar': [operand_codes(BATCH * IN_CHANNELS * IN_H * IN_W, 71, 13),
                  operand_codes(BATCH * IN_CHANNELS * IN_H * IN_W, 37, 101)],
@@ -250,10 +233,8 @@ class arm:
         codec = {'polarity': polarity, 'timestep': TIMESTEP, 'generator': 'sobol', 'dim': 2}
         config = {'polarity': polarity, 'timestep': TIMESTEP, 'generator': 'sobol',
                   'scale': None, 'width': ACC_WIDTH}
-        require_seeded_sys(codec, config)
         self.config = config
         self.configs = [dict(config, scale=scale) for *_, scale in GEOMETRY]
-        require_seeded_sys(*self.configs)
         self.weight = tensor(WEIGHT_CODES, (OUT_CHANNELS, IN_CHANNELS) + KERNEL, polarity)
         self.bias = tensor(BIAS_CODES, (OUT_CHANNELS,), polarity)
         self.weight_d = tensor(WEIGHT_CODES_D, (OUT_CHANNELS, IN_CHANNELS) + KERNEL, polarity)
@@ -268,9 +249,7 @@ class arm:
                        stride=stride, padding=padding, dilation=dilation, config=layer_config)
             for (_, padding, stride, dilation, has_bias, scale), layer_config
             in zip(GEOMETRY, self.configs)]
-        # A shadow of geometry d one bit narrower. It is never emitted: the
-        # saturation block requires its output to part from geometry d's, which
-        # is what makes the elaborated WIDTH observable in a vector row.
+        # A one-bit-narrower shadow of geometry d, never emitted but required to part from it so the elaborated WIDTH is observable.
         _, padding, stride, dilation, has_bias, _ = GEOMETRY[3]
         self.layer_narrow = conv_ugemm(self.weight_d, self.bias_d,
                                        stride=stride, padding=padding, dilation=dilation,
@@ -307,7 +286,7 @@ class arm:
                                "stride": stride, "padding": padding, "dilation": dilation,
                                "config": layer_config,
                                "lanes": lanes_of(padding, stride, dilation)},
-                    "inputs": {"input_spike": {"shape": SHAPE}}}
+                    "inputs": {"input": {"shape": SHAPE}}}
             expected = {"BATCH": BATCH, "IN_CHANNELS": IN_CHANNELS, "IN_H": IN_H, "IN_W": IN_W,
                         "OUT_CHANNELS": OUT_CHANNELS, "KERNEL_H": KERNEL[0], "KERNEL_W": KERNEL[1],
                         "STRIDE": stride, "PADDING": padding, "DILATION": dilation,
@@ -408,10 +387,7 @@ def run_saturation(rows):
         f'the unipolar scaled accumulator peaked at {peak[0]}, inside a {ACC_WIDTH - 1}-bit clamp'
     assert peak[0] < acc_max, \
         f'the unipolar scaled accumulator reached {peak[0]}, at the elaborated clamp {acc_max}'
-    # A unipolar accumulator has no offset and its carry only subtracts down to
-    # zero, so its negative rail is unreachable by construction, not for want of
-    # stimulus. The bipolar arm moves at 3.5 per cycle in both directions, which
-    # neither clamp is within reach of at this ENTRY and SEQ_WIDTH.
+    # The unipolar accumulator has no offset and its carry only subtracts to zero so its negative rail is unreachable, and the bipolar arm moves at 3.5 per cycle, within neither clamp at this ENTRY and SEQ_WIDTH.
     assert bottom[0] == 0, f'the unipolar scaled accumulator went negative, to {bottom[0]}'
     assert narrower_max > peak[1] > 0, f'the bipolar scaled accumulator peaked at {peak[1]}'
     assert narrower_min < bottom[1] < 0, f'the bipolar scaled accumulator bottomed at {bottom[1]}'

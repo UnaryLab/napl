@@ -2,7 +2,7 @@ import torch
 
 from napl.sim.base import napl_base
 from .bi2uni import bi2uni
-from .add_any import add_any
+from .add_scale import add_scale
 from .shiftreg import shiftreg
 
 
@@ -28,7 +28,7 @@ class sqrt_emit(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sqrt_emit
+        from napl.sim.operation import sqrt_emit
 
         operation = sqrt_emit({'polarity': 'unipolar'})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -67,15 +67,16 @@ class sqrt_emit(napl_base):
         self.emit_out: torch.Tensor
         self.register_buffer('emit_out', torch.zeros(1, dtype=self.stype))
 
-        #: Unipolar saturating adder used by the emission update.
-        self.nsadd = add_any({'polarity': 'unipolar', 'scale': 1, 'width': 3})
+        #: Unipolar saturating adder that emits the square-root output spike.
+        self.nsadd = add_scale({'polarity': 'unipolar', 'scale': 1, 'intwidth': 3, 'fracwidth': 0})
         #: Fixed delay length of the internal emission shift register.
         self.depth = 2
-        #: Delay line used by the unipolar emission path.
+        #: Delay line that decorrelates the inverted output in the emission path.
         self.shiftreg = shiftreg({'depth': self.depth})
 
         if self.polarity == 'bipolar':
-            #: Converter that supplies a unipolar magnitude stream in bipolar mode.
+            #: Converter that re-encodes the bipolar output value ``2p - 1`` as a
+            #: unipolar rate in bipolar mode.
             self.bi2uni = bi2uni({'width': 2})
 
         #: Whether the next call must expand :attr:`emit_out` to the input shape.

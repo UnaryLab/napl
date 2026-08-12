@@ -44,7 +44,7 @@ class mul_ugemm(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mul_ugemm
+        from napl.sim.operation import mul_ugemm
 
         multiply = mul_ugemm({'polarity': 'unipolar', 'timestep': 256,
                             'generator': 'sobol'})
@@ -119,11 +119,11 @@ class mul_ugemm(napl_base):
             self.seq_idx_inv: torch.Tensor
             self.register_buffer('seq_idx_inv', torch.zeros(1, dtype=torch.long))
 
-        # Output is combinational; RTL sequence-index registers reset to zero.
+        # The product spike is combinational, so the pipeline delay is zero.
         #: Hardware latency and timing metadata for the combinational multiplier.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_0': 'rc', 'output': 'rc'}
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
@@ -138,7 +138,7 @@ class mul_ugemm(napl_base):
             self.seq_idx_inv.resize_(1).zero_()
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Generate one product-spike timestep.
 

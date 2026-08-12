@@ -25,7 +25,8 @@ CODEC = {
 
 def build_stream():
     stream = []
-    for value in rep_values(CODEC["polarity"]):
+    # The operand range is test_relu_tc.py's make_values range.
+    for value in rep_values(CODEC["polarity"], value_range=(-1.0, 1.0)):
         stream.extend(encode_value(CODEC, value))
     return stream
 

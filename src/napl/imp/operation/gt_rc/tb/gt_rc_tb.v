@@ -14,7 +14,7 @@ module gt_rc_tb;
         .i_rst_n (rst_n),
         .i_input_0  (in_0),
         .i_input_1  (in_1),
-        .o_out   (out)
+        .o_output   (out)
     );
 
     integer fd, code, n, fails;
@@ -50,7 +50,7 @@ module gt_rc_tb;
                 end else begin
                     in_0 = a;
                     in_1 = b;
-                    #1;                  // settle combinational o_out (current dff)
+                    #1;                  // settle combinational o_output (current dff)
                     n = n + 1;
                     if (out !== exp_out) begin
                         $display("FAIL cycle %0d: in_0=%b in_1=%b : got %b exp %b",

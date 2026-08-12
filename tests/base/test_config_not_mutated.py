@@ -1,11 +1,30 @@
 import copy
+import importlib
 import inspect
 import re
 
 import torch
 
-import napl
 from napl.sim.base import napl_base
+
+
+# The simulation subpackages whose sorted ``__all__`` names every public class.
+_SIM_SUBPACKAGES = ('base', 'operation', 'module', 'metric', 'structure', 'algorithm')
+
+
+def _simulation_classes():
+    """Map every exported ``napl_base`` subclass name to its class."""
+    classes = {}
+    for sub in _SIM_SUBPACKAGES:
+        module = importlib.import_module(f'napl.sim.{sub}')
+        for name in getattr(module, '__all__', ()):
+            obj = getattr(module, name)
+            if inspect.isclass(obj) and issubclass(obj, napl_base) and obj is not napl_base:
+                classes[name] = obj
+    return classes
+
+
+_CLASSES = _simulation_classes()
 
 
 # A superset of the configuration keys used across the simulation classes. A
@@ -57,13 +76,15 @@ SPECIAL_CASES = {
 
 # Building blocks of the multi-configuration probes below.
 CODEC = {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}
-ADD_SCALED = {'polarity': 'bipolar', 'scale': 2, 'width': 12}
-ADD_DYNAMIC = {'polarity': 'bipolar', 'scale_max': 3, 'width': 12}
+ADD_SCALED = {'polarity': 'bipolar', 'scale': 2, 'intwidth': 12, 'fracwidth': 0}
+ADD_DYNAMIC = {'polarity': 'bipolar', 'scale_max': 3, 'intwidth': 12, 'fracwidth': 0}
 
 # Classes taking several configuration mappings instead of one, keyed by the
 # constructor parameter each mapping is bound to. Every mapping is recorded, so a
 # write into any of them is caught.
 MULTI_CONFIG_CASES = {
+    'butterfly_mix': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_SCALED}),
+    'butterfly_mix_dyn': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_DYNAMIC}),
     'butterfly_ugemm': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_SCALED}),
     'butterfly_ugemm_dyn': ([VECTOR, VECTOR], {'mul_config': CODEC, 'add_config': ADD_DYNAMIC}),
     'conv_ugemm_hub': ([WEIGHT_4D, None, 1, 0, 1],
@@ -122,13 +143,8 @@ class recording_dict(dict):
 
 
 def simulation_classes():
-    """Every ``napl_base`` subclass exported at the package top level."""
-    return sorted(
-        name for name in dir(napl)
-        if inspect.isclass(getattr(napl, name))
-        and issubclass(getattr(napl, name), napl_base)
-        and getattr(napl, name) is not napl_base
-    )
+    """Every ``napl_base`` subclass exported by the simulation subpackages."""
+    return sorted(_CLASSES)
 
 
 # The key named by the rejection raised from check_config for an unaccepted key.
@@ -197,12 +213,12 @@ def test_config_not_mutated():
     for name in names:
         if name in MULTI_CONFIG_CASES:
             arguments, configs = MULTI_CONFIG_CASES[name]
-            writes = _probe_multi(getattr(napl, name), arguments, configs)
+            writes = _probe_multi(_CLASSES[name], arguments, configs)
         elif name in SPECIAL_CASES:
             arguments, config = SPECIAL_CASES[name]
-            writes, _ = _probe(getattr(napl, name), arguments, config)
+            writes, _ = _probe(_CLASSES[name], arguments, config)
         else:
-            writes = _probe_generic(getattr(napl, name))
+            writes = _probe_generic(_CLASSES[name])
 
         if writes is None:
             unreached.append(name)

@@ -24,7 +24,7 @@ class relu_shiftreg(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_shiftreg
+        from napl.sim.operation import relu_shiftreg
 
         operation = relu_shiftreg({'depth': 4})
         output = operation(torch.tensor([0.0, 1.0]))

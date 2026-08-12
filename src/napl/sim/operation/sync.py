@@ -6,16 +6,21 @@ from napl.sim.base import napl_base
 
 class sync(napl_base):
     r"""
-    Raise the correlation of two unipolar rate-coded streams (SC synchronizer).
+    Raise the correlation of two rate-coded streams (SC synchronizer).
 
     Use this kernel before a correlation-sensitive operation such as
-    :class:`napl.sim.operation.subabs` or a maximum built from an OR gate. It
+    :class:`~napl.sim.operation.subabs` or a maximum built from an OR gate. It
     returns two streams that carry the same values as its inputs, ``SCC`` driven
     toward ``+1``:
 
     .. math::
 
        p'_0 = p_0, \qquad p'_1 = p_1, \qquad \mathrm{SCC}(y_0,y_1) \to +1.
+
+    Both polarities are supported. The machine rearranges spikes without
+    changing either stream's rate beyond the end-of-run residue of bits still
+    saved, so each stream keeps its value under the unipolar reading
+    :math:`v = p` and the bipolar reading :math:`v = 2p - 1` alike.
 
     Each element runs one finite-state machine that dynamically pairs the ones
     and zeros of the two streams. A timestep where the two inputs agree passes
@@ -34,7 +39,7 @@ class sync(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sync
+        from napl.sim.operation import sync
 
         synchronizer = sync({'polarity': 'unipolar', 'depth': 1})
         first, second = synchronizer(torch.tensor([1], dtype=torch.int8),
@@ -64,15 +69,11 @@ class sync(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"unipolar"``.
               - **depth**: Number of unpaired bits of one stream the machine can save, an integer of at least ``1``; the default is ``1``. A larger depth induces stronger correlation.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'depth'], optional_key_list=[], polarity_required=True)
-        if self.polarity != 'unipolar':
-            message = f'Invalid polarity: <{self.polarity}>; sync supports unipolar only.'
-            logger.error(message)
-            raise AssertionError(message)
 
         #: Number of unpaired bits of one stream retained by the machine.
         self.depth = config['depth']
@@ -93,8 +94,8 @@ class sync(napl_base):
         self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output_0': 'rc', 'output_1': 'rc'}
-        self.polarity_io = {'input_0': 'unipolar', 'input_1': 'unipolar',
-                            'output_0': 'unipolar', 'output_1': 'unipolar'}
+        self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
+                            'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -107,13 +108,13 @@ class sync(napl_base):
         self.is_first_call = True
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Synchronize one timestep of the two input streams.
 
         Args:
-            input_0: Current 0/1 spikes from the first unipolar stream.
-            input_1: Current 0/1 spikes from the second unipolar stream.
+            input_0: Current 0/1 spikes from the first stream.
+            input_1: Current 0/1 spikes from the second stream.
 
         Returns:
             A pair ``(output_0, output_1)`` of 0/1 spike tensors with the input

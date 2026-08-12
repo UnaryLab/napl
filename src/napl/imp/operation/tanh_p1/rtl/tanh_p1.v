@@ -12,7 +12,7 @@ module tanh_p1 #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
     reg [WIDTH-1:0] coef_idx;
     reg [7:0] input_delay;
@@ -43,7 +43,7 @@ module tanh_p1 #(
     assign n_4 = ~(n_3_term & n_1_delay[1]);
     assign n_4_term = coef[1] ? n_4 : 1'b1;
     assign n_5 = ~(n_4_term & n_1_delay[2]);
-    assign o_out = input_d8 & (coef[0] ? n_5 : 1'b1);
+    assign o_output = input_d8 & (coef[0] ? n_5 : 1'b1);
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

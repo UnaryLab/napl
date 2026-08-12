@@ -10,20 +10,20 @@
 module sync_skewed_tb;
     reg  clk;
     reg  rst_n;
-    reg  in_1, in_2;
-    wire out_1, out_2;
+    reg  in_0, in_1;
+    wire out_0, out_1;
 
     sync_skewed #(.WIDTH(`GEN_WIDTH)) dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
+        .i_input_0  (in_0),
         .i_input_1  (in_1),
-        .i_input_2  (in_2),
-        .o_out_1 (out_1),
-        .o_out_2 (out_2)
+        .o_output_0 (out_0),
+        .o_output_1 (out_1)
     );
 
     integer fd, code, n, fails;
-    reg a, b, exp_1, exp_2;
+    reg a, b, exp_0, exp_1;
     reg [8*8-1:0] tag;
 
     // 10 ns clock period.
@@ -31,8 +31,8 @@ module sync_skewed_tb;
     always #5 clk = ~clk;
 
     initial begin
+        in_0 = 1'b0;
         in_1 = 1'b0;
-        in_2 = 1'b0;
 
         // Release reset on a negedge so no update precedes the first check.
         rst_n = 1'b0;
@@ -50,7 +50,7 @@ module sync_skewed_tb;
         n = 0;
         fails = 0;
         while (!$feof(fd)) begin
-            // Rows are "in_1 in_2 exp_1 exp_2" or the reset sentinel "RST".
+            // Rows are "in_0 in_1 exp_0 exp_1" or the reset sentinel "RST".
             code = $fscanf(fd, "%s", tag);
             if (code != 1) begin
             end else if (tag == "RST") begin
@@ -60,17 +60,17 @@ module sync_skewed_tb;
                 rst_n = 1'b1;
             end else begin
                 a = (tag == "1");
-                code = $fscanf(fd, "%b %b %b\n", b, exp_1, exp_2);
-                in_1 = a;
-                in_2 = b;
+                code = $fscanf(fd, "%b %b %b\n", b, exp_0, exp_1);
+                in_0 = a;
+                in_1 = b;
                 #1;
                 n = n + 1;
-                if (out_1 !== exp_1) begin
-                    $display("FAIL cyc=%0d in_1=%b in_2=%b : out_1 got %b exp %b", n, a, b, out_1, exp_1);
+                if (out_0 !== exp_0) begin
+                    $display("FAIL cyc=%0d in_0=%b in_1=%b : out_0 got %b exp %b", n, a, b, out_0, exp_0);
                     fails = fails + 1;
                 end
-                if (out_2 !== exp_2) begin
-                    $display("FAIL cyc=%0d in_1=%b in_2=%b : out_2 got %b exp %b", n, a, b, out_2, exp_2);
+                if (out_1 !== exp_1) begin
+                    $display("FAIL cyc=%0d in_0=%b in_1=%b : out_1 got %b exp %b", n, a, b, out_1, exp_1);
                     fails = fails + 1;
                 end
                 @(posedge clk);

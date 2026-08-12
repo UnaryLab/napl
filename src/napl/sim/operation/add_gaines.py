@@ -31,7 +31,7 @@ class add_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import add_gaines
+        from napl.sim.operation import add_gaines
 
         adder = add_gaines({'polarity': 'unipolar', 'scaled': True,
                             'entry': 2, 'generator': 'Sobol', 'dim': 1})
@@ -43,6 +43,9 @@ class add_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: The MUX select sequence is encoded from a held number sequence, so the
+    #: RTL counterpart holds its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(

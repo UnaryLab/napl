@@ -24,12 +24,12 @@ class sigmoid_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import sigmoid_fxp
+        from napl.sim.operation import sigmoid_fxp
 
         operation = sigmoid_fxp({'scale': 3})
         output = operation(torch.tensor([-1.0, 0.0, 1.0]))
     """
-    #: Marks this activation as a single-shot tensor operation.
+    #: Marks this activation as a non-streaming tensor operation.
     streaming = False
 
 
@@ -52,20 +52,18 @@ class sigmoid_fxp(napl_base):
               - **name**: Optional module name.
         """
         super().__init__(config, [], optional_key_list=['polarity', 'scale'])
-        #: Modeled scalar latency of the single-shot hard sigmoid.
-        self.delay = 0
         #: Input multiplier applied before the hard sigmoid.
         self.scale = config.get('scale', 3)
 
 
     def _reset(self):
         """
-        Reset no local state; this single-shot kernel is stateless.
+        Reset no local state; this non-streaming kernel is stateless.
         """
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Apply the scaled hard sigmoid to a complete tensor.
 

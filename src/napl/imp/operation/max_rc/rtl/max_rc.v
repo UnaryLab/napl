@@ -2,23 +2,23 @@
 `default_nettype none
 
 // Rate-coded max_rc equivalent with a width-2 sync_skewed counter.
-// o_max uses the pre-update arg register; o_arg uses its next value. Both are
-// combinational (pp_delay=0). Active-low reset clears arg and cnt.
+// o_output uses the pre-update arg register; o_index uses its next value.
+// Both are combinational (pp_delay=0). Active-low reset clears arg and cnt.
 
 module max_rc (
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input_0,
     input  wire i_input_1,
-    output wire o_max,
-    output wire o_arg
+    output wire o_output,
+    output wire o_index
 );
     localparam [1:0] CNT_MAX = 2'd3;
 
     reg [1:0] cnt;
     reg       dff;
 
-    // sync_skewed(input_1=i_input_0, input_2=i_input_1).
+    // sync_skewed(input_0=i_input_0, input_1=i_input_1).
     wire input_01_10 = i_input_0 ^ i_input_1;              // (i_input_0 + i_input_1) == 1
     wire cnt_not_min = (cnt != 2'd0);
     wire cnt_not_max = (cnt != CNT_MAX);
@@ -49,8 +49,8 @@ module max_rc (
     wire and_gate  = sync_1 & d_enable;
     wire dff_next  = d_enable ? and_gate : dff;
 
-    assign o_max = dff ? i_input_1 : i_input_0;   // pre-update dff
-    assign o_arg = dff_next;                       // post-update dff
+    assign o_output = dff ? i_input_1 : i_input_0;   // pre-update dff
+    assign o_index = dff_next;                       // post-update dff
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

@@ -27,7 +27,7 @@ class jkff(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import jkff
+        from napl.sim.operation import jkff
 
         flip_flop = jkff()
         q = flip_flop(torch.tensor([1], dtype=torch.int8),
@@ -55,7 +55,7 @@ class jkff(napl_base):
         self.q: torch.Tensor
         self.register_buffer('q', torch.zeros(1, dtype=torch.int8))
         # q_b is boolean transition state; q remains int8 for downstream bitwise arithmetic.
-        #: Boolean complement of :attr:`q`, updated on every call.
+        #: Boolean counterpart of :attr:`q`, updated on every call.
         self.q_b: torch.Tensor
         self.register_buffer('q_b', torch.zeros(1, dtype=torch.bool))
         #: Hardware latency and timing metadata for the registered flip-flop output.
@@ -69,13 +69,13 @@ class jkff(napl_base):
 
     def _reset(self):
         """
-        Clear the local output state to ``0`` at every tensor position.
+        Clear the local output state and its boolean counterpart to a scalar ``0``.
         """
         self.q.resize_(1).zero_()
         self.q_b.resize_(1).zero_()
 
 
-    def forward(self, input_j: torch.tensor, input_k: torch.tensor):
+    def forward(self, input_j: torch.Tensor, input_k: torch.Tensor):
         """
         Update and return the JK flip-flop state.
 

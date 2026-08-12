@@ -8,15 +8,15 @@
 // streams is their bitwise OR. One spike from each stream per cycle; no state,
 // no polarity variant.
 //
-//   o_out = i_input_0 | i_input_1        (OR)
+//   o_output = i_input_0 | i_input_1        (OR)
 //==============================================================================
 
 
 module max_tc (
     input  wire i_input_0,   // spike stream 0
     input  wire i_input_1,   // spike stream 1
-    output wire o_out     // max spike
+    output wire o_output  // max spike
 );
-    assign o_out = i_input_0 | i_input_1;
+    assign o_output = i_input_0 | i_input_1;
 endmodule
 `default_nettype wire

@@ -15,7 +15,7 @@ module relu_shiftreg #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,
-    output wire o_out
+    output wire o_output
 );
 
 
@@ -47,10 +47,10 @@ module relu_shiftreg #(
 
     assign count_base = first_call ? (DEPTH / 2) : count;
     assign below_half = (count_delayed < HALF_CEIL);
-    assign o_out = first_call ? 1'b1 : (below_half | i_input);
+    assign o_output = first_call ? 1'b1 : (below_half | i_input);
     assign removed = reg_q[head];
-    assign count_next = (o_out && !removed) ? (count_base + 1'b1) :
-                        (!o_out && removed) ? (count_base - 1'b1) :
+    assign count_next = (o_output && !removed) ? (count_base + 1'b1) :
+                        (!o_output && removed) ? (count_base - 1'b1) :
                         count_base;
     assign count_delayed_next = count_base;
 
@@ -64,7 +64,7 @@ module relu_shiftreg #(
             head <= {HEAD_WIDTH{1'b0}};
             first_call <= 1'b1;
         end else begin
-            reg_q[head] <= o_out;
+            reg_q[head] <= o_output;
             count <= count_next;
             count_delayed <= count_delayed_next;
             head <= (head == DEPTH - 1) ? {HEAD_WIDTH{1'b0}} : head + 1'b1;

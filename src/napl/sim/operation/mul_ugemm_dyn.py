@@ -26,7 +26,7 @@ class mul_ugemm_dyn(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import mul_ugemm_dyn
+        from napl.sim.operation import mul_ugemm_dyn
 
         multiply = mul_ugemm_dyn({'polarity': 'unipolar', 'width': 2,
                                  'generator': 'sobol'})
@@ -99,7 +99,7 @@ class mul_ugemm_dyn(napl_base):
             self.rng_idx_inv: torch.Tensor
             self.register_buffer('rng_idx_inv', torch.zeros(1, dtype=torch.long))
 
-        #: Circular register of recent spikes from the first multiplicand.
+        #: Circular register of the most recent ``input_1`` spikes.
         self.reg: torch.Tensor
         self.register_buffer('reg',
             torch.tensor(
@@ -109,7 +109,7 @@ class mul_ugemm_dyn(napl_base):
         #: Per-element number of one-spikes currently stored in :attr:`reg`.
         self.count: torch.Tensor
         self.register_buffer('count', torch.zeros(1, dtype=torch.long))
-        #: Whether the register and index tensors must be expanded for the input shape.
+        #: Whether the next call must still expand the register and count to the input shape.
         self.is_first_call = True
         #: Hardware latency and timing metadata for the combinational multiply path.
         self.hw.pp_delay = 0
@@ -122,7 +122,8 @@ class mul_ugemm_dyn(napl_base):
 
     def _reset(self):
         """
-        Restore the alternating register contents and restart sequence state.
+        Restore the scalar alternating register contents and clear the sequence
+        indices and the spike count.
         """
         self.rng_idx.resize_(1).zero_()
         if self.polarity == 'bipolar':

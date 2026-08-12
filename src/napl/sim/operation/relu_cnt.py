@@ -22,7 +22,7 @@ class relu_cnt(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_cnt
+        from napl.sim.operation import relu_cnt
 
         operation = relu_cnt()
         output = operation(torch.tensor([0.0, 1.0]))
@@ -103,7 +103,7 @@ class relu_cnt(napl_base):
         below_half = torch.lt(self.acc, self.buf_half)
         # Bitwise OR promotes the boolean threshold mask to int8.
         output = input.type(torch.int8) | below_half
-        # Output uses the accumulator state before this timestep's update.
+        # Step the accumulator by +1 or -1 from the emitted spike and saturate it.
         if self.acc.shape == output.shape:
             self.acc.add_(output, alpha=2).sub_(1).clamp_(0, self.buf_max)
         else:

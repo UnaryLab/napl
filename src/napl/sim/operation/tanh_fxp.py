@@ -24,12 +24,12 @@ class tanh_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import tanh_fxp
+        from napl.sim.operation import tanh_fxp
 
         operation = tanh_fxp()
         output = operation(torch.tensor([-2.0, 0.0, 2.0]))
     """
-    #: Marks this activation as a single-shot tensor operation.
+    #: Marks this activation as a non-streaming tensor operation.
     streaming = False
 
 
@@ -44,21 +44,19 @@ class tanh_fxp(napl_base):
 
             **Parameters:**
 
-            - **config** – Configuration mapping. It has no class-specific keys; **name** may optionally label the module.
+            - **config** – Configuration mapping. It has no required keys; **polarity** and **name** are accepted and optional.
         """
         super().__init__(config, [], optional_key_list=['polarity'])
-        #: Modeled scalar latency of the single-shot hard tanh.
-        self.delay = 0
 
 
     def _reset(self):
         """
-        Reset no local state; this single-shot kernel is stateless.
+        Reset no local state; this non-streaming kernel is stateless.
         """
         pass
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Clip a complete tensor to ``[-1, 1]``.
 

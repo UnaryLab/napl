@@ -23,7 +23,7 @@ class max_rc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import max_rc
+        from napl.sim.operation import max_rc
 
         maximum = max_rc()
         spike, index = maximum(torch.tensor([1], dtype=torch.int8),
@@ -47,7 +47,7 @@ class max_rc(napl_base):
         """
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
-        #: Previous selection decision used to route the synchronized maximum stream.
+        #: Previous selection decision used to route the maximum stream to the output.
         self.index: torch.Tensor
         self.register_buffer('index', torch.zeros(1, dtype=torch.int8))
         #: Skew synchronizer that correlates the two input streams before selection.
@@ -55,7 +55,7 @@ class max_rc(napl_base):
         #: Hardware latency and timing metadata for the combinational maximum output.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc', 'index': 'rc'}
         self.polarity_io = {}
         self.correlation_i = {}
         self.stability_flux = 1.0
@@ -78,8 +78,8 @@ class max_rc(napl_base):
 
         Returns:
             A pair ``(output, index)``. ``output`` is selected using the prior
-            state, while ``index`` is the updated state where ``0`` selects the
-            first input and ``1`` selects the second.
+            state, while ``index`` is the updated argmax, where ``0`` denotes the
+            first input and ``1`` denotes the second.
 
         **Example:**
 

@@ -18,7 +18,7 @@ def make_values(_polarity):
     return first, second
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     first = torch.linspace(0.0, 1.0, 131072)
     second = torch.linspace(1.0, 0.0, 131072)
     return first, second
@@ -32,16 +32,15 @@ def known_answer_case(_polarity):
     values = (torch.tensor([0.0, 1.0, 0.5, 0.25]),
               torch.tensor([1.0, 0.0, 0.5, 0.75]))
     expected = torch.tensor([1.0, 1.0, 0.0, 0.5])
-    return values, expected, 1.0 / 256
+    return values, expected
 
 
 CONFIG = {
     # subabs is unipolar only: an XOR gate has no bipolar rate-domain meaning.
     'polarities': ['unipolar'],
-    'tolerance_scale': 2.0,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     # A shared Sobol dimension makes the two operand streams SCC +1, the

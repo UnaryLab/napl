@@ -2,7 +2,8 @@
 # `conda run -n napl make test MODULE=<module>` (module layer) with iverilog and
 # vvp on PATH. Each unit supplies RTL, a self-checking testbench, and Python
 # golden vectors. `make sweep` runs every unit plus the mapping.yaml floor, the guards
-# suite, and the translate pytest; it is required before any commit touching
+# suite, the reference-form equivalence walk, and the translate pytest; it is
+# required before any commit touching
 # src/napl/imp/, which `make install-hooks` enforces.
 
 # OP defaults to the canonical example; giving MODULE= instead requires OP untouched.
@@ -22,25 +23,25 @@ endif
 ifeq ($(MODULE),)
 LAYER := operation
 UNIT  := $(OP)
-# An operation compiles from its own rtl/ only.
-LIBS  :=
 else
 LAYER := module
 UNIT  := $(MODULE)
-# A module composes operation-layer circuits, and a recurrent cell composes other
-# modules too; iverilog pulls each one in from the operation and module rtl/
-# directories, where the file name equals the module name. Operation directories
-# come first, the same -y order test_guards.py builds, so a name present in both
-# trees resolves to the same file whichever tool elaborated it.
-LIBS  := $(patsubst %,-y %,$(sort $(wildcard operation/*/rtl)) $(sort $(wildcard module/*/rtl)))
 endif
+
+# An operation composes other operation-layer circuits, a module composes those,
+# and a recurrent cell composes other modules too; iverilog pulls each one in from
+# the operation and module rtl/ directories, where the file name equals the module
+# name. Operation directories come first, the same -y order test_guards.py builds,
+# so a name present in both trees resolves to the same file whichever tool
+# elaborated it.
+LIBS := $(patsubst %,-y %,$(sort $(wildcard operation/*/rtl)) $(sort $(wildcard module/*/rtl)))
 
 # Sweep target list, derived from the same rtl/ glob the -y search path uses, so a
 # newly added op or module folder is swept without editing this file.
 SWEEP_OPS     := $(notdir $(patsubst %/rtl,%,$(sort $(wildcard operation/*/rtl))))
 SWEEP_MODULES := $(notdir $(patsubst %/rtl,%,$(sort $(wildcard module/*/rtl))))
 
-.PHONY: test vectors compile run guards floor translate sweep install-hooks clean
+.PHONY: test vectors compile run guards equiv floor translate sweep install-hooks clean
 
 # Every unit test runs the elaboration guards first, so a deleted or reversed
 # guard turns a target red without anyone typing `make guards`.
@@ -70,6 +71,12 @@ run: compile
 guards:
 	$(PYTHON) test_guards.py
 
+# Walk each inlined copy against its standalone reference module, escalate the
+# depths that carry a sizing parameter, and probe the dropped clamp arms;
+# unit-independent, so it takes no OP= or MODULE=.
+equiv:
+	$(PYTHON) test_equiv.py
+
 # Require the globbed sweep target list to match the mapping.yaml registry, so a
 # deleted or renamed unit folder turns the sweep red instead of leaving it.
 floor:
@@ -87,10 +94,11 @@ install-hooks:
 	@echo "pre-commit hook installed (bypass a single commit with git commit --no-verify)"
 
 # The mapping.yaml floor, every operation target, every module target, the guards
-# suite, and the translate pytest. Runs the whole list before reporting, so the
-# summary names every red target, and exits nonzero if the list is non-empty. Each
-# unit's own output stays in <layer>/<unit>/build/sim.log; the floor, guards, and
-# translate logs stay in build/ and are printed when their step fails.
+# suite, the reference-form equivalence walk, and the translate pytest. Runs the
+# whole list before reporting, so the summary names every red target, and exits
+# nonzero if the list is non-empty. Each unit's own output stays in
+# <layer>/<unit>/build/sim.log; the floor, guards, equiv, and translate logs stay
+# in build/ and are printed when their step fails.
 sweep:
 	@mkdir -p build; fail=""; \
 	echo "=== floor"; \
@@ -99,6 +107,9 @@ sweep:
 	echo "=== guards"; \
 	$(MAKE) --no-print-directory guards >build/guards.log 2>&1 \
 		|| { fail="$$fail guards"; cat build/guards.log; }; \
+	echo "=== equiv"; \
+	$(MAKE) --no-print-directory equiv >build/equiv.log 2>&1 \
+		|| { fail="$$fail equiv"; cat build/equiv.log; }; \
 	echo "=== translate"; \
 	$(MAKE) --no-print-directory translate >build/translate.log 2>&1 \
 		|| { fail="$$fail translate"; cat build/translate.log; }; \
@@ -113,7 +124,7 @@ sweep:
 	if [ -n "$$fail" ]; then \
 		echo "*** SWEEP FAILED:$$fail"; exit 1; \
 	fi; \
-	echo "SWEEP PASSED: $(words $(SWEEP_OPS)) operations, $(words $(SWEEP_MODULES)) modules, floor, guards, translate"
+	echo "SWEEP PASSED: $(words $(SWEEP_OPS)) operations, $(words $(SWEEP_MODULES)) modules, floor, guards, equiv, translate"
 
 clean:
 	rm -rf $(LAYER)/$(UNIT)/build $(LAYER)/$(UNIT)/vec/*.vec $(LAYER)/$(UNIT)/vec/*_params.vh

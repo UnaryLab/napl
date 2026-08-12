@@ -19,7 +19,7 @@ module div_cordiv #(
     input  wire i_rst_n,     // active-low; maps to Python reset()
     input  wire i_dividend,  // dividend spike stream
     input  wire i_divisor,   // divisor spike stream (the correlation/select line)
-    output wire o_quotient   // quotient spike stream
+    output wire o_output    // quotient spike stream
 );
     // Elaboration-time guard: an unresolvable module reference makes iverilog
     // fail the build when DEPTH is empty or is not the 2**WIDTH rows the index
@@ -46,7 +46,7 @@ module div_cordiv #(
         end
     endgenerate
     wire rand_q = buffer_q[rand_index];
-    assign o_quotient = i_divisor ? i_dividend : rand_q;
+    assign o_output = i_divisor ? i_dividend : rand_q;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
@@ -79,14 +79,14 @@ module div_cordiv #(
                 if (!i_rst_n)
                     buffer_q[DEPTH - 1] <= 1'b0;
                 else if (i_divisor)
-                    buffer_q[DEPTH - 1] <= o_quotient;
+                    buffer_q[DEPTH - 1] <= o_output;
             end
         end else begin: g_last_odd
             always @(posedge i_clk or negedge i_rst_n) begin
                 if (!i_rst_n)
                     buffer_q[DEPTH - 1] <= 1'b1;
                 else if (i_divisor)
-                    buffer_q[DEPTH - 1] <= o_quotient;
+                    buffer_q[DEPTH - 1] <= o_output;
             end
         end
     endgenerate

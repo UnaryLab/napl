@@ -14,7 +14,7 @@ _DEFAULT_CONFIG = {
 class linear_fxp(napl_base):
     r"""Apply a trainable fixed-point approximation of ``torch.nn.Linear``.
 
-    Use this single-shot layer for quantization-aware evaluation or training.
+    Use this non-streaming layer for quantization-aware evaluation or training.
     Input and weight are dynamically scaled to ``widthi``- and ``widthw``-bit
     signed fixed point, and the target is the affine map
 
@@ -32,12 +32,17 @@ class linear_fxp(napl_base):
     so the error is the fixed-point quantization. It trains through a
     straight-through estimator.
 
+    The scaling shifts are recomputed from the current input and weight on every
+    call, so each call quantizes against its own operand magnitudes. UnarySim
+    ``FxpLinear`` instead computes the shifts on the first forward and reuses
+    them for the life of the instance.
+
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import linear_fxp
+        from napl.sim.module import linear_fxp
 
         layer = linear_fxp(2, 3)
         output = layer(torch.zeros(1, 2))

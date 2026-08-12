@@ -5,6 +5,7 @@ from loguru import logger
 
 
 class Analysis(NamedTuple):
+    """Hold the per-element magnitudes and aggregate statistics that every metric ``analyze()`` returns."""
     absolute: torch.Tensor
     absolute_min: torch.Tensor
     absolute_max: torch.Tensor

@@ -12,18 +12,19 @@ from loguru import logger
 def _check_acc_width(name, width, entry, scale, polarity):
     """
     Check the signed accumulator width of the streaming unary adder in module ``name``
-    and return it. Before thresholding, the accumulator holds the largest sub-threshold
-    residue (scale - grid) plus one timestep's step, which the bipolar offset
-    (entry - scale)/2 halves. For scale < entry the accumulator drains by at most scale
-    per timestep, so the width also carries a burst-headroom floor that absorbs one
-    worst-case timestep.
+    and return it, raising when the width cannot hold the worst-case partial sum.
     """
     if not isinstance(width, int):
         message = f'{name} accumulator width must be int: got <{width}>.'
         logger.error(message)
         raise AssertionError(message)
+    # One timestep's step is entry when unipolar and (entry + scale)/2 when bipolar, where the
+    # offset (entry - scale)/2 shifts the step.
     delta_max = (entry + scale) / 2 if polarity == 'bipolar' else entry
     grid = 0.5 if polarity == 'bipolar' and (entry - scale) % 2 else 1
+    # Before thresholding the accumulator holds the largest sub-threshold residue plus one step,
+    # and for scale < entry it drains by at most scale per timestep, so the width also carries a
+    # burst-headroom floor that absorbs one worst-case timestep.
     if (2 ** (width - 1) - 1 < (scale - grid) + delta_max
             or (scale < entry and 2 ** (width - 1) <= entry)):
         message = (
@@ -121,9 +122,9 @@ def _shift_round_clamp(x, rshift, lo, hi):
     """
     Quantize ``x`` to the grid ``rshift`` places up: right-shift by ``rshift``, round to
     the nearest integer, then clamp to ``[lo, hi]``. ``rshift`` may be negative, which
-    shifts left. ``pow2_rshift`` returns a fresh tensor, so the in-place rounding and
-    clamping cannot modify ``x``.
+    shifts left.
     """
+    # pow2_rshift returns a fresh tensor, so rounding and clamping in place cannot modify x.
     out = pow2_rshift(x, rshift)
     out.round_().clamp_(lo, hi)
     return out

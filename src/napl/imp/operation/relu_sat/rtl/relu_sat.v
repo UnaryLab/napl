@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 `default_nettype none
-// Bipolar relu_sat equivalent using two width-3 add_any stages at 2x scale.
+// Bipolar relu_sat equivalent using two intwidth-3 add_scale stages at 2x scale.
 // Both accumulators use half-unit offsets; only acc_sub carries a clamp, at -8.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears both accumulators.
@@ -32,7 +32,7 @@ module relu_sat (
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,        // bipolar rate-coded input spike
-    output wire o_out        // bipolar rate-coded ReLU output spike
+    output wire o_output     // bipolar rate-coded ReLU output spike
 );
     // Half-unit accumulators (2*acc): signed, acc_sub in [-8, 1] and acc_add in
     // [0, 2]; 5-bit signed holds both.
@@ -53,7 +53,7 @@ module relu_sat (
     wire out_add = (sum_add >= 6'sd2);
     wire signed [4:0] nxt_add = out_add ? (sum_add[4:0] - 5'sd2) : sum_add[4:0];
 
-    assign o_out = out_add;
+    assign o_output = out_add;
 
     // ---- sequential: advance accumulators; i_rst_n low maps to reset() (acc = 0) ----
     always @(posedge i_clk or negedge i_rst_n) begin

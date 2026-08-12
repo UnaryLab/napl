@@ -23,13 +23,13 @@ class butterfly_fp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl.sim.algorithm.fft import butterfly_fp
+        from napl.sim.algorithm import butterfly_fp
 
         operation = butterfly_fp()
         inputs = tuple(torch.zeros(1) for _ in range(6))
         y0r, y0i, y1r, y1i = operation(*inputs)
     """
-    #: Whether calls process one stream timestep; this reference is single-shot.
+    #: Whether calls process one stream timestep; this reference is non-streaming.
     streaming = False
 
 
@@ -47,11 +47,6 @@ class butterfly_fp(napl_base):
         """
         super().__init__(config, [])
 
-        self.encoding_io = {}
-        self.polarity_io = {}
-        self.correlation_i = {}
-        self.stability_flux = 1.0
-
 
     def _reset(self):
         """
@@ -62,7 +57,7 @@ class butterfly_fp(napl_base):
         pass
 
 
-    def forward(self, x0r, x0i, x1r, x1i, wr, wi):
+    def forward(self, x0r, x0i, x1r, x1i, twiddle_real, twiddle_imag):
         """
         Compute one exact complex butterfly.
 
@@ -71,8 +66,8 @@ class butterfly_fp(napl_base):
             x0i: Imaginary part of the first complex input.
             x1r: Real part of the second complex input.
             x1i: Imaginary part of the second complex input.
-            wr: Real part of the twiddle factor.
-            wi: Imaginary part of the twiddle factor.
+            twiddle_real: Real part of the twiddle factor.
+            twiddle_imag: Imaginary part of the twiddle factor.
 
         Returns:
             A tuple ``(y0r, y0i, y1r, y1i)`` of tensors with the broadcast
@@ -86,8 +81,8 @@ class butterfly_fp(napl_base):
 
             outputs = operation(*inputs)
         """
-        t_r = wr * x1r - wi * x1i
-        t_i = wr * x1i + wi * x1r
+        t_r = twiddle_real * x1r - twiddle_imag * x1i
+        t_i = twiddle_real * x1i + twiddle_imag * x1r
 
         y0r = x0r + t_r
         y0i = x0i + t_i

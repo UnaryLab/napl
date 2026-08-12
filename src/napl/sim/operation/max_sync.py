@@ -7,17 +7,25 @@ from .sync import sync
 
 class max_sync(napl_base):
     r"""
-    Take the maximum of two unipolar rate-coded streams with a synchronizer and an OR gate.
+    Take the maximum of two rate-coded streams with a synchronizer and an OR gate.
 
     The target rate-domain operation is
 
     .. math::
 
-       y = \max(p_0,p_1).
+       p_y = \max(p_0,p_1),
+
+    which unipolar reads directly as :math:`y = \max(p_0,p_1)`. The bipolar
+    reading :math:`v = 2p - 1` is monotone increasing in the rate, so the same
+    circuit returns the maximum of the bipolar values,
+
+    .. math::
+
+       y = \max(v_0,v_1).
 
     A bare OR gate returns :math:`p_0 + p_1 - p_0 p_1` on uncorrelated streams,
     which is at least the larger input and often well above it. This kernel
-    first passes both streams through :class:`napl.sim.operation.sync`, so
+    first passes both streams through :class:`~napl.sim.operation.sync`, so
     the ones of the smaller stream are masked by the ones of the larger one and
     the OR gate returns the larger value.
 
@@ -29,7 +37,7 @@ class max_sync(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import max_sync
+        from napl.sim.operation import max_sync
 
         maximum = max_sync({'polarity': 'unipolar', 'depth': 1})
         output = maximum(torch.tensor([1], dtype=torch.int8),
@@ -59,15 +67,11 @@ class max_sync(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"unipolar"``.
               - **depth**: Number of unpaired bits the synchronizer can save, an integer of at least ``1``; the default is ``1``. A larger depth raises the accuracy of the maximum.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'depth'], optional_key_list=[], polarity_required=True)
-        if self.polarity != 'unipolar':
-            message = f'Invalid polarity: <{self.polarity}>; max_sync supports unipolar only.'
-            logger.error(message)
-            raise AssertionError(message)
 
         #: Number of unpaired bits retained by the synchronizer.
         self.depth = config['depth']
@@ -77,12 +81,12 @@ class max_sync(napl_base):
             raise AssertionError(message)
 
         #: Synchronizer that positively correlates the two streams before the OR gate.
-        self.sync = sync({'polarity': 'unipolar', 'depth': self.depth})
+        self.sync = sync({'polarity': self.polarity, 'depth': self.depth})
         #: Hardware latency and timing metadata for the combinational maximum output.
         self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_0': 'unipolar', 'input_1': 'unipolar', 'output': 'unipolar'}
+        self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -98,13 +102,13 @@ class max_sync(napl_base):
         pass
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Process one timestep of the two input streams.
 
         Args:
-            input_0: Current 0/1 spikes from the first unipolar stream.
-            input_1: Current 0/1 spikes from the second unipolar stream.
+            input_0: Current 0/1 spikes from the first stream.
+            input_1: Current 0/1 spikes from the second stream.
 
         Returns:
             A 0/1 spike tensor holding the OR of the two synchronized streams.

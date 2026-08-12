@@ -3,7 +3,7 @@ import torch
 from torch.nn.modules.utils import _pair
 
 from napl.sim.base import napl_base
-from napl.sim.operation import add_any
+from napl.sim.operation import add_scale
 from loguru import logger
 
 
@@ -16,23 +16,17 @@ class avgpool2d_ugemm(napl_base):
 
     .. math::
 
-    y = \mathrm{avgpool2d\_ugemm}(x).
+       y = \mathrm{avgpool2d\_ugemm}(x).
 
-    Each timestep feeds the raw window spike count into a unipolar ``add_any``
-    with ``scale = entry = kernel_area``, so the accumulator holds an integer
-    spike count and emits one output spike per ``kernel_area`` accumulated
-    spikes. The window mean of the input rates is the target rate under both
-    polarities, so the unipolar adder serves both, and its bipolar offset
-    ``(entry - scale) / 2`` would be zero here in any case. The mean is therefore
-    exact for every kernel size, up to the residual held in the accumulator,
-    which stays below one spike.
+    The window mean is exact for every kernel size, up to the residual held in
+    the accumulator, which stays below one spike.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import avgpool2d_ugemm
+        from napl.sim.module import avgpool2d_ugemm
 
         pool = avgpool2d_ugemm(2, config={"polarity": "unipolar"})
         output_spike = pool(torch.ones(1, 1, 2, 2))
@@ -67,9 +61,9 @@ class avgpool2d_ugemm(napl_base):
             message = f'avgpool2d_ugemm accumulator width must be int: got <{width}>.'
             logger.error(message)
             raise AssertionError(message)
-        # Before thresholding, the accumulator holds the largest sub-threshold
-        # residue (scale - grid) plus one timestep's step. The unipolar child
-        # uses scale = delta_max = kernel_area on an integer grid.
+        # Before thresholding the accumulator holds the largest sub-threshold residue
+        # (scale - grid) plus one timestep's step, which is kernel_area - 1 plus
+        # kernel_area for the unipolar child on an integer grid.
         if 2 ** (width - 1) - 1 < (self.kernel_area - 1) + self.kernel_area:
             message = (
                 f'avgpool2d_ugemm accumulator width <{width}> too small for kernel area '
@@ -79,15 +73,19 @@ class avgpool2d_ugemm(napl_base):
             logger.error(message)
             raise AssertionError(message)
 
+        # The window mean of the input rates is the target under both polarities, and the
+        # bipolar offset (entry - scale) / 2 vanishes at scale = entry, so one unipolar
+        # adder at scale = entry = kernel_area serves both.
         #: Streaming unary adder that averages each window spike count.
-        self.acc = add_any({'polarity': 'unipolar', 'scale': self.kernel_area, 'width': width})
+        self.acc = add_scale({'polarity': 'unipolar', 'scale': self.kernel_area,
+                              'intwidth': width, 'fracwidth': 0})
 
         # Pooling and the adder threshold are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming pool.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -101,11 +99,11 @@ class avgpool2d_ugemm(napl_base):
         pass
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one spatial spike tensor.
 
         Args:
-            input_spike: Current ``(batch, channel, height, width)`` spike tensor.
+            input: Current ``(batch, channel, height, width)`` spike tensor.
 
         Returns:
             A spike tensor with the shape produced by ``AvgPool2d``.
@@ -114,6 +112,6 @@ class avgpool2d_ugemm(napl_base):
         spike per ``kernel_area`` accumulated spikes. Calling the module also
         advances ``timestep_cur`` once.
         """
-        pooled_input = input_spike if input_spike.dtype == self.ntype else input_spike.type(self.ntype)
+        pooled_input = input if input.dtype == self.ntype else input.type(self.ntype)
         popcount = self.avgpool2d(pooled_input)
         return self.acc(popcount, entry=self.kernel_area, dim=None)

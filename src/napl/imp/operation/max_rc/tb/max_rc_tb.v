@@ -10,8 +10,8 @@ module max_rc_tb;
     reg  rst_n;
     reg  in_0;
     reg  in_1;
-    wire o_max;
-    wire o_arg;
+    wire o_output;
+    wire o_index;
 
     integer fd, code, errors, count;
     integer v_reset, v_in_0, v_in_1, v_max, v_arg;
@@ -22,8 +22,8 @@ module max_rc_tb;
         .i_rst_n (rst_n),
         .i_input_0  (in_0),
         .i_input_1  (in_1),
-        .o_max   (o_max),
-        .o_arg   (o_arg)
+        .o_output (o_output),
+        .o_index  (o_index)
     );
 
     // 10 ns clock period.
@@ -72,11 +72,11 @@ module max_rc_tb;
                     in_0 = v_in_0[0];
                     in_1 = v_in_1[0];
                     #1;
-                    if (o_max !== v_max[0] || o_arg !== v_arg[0]) begin
+                    if (o_output !== v_max[0] || o_index !== v_arg[0]) begin
                         errors = errors + 1;
                         if (errors <= 10)
                             $display("MISMATCH t=%0d in=(%0d,%0d) got=(%b,%b) exp=(%0d,%0d)",
-                                     count, v_in_0, v_in_1, o_max, o_arg, v_max, v_arg);
+                                     count, v_in_0, v_in_1, o_output, o_index, v_max, v_arg);
                     end
                     count = count + 1;
                     @(posedge clk);

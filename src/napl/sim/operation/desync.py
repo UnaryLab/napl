@@ -6,7 +6,7 @@ from napl.sim.base import napl_base
 
 class desync(napl_base):
     r"""
-    Lower the correlation of two unipolar rate-coded streams (SC desynchronizer).
+    Lower the correlation of two rate-coded streams (SC desynchronizer).
 
     Use this kernel before an operation that needs negatively correlated
     operands, such as a saturating adder built from an OR gate. It returns two
@@ -16,6 +16,11 @@ class desync(napl_base):
     .. math::
 
        p'_0 = p_0, \qquad p'_1 = p_1, \qquad \mathrm{SCC}(y_0,y_1) \to -1.
+
+    Both polarities are supported. The machine rearranges spikes without
+    changing either stream's rate, so each stream keeps its value under the
+    unipolar reading :math:`v = p` and the bipolar reading :math:`v = 2p - 1`
+    alike.
 
     Each element runs one finite-state machine that unpairs the ones of the two
     streams. A timestep where the two inputs disagree passes through unchanged,
@@ -34,7 +39,7 @@ class desync(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import desync
+        from napl.sim.operation import desync
 
         desynchronizer = desync({'polarity': 'unipolar', 'depth': 1})
         first, second = desynchronizer(torch.tensor([1], dtype=torch.int8),
@@ -64,15 +69,11 @@ class desync(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **polarity**: Input encoding. The only supported value is ``"unipolar"``; the default is ``"unipolar"``.
+              - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"unipolar"``.
               - **depth**: Number of paired ones the machine can save on one side before alternating, an integer of at least ``1``; the default is ``1``. A larger depth induces stronger negative correlation.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'depth'], optional_key_list=[], polarity_required=True)
-        if self.polarity != 'unipolar':
-            message = f'Invalid polarity: <{self.polarity}>; desync supports unipolar only.'
-            logger.error(message)
-            raise AssertionError(message)
 
         #: Number of paired ones retained on one side before the saved side alternates.
         self.depth = config['depth']
@@ -81,11 +82,8 @@ class desync(napl_base):
             logger.error(message)
             raise AssertionError(message)
 
-        # The machine state is a signed count of saved ones in [-depth, depth]
-        # paired with the side that saves next, which flips each time the count
-        # returns to zero; only one sign of the count is reachable per side, so
-        # 2 * (depth + 1) states are realized. At depth 1 those four states are
-        # the cycle of Fig. 3b in the paper.
+        # The machine state is a signed count of saved ones in [-depth, depth] paired with the
+        # side that saves next, which flips each time the count returns to zero.
         #: Signed count of saved ones, positive for the first stream and negative for the second.
         self.cnt: torch.Tensor
         self.register_buffer('cnt', torch.zeros(1, dtype=self.ntype))
@@ -98,8 +96,8 @@ class desync(napl_base):
         self.hw.pp_delay = 0
 
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output_0': 'rc', 'output_1': 'rc'}
-        self.polarity_io = {'input_0': 'unipolar', 'input_1': 'unipolar',
-                            'output_0': 'unipolar', 'output_1': 'unipolar'}
+        self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
+                            'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -114,13 +112,13 @@ class desync(napl_base):
         self.is_first_call = True
 
 
-    def forward(self, input_0: torch.tensor, input_1: torch.tensor):
+    def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
         """
         Desynchronize one timestep of the two input streams.
 
         Args:
-            input_0: Current 0/1 spikes from the first unipolar stream.
-            input_1: Current 0/1 spikes from the second unipolar stream.
+            input_0: Current 0/1 spikes from the first stream.
+            input_1: Current 0/1 spikes from the second stream.
 
         Returns:
             A pair ``(output_0, output_1)`` of 0/1 spike tensors with the input

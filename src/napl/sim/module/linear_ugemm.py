@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
-from napl.sim.operation import add_any, mul_ugemm
+from napl.sim.operation import add_scale, mul_ugemm
 from napl.sim.operation import encode
 from napl.sim.module._shared import _check_acc_width
 from loguru import logger
@@ -32,7 +32,7 @@ class linear_ugemm(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import linear_ugemm
+        from napl.sim.module import linear_ugemm
 
         layer = linear_ugemm(torch.zeros(3, 2),
                              config={"polarity": "bipolar", "timestep": 4,
@@ -46,7 +46,8 @@ class linear_ugemm(napl_base):
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
     #: Encoding advances conditionally on data, so the RTL counterpart holds
-    #: its own encoder instead of sharing an external one.
+    #: its own encoder for the weight and bias streams instead of sharing an
+    #: external one.
     internal_encode = True
 
 
@@ -78,7 +79,7 @@ class linear_ugemm(napl_base):
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
               - **dim**: Number-sequence dimension; the default is ``1``.
               - **scale**: Output divisor, where ``None`` uses ``in_features + has_bias``; the default is ``None``.
-              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_any`).
+              - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``8``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.
 
         Weight and bias are updatable only by an in-place write, such as
@@ -139,14 +140,15 @@ class linear_ugemm(napl_base):
                                        'dim': config.get('dim', 1)}).num_seq)
 
         #: Streaming unary adder that reduces each linear product count.
-        self.acc = add_any({'polarity': self.polarity, 'scale': self.scale, 'width': self.width})
+        self.acc = add_scale({'polarity': self.polarity, 'scale': self.scale,
+                              'intwidth': self.width, 'fracwidth': 0})
 
         # Conditional generation and the adder are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -161,11 +163,11 @@ class linear_ugemm(napl_base):
         pass
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor whose last dimension is
+            input: ``0``/``1`` tensor whose last dimension is
                 ``in_features``.
 
         Returns:
@@ -175,14 +177,14 @@ class linear_ugemm(napl_base):
         adder, and ``timestep_cur``. Weight and bias spike probabilities are
         recomputed from the current parameters on every call.
         """
-        # The input spike broadcasts over output features, so each input feature
-        # keeps one sequence index shared by the whole weight column.
-        # Counts bounded by entry are exact float32 integers under any reduction order.
-        product = self.mul(input_spike.unsqueeze(-2), self.weight)
+        # The input spike broadcasts over output features, so each input feature keeps one
+        # sequence index shared by the whole weight column.
+        product = self.mul(input.unsqueeze(-2), self.weight)
+        # Counts bounded by entry are exact in ntype under any reduction order.
         psum = product.type(self.ntype).sum(-1)
 
         if self.has_bias:
-            # Bias advances once per timestep; bool promotion preserves its 0/1 value.
+            # The bias threshold advances once per timestep and stands in for encode by reading self.mul's own number sequence, the one mul_ugemm thresholds for the weight bit, rather than a separately seeded encoder.
             b_prob = ((self.bias + 1) / 2 if self._is_bipolar else self.bias).type(self.ntype)
             b_bit = torch.gt(b_prob, self.mul.num_seq[(self.timestep_cur - 1) % self.mul.len])
             psum = psum + b_bit

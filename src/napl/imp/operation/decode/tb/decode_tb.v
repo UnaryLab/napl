@@ -16,7 +16,7 @@ module decode_tb;
     decode #(.WIDTH(WIDTH)) dut (
         .i_clk         (clk),
         .i_rst_n       (rst_n),
-        .i_spike       (spike),
+        .i_input       (spike),
         .o_spike_count (spike_count)
     );
 
@@ -64,7 +64,7 @@ module decode_tb;
                     @(negedge clk);
                     rst_n = 1'b1;
                 end
-                // Drive from the negedge: the count register samples i_spike on
+                // Drive from the negedge: the count register samples i_input on
                 // the posedge, so an input changing at that edge would race it.
                 spike = a;
                 #1;

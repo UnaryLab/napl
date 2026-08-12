@@ -21,7 +21,7 @@ module add_gaines_tb;
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_scaled_uni),
-        .o_out(o_scaled_uni)
+        .o_output(o_scaled_uni)
     );
     add_gaines #(
         .SCALED(`GEN_SCALED),
@@ -31,7 +31,7 @@ module add_gaines_tb;
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_scaled_bi),
-        .o_out(o_scaled_bi)
+        .o_output(o_scaled_bi)
     );
     add_gaines #(
         .SCALED(`GEN_UNSCALED),
@@ -41,7 +41,7 @@ module add_gaines_tb;
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
         .i_input(i_unscaled),
-        .o_out(o_unscaled)
+        .o_output(o_unscaled)
     );
 
     integer fd;

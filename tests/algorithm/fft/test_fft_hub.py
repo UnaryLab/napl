@@ -20,31 +20,6 @@ TIMESTEP = 2048
 SCALE = 2
 WIDTH = int(math.log2(TIMESTEP)) + 1
 
-# Fidelity bound, derived. The wrapper is exactly encode -> bare fft -> decode,
-# so its only error source is the rate-coded stream itself and gate 5's
-# stochastic-computing bound applies unchanged: relative error 1 / sqrt(N) at
-# N = 2048 timesteps, which is 0.022097, scaled by the reference RMS. This is
-# the same bound the bare-core tests test_fft.py and test_fft_dyn.py carry. The
-# chosen coverage multiplier on it is 1.0, that is, none: the measured relative
-# errors span 0.0065 to 0.0107 across the cases below, at most half the bound,
-# and nothing is added on top. Per case: known-answer impulse 0.0096 and bin-1
-# tone 0.0065, mixed scales 0.0068, streaming 0.0107 at dim=1, 0.0105 at dim=2,
-# and 0.0104 at dim=3.
-# The bound holds for the full-range fidelity inputs gate 5 prescribes; below
-# roughly half full scale the error becomes a fixed absolute floor of about
-# 0.017 to 0.029 that outgrows the reference-RMS-scaled bound, so the streaming
-# input at amplitude 0.25 measures relative error 0.0282 and at amplitude 0.05
-# measures 0.1272. Callers running small-amplitude inputs must scale the bound
-# accordingly.
-RELATIVE_ERROR_BOUND = 1 / math.sqrt(TIMESTEP)
-
-# Gain bounds. The derived expectation is exactly 1.0, because the core
-# compensation is the integer product the stage adders divide by and the codec
-# is unbiased. The +/- 0.01 band is a chosen coverage multiplier of about 1.7x
-# on the largest deviation observed here (0.0058, on the impulse known answer).
-GAIN_MIN = 0.99
-GAIN_MAX = 1.01
-
 
 def _configs(dim=1, scale=SCALE, width=WIDTH):
     codec_config = {
@@ -61,7 +36,8 @@ def _configs(dim=1, scale=SCALE, width=WIDTH):
     add_config = {
         'polarity': 'bipolar',
         'scale': scale,
-        'width': width,
+        'intwidth': width,
+        'fracwidth': 0,
     }
     return codec_config, mul_config, add_config
 
@@ -90,10 +66,11 @@ def _bare_step(encoders, core, decoders, values):
     return tuple(decoder.spike_value * core.compensation for decoder in decoders)
 
 
-def _run(operation, values, timesteps=TIMESTEP):
+def _step_run(operation, values, timesteps=TIMESTEP):
+    """Return the final output of an explicit per-timestep run."""
     output = None
     for _ in range(timesteps):
-        output = operation(*values)
+        output = operation.forward_timestep(*values)
     return output
 
 
@@ -108,7 +85,7 @@ def _metrics(candidate, reference):
     reference_rms = reference_complex.abs().pow(2).mean().sqrt()
     rmse = (candidate_complex - reference_complex).abs().pow(2).mean().sqrt()
     gain = candidate_complex.abs().pow(2).mean().sqrt() / reference_rms
-    return rmse.item(), (RELATIVE_ERROR_BOUND * reference_rms).item(), gain.item()
+    return rmse.item(), gain.item()
 
 
 def _sample_values(device):
@@ -126,10 +103,12 @@ def test_fft_hub_streaming():
         reference = _reference(values)
         for dim in (1, 2, 3):
             operation = _make_hub(device, dim)
-            assert operation.streaming is True
+            assert operation.streaming is False
             assert operation.point == POINT and operation.stages == 3
             assert operation.scales == [SCALE] * operation.stages
             assert operation.core.compensation == 2 * SCALE ** operation.stages
+            # Every stage multiplier turns its constant twiddle into a stream itself.
+            assert operation.internal_encode is True
             # Codecs live only at the boundary, so the core and every stage in it
             # stay in the spike domain and own no encoder or decoder.
             assert isinstance(operation.core, fft)
@@ -145,22 +124,18 @@ def test_fft_hub_streaming():
             assert not torch.equal(operation.encode_real.num_seq, operation.encode_imag.num_seq)
             assert operation.encoding_io == {}
 
-            output = _run(operation, values)
+            output = operation(*values)
             assert all(value.shape == values[0].shape for value in output)
-            rmse, relative_bound, gain = _metrics(output, reference)
-            assert rmse < relative_bound, (
-                f'FFT RMSE {rmse:.4f} exceeds relative bound {relative_bound:.4f}'
-            )
-            assert GAIN_MIN <= gain <= GAIN_MAX, (
-                f'FFT gain {gain:.4f} is outside [{GAIN_MIN}, {GAIN_MAX}]'
-            )
-            assert operation.timestep_cur == TIMESTEP
+            rmse, gain = _metrics(output, reference)
+            # The wrapper is non-streaming at its numeric interface, so its own
+            # counter stays at 0 while the streaming parts it drives count the
+            # whole run.
+            assert operation.timestep_cur == 0
             assert operation.core.timestep_cur == TIMESTEP
             assert operation.encode_real.timestep_cur == TIMESTEP
             assert operation.decode_real.timestep_cur == TIMESTEP
             print(
-                f'[{device}][dim={dim}] rmse={rmse:.4f}, '
-                f'relative_bound={relative_bound:.4f}, gain={gain:.4f}'
+                f'[{device}][dim={dim}] rmse={rmse:.4f}, gain={gain:.4f}'
             )
 
 
@@ -175,13 +150,60 @@ def test_fft_hub_matches_bare_composition():
         operation = _make_hub(device)
         encoders, core, decoders = _make_bare(device)
         for _ in range(TIMESTEP):
-            hub_output = operation(*values)
+            hub_output = operation.forward_timestep(*values)
             bare_output = _bare_step(encoders, core, decoders, values)
             assert all(
                 torch.equal(hub_value, bare_value)
                 for hub_value, bare_value in zip(hub_output, bare_output)
-            ), f'[{device}] diverged at timestep {operation.timestep_cur}'
+            ), f'[{device}] diverged at timestep {operation.core.timestep_cur}'
         print(f'[{device}] bit-exact against the bare composition for {TIMESTEP} timesteps.')
+
+
+def test_fft_hub_matches_timestep_loop():
+    """Verify one decorated call equals an explicit timestep loop and repeats bit-exactly."""
+    for device in devices():
+        values = _sample_values(device)
+
+        looped = _step_run(_make_hub(device), values)
+
+        operation = _make_hub(device)
+        single = operation(*values)
+        assert all(
+            torch.equal(single_value, looped_value)
+            for single_value, looped_value in zip(single, looped)
+        ), f'[{device}] the decorated call and the {TIMESTEP}-timestep loop disagree'
+        assert operation.timestep_cur == 0
+        assert operation.core.timestep_cur == TIMESTEP
+        assert operation.encode_real.timestep_cur == TIMESTEP
+        assert operation.decode_real.timestep_cur == TIMESTEP
+
+        # A decorated call is a fresh run, so a partly advanced wrapper decodes
+        # the same spectrum as an untouched one.
+        advanced = _make_hub(device)
+        advanced.forward_timestep(*values)
+        assert all(
+            torch.equal(repeated_value, single_value)
+            for repeated_value, single_value in zip(advanced(*values), single)
+        ), f'[{device}] a repeated decorated call is not a fresh run'
+        print(f'[{device}] one call matches the {TIMESTEP}-timestep loop bit-exactly.')
+
+
+def test_fft_hub_progressive_precision():
+    """Verify per-timestep stepping refines the spectrum toward the analytic transform."""
+    checkpoints = (TIMESTEP // 8, TIMESTEP)
+    for device in devices():
+        values = _sample_values(device)
+        reference = _reference(values)
+        operation = _make_hub(device)
+        errors = []
+        for timestep in range(1, TIMESTEP + 1):
+            output = operation.forward_timestep(*values)
+            assert operation.core.timestep_cur == timestep
+            if timestep in checkpoints:
+                errors.append(_metrics(output, reference)[0])
+        assert errors[-1] < errors[0], errors
+        print(f'[{device}] rmse refines from {errors[0]:.4f} at N={checkpoints[0]} to '
+              f'{errors[-1]:.4f} at N={checkpoints[1]}.')
 
 
 def test_fft_hub_known_answer():
@@ -204,17 +226,10 @@ def test_fft_hub_known_answer():
             ('impulse', (impulse_real, impulse_imag), impulse_expected),
             ('bin1_tone', (tone_real, tone_imag), tone_expected),
         ):
-            output = _run(_make_hub(device), values)
-            rmse, relative_bound, gain = _metrics(output, expected)
-            assert rmse < relative_bound, (
-                f'{name} RMSE {rmse:.4f} exceeds relative bound {relative_bound:.4f}'
-            )
-            assert GAIN_MIN <= gain <= GAIN_MAX, (
-                f'{name} gain {gain:.4f} is outside [{GAIN_MIN}, {GAIN_MAX}]'
-            )
+            output = _make_hub(device)(*values)
+            rmse, gain = _metrics(output, expected)
             print(
-                f'[{device}][{name}] rmse={rmse:.4f}, '
-                f'relative_bound={relative_bound:.4f}, gain={gain:.4f}'
+                f'[{device}][{name}] rmse={rmse:.4f}, gain={gain:.4f}'
             )
 
 
@@ -243,17 +258,11 @@ def test_fft_hub_mixed_scales():
         expected_real = torch.zeros_like(values[0])
         expected_real[1].fill_(POINT)
         expected = (expected_real, torch.zeros_like(values[1]))
-        output = _run(operation, values)
-        rmse, relative_bound, gain = _metrics(output, expected)
-        assert rmse < relative_bound, (
-            f'mixed-scale RMSE {rmse:.4f} exceeds relative bound {relative_bound:.4f}'
-        )
-        assert GAIN_MIN <= gain <= GAIN_MAX, (
-            f'mixed-scale gain {gain:.4f} is outside [{GAIN_MIN}, {GAIN_MAX}]'
-        )
+        output = operation(*values)
+        rmse, gain = _metrics(output, expected)
         print(
             f'[{device}][mixed_scales={mixed_scales}] child_scales={child_scales}, '
-            f'rmse={rmse:.4f}, relative_bound={relative_bound:.4f}, gain={gain:.4f}'
+            f'rmse={rmse:.4f}, gain={gain:.4f}'
         )
 
 
@@ -263,8 +272,9 @@ def test_fft_hub_reset_replay():
     for device in devices():
         values = _sample_values(device)
         operation = _make_hub(device)
-        first = [tuple(value.clone() for value in operation(*values)) for _ in range(timesteps)]
-        assert operation.timestep_cur == timesteps
+        first = [tuple(value.clone() for value in operation.forward_timestep(*values))
+                 for _ in range(timesteps)]
+        assert operation.core.timestep_cur == timesteps
 
         operation.reset()
         assert operation.timestep_cur == 0
@@ -282,7 +292,8 @@ def test_fft_hub_reset_replay():
             for stage in range(operation.stages)
         )
 
-        replay = [tuple(value.clone() for value in operation(*values)) for _ in range(timesteps)]
+        replay = [tuple(value.clone() for value in operation.forward_timestep(*values))
+                  for _ in range(timesteps)]
         assert all(
             torch.equal(before, after)
             for before_step, after_step in zip(first, replay)
@@ -371,16 +382,67 @@ def test_fft_hub_rejects_invalid_config():
     for stage, scales, effective in ((0, [10, 2, 2], 20), (2, [2, 2, 10], 10)):
         try:
             fft_hub(POINT, codec_config, mul_config,
-                    dict(add_config, scale=scales, width=4))
+                    dict(add_config, scale=scales, intwidth=4))
         except AssertionError as error:
             assert str(error) == (
-                f'FFT stage <{stage}> construction failed: add_any scale <{effective}> '
-                f'exceeds accumulator maximum <7> for width <4>.'
+                f'FFT stage <{stage}> construction failed: add_scale scale <{float(effective)}> '
+                f'exceeds accumulator maximum <7.0> for intwidth <4> and fracwidth <0>.'
             ), error
         else:
             raise AssertionError(
-                f'fft_hub accepted stage-{stage} scale 10 above the width-4 maximum'
+                f'fft_hub accepted stage-{stage} scale 10 above the intwidth-4 maximum'
             )
+    print('Test passed.')
+
+
+def test_fft_hub_mix_kernel_dims():
+    """Verify the mix kernel decorrelates twiddle streams and rejects colliding input dims."""
+    codec_config, mul_config, add_config = _configs()
+    mix_config = dict(mul_config, kernel='mix')
+    operation = fft_hub(POINT, codec_config, mix_config, add_config)
+    # Each stage twiddle encoder must hold a sequence neither input encoder uses.
+    for stage in range(operation.stages):
+        twiddle_encode = getattr(operation.core, f'butterfly_stage_{stage}').reference_encode
+        assert not torch.equal(twiddle_encode.num_seq, operation.encode_real.num_seq)
+        assert not torch.equal(twiddle_encode.num_seq, operation.encode_imag.num_seq)
+
+    # The three stages take twiddle dimensions 5 to 7, so dim 4 collides through dim + 1.
+    for dim in (4, 5, 7):
+        try:
+            fft_hub(POINT, dict(codec_config, dim=dim), mix_config, add_config)
+        except AssertionError as error:
+            assert str(error) == (
+                f'Invalid dim: <{dim}>; legal values: input encoder dimensions <{dim}> '
+                f'and <{dim + 1}> must both stay outside the mix-kernel twiddle '
+                f'dimensions <5> through <7>.'
+            ), error
+        else:
+            raise AssertionError(f'fft_hub accepted colliding mix-kernel dim {dim}')
+
+    # Dims just outside the twiddle range accept: dim 3 (dim + 1 = 4 below) and dim 8 above.
+    for dim in (3, 8):
+        accepted = fft_hub(POINT, dict(codec_config, dim=dim), mix_config, add_config)
+        assert accepted.dim == dim
+
+    # The kernel name is matched case-insensitively, so mixed case still rejects dim 5.
+    for kernel in ('Mix', 'MIX'):
+        try:
+            fft_hub(POINT, dict(codec_config, dim=5), dict(mul_config, kernel=kernel), add_config)
+        except AssertionError as error:
+            assert str(error) == (
+                'Invalid dim: <5>; legal values: input encoder dimensions <5> '
+                'and <6> must both stay outside the mix-kernel twiddle '
+                'dimensions <5> through <7>.'
+            ), error
+        else:
+            raise AssertionError(f'fft_hub accepted colliding dim with kernel {kernel!r}')
+
+    # The guard rejects before the core is built, so a colliding dim leaves no core attribute.
+    partial = fft_hub.__new__(fft_hub)
+    try:
+        fft_hub.__init__(partial, POINT, dict(codec_config, dim=5), mix_config, add_config)
+    except AssertionError:
+        assert not hasattr(partial, 'core')
     print('Test passed.')
 
 
@@ -388,7 +450,7 @@ def test_fft_hub_rejects_invalid_shapes():
     """Verify invalid numeric input shapes raise before any child advances."""
     operation = _make_hub('cpu')
     values = torch.zeros(POINT, 1, dtype=global_config.ntype)
-    operation(values, values)
+    operation.forward_timestep(values, values)
     timesteps = operation.encode_real.timestep_cur
     accumulators = [
         getattr(operation.core, f'butterfly_stage_{stage}').add_y.accumulator.clone()
@@ -401,7 +463,7 @@ def test_fft_hub_rejects_invalid_shapes():
          'FFT first input dimension must equal point <8>: got shape <torch.Size([7, 1])>.'),
     ):
         try:
-            operation(*bad)
+            operation.forward_timestep(*bad)
         except AssertionError as error:
             assert str(error) == message, error
         else:
@@ -434,7 +496,7 @@ def test_fft_hub_performance():
     for device in devices():
         operation = _make_hub(device)
         device_runtime = benchmark(
-            lambda values: operation(*values),
+            lambda values: operation.forward_timestep(*values),
             performance_values,
             device,
             warmup_runs=1,
@@ -453,11 +515,14 @@ def test_fft_hub_performance():
 
 if __name__ == '__main__':
     test_fft_hub_rejects_invalid_config()
+    test_fft_hub_mix_kernel_dims()
     test_fft_hub_rejects_invalid_shapes()
     test_fft_hub_known_answer()
     test_fft_hub_mixed_scales()
     test_fft_hub_reset_replay()
     test_fft_hub_matches_bare_composition()
+    test_fft_hub_matches_timestep_loop()
+    test_fft_hub_progressive_precision()
     test_fft_hub_streaming()
     test_fft_hub_performance()
     print('Test passed.')

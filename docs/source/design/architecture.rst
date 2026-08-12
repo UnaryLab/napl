@@ -2,9 +2,9 @@ Architecture
 ============
 
 NAPL is a PyTorch framework for programmable spike processing. It supports
-per-timestep spike-stream simulation and single-shot binary-domain kernels.
-The Python model defines functional behavior. A subset of spike operations has
-verified Verilog-2001 counterparts.
+per-timestep spike-stream simulation and non-streaming binary-domain kernels.
+The Python model defines functional behavior. A subset of spike operations and
+streaming layers has verified Verilog-2001 counterparts.
 
 The root `ARCHITECTURE.md
 <https://github.com/UnaryLab/napl/blob/main/ARCHITECTURE.md>`_ is the canonical
@@ -31,9 +31,13 @@ result over time::
 Rate and temporal encodings differ in spike order. Longer streams generally
 improve numerical fidelity at the cost of latency.
 
-Single-shot kernels process a complete tensor in one call. They use
-quantization or hybrid unary-binary arithmetic without an explicit timestep
-stream.
+Non-streaming kernels process a complete tensor in one call. They use quantized
+fixed-point or floating-point arithmetic without an explicit timestep stream.
+
+Hybrid unary-binary (HUB) wrappers, the ``*_hub`` classes, take and return
+numeric tensors at their boundary codecs and run one-bit spike streams inside,
+one timestep per inner call. One call of their decorated ``forward()`` is a
+complete fresh run of ``timestep`` cycles.
 
 Package map
 -----------
@@ -43,17 +47,18 @@ Package map
    configuration.
 
 ``src/napl/sim/module/``
-   Encoders, decoders, neural layers, and recurrent cells.
+   Neural layers and recurrent cells.
 
 ``src/napl/sim/operation/``
-   Arithmetic, comparison, activation, state, polarity-conversion, and stream
-   synchronization primitives.
+   Encoders, decoders, arithmetic, comparison, activation, state,
+   polarity-conversion, and stream synchronization primitives.
 
 ``src/napl/sim/metric/``
    Progressive stream observers and stability stream construction.
 
 ``src/napl/sim/algorithm/``
-   Compositions of modules and operations, including an FFT butterfly.
+   Compositions of modules and operations, including FFT butterflies and
+   streaming radix-2 FFTs.
 
 ``src/napl/sim/structure/``
    Placeholder boundaries for biological-neuron abstractions.
@@ -67,18 +72,20 @@ Package map
 Public API
 ----------
 
-``napl/__init__.py`` re-exports the public classes from the simulation
-subpackages. Applications can use top-level imports such as::
+Each public class or function is imported from the simulation subpackage that
+defines it, using the form ``from napl.sim.<subpackage> import <name>``::
 
-   from napl import accuracy, encode, linear, mul_gaines
+   from napl.sim.operation import encode, mul_gaines
+   from napl.sim.module import linear_mix
+   from napl.sim.metric import accuracy
 
-Deep imports such as ``from napl.sim.operation import mul_gaines`` are also
-supported.
+The subpackages are ``base``, ``operation``, ``module``, ``metric``,
+``structure``, and ``algorithm``.
 
 Current boundaries
 ------------------
 
-NAPL does not currently include a Python-to-PyTorch or Python-to-RTL
-transpiler. The command-line entry point prints a banner only. The FFT and
-biological structure packages contain incomplete interfaces. RTL coverage is
-limited to concrete operation folders under ``src/napl/imp/operation/``.
+NAPL does not currently include a Python-to-PyTorch transpiler. The command-line
+entry point prints a banner only, and the biological structure package contains
+placeholder interfaces. RTL coverage includes the concrete operation and module
+folders under ``src/napl/imp/``; algorithms and metrics have no RTL trees.

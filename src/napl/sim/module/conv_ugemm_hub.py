@@ -1,4 +1,4 @@
-from napl.sim.base import napl_base
+from napl.sim.base import napl_base, napl_sim_timesteps
 from napl.sim.module._shared import _CORE_DIM, _hub_core_config
 from napl.sim.operation import decode, encode
 from .conv_ugemm import conv_ugemm
@@ -13,27 +13,27 @@ class conv_ugemm_hub(napl_base):
     only at the input port and decoding only at the output port, so
     :class:`~napl.sim.module.conv_ugemm` runs purely on spikes in between.
 
-    Each call processes one timestep and returns the progressively decoded
+    Each call runs a complete **timestep**-cycle run on a fixed numeric input
+    and returns the decoded
 
     .. math::
 
        y = \frac{\mathrm{conv2d}(x, W) + b}{s},
 
-    with **scale** :math:`s` defaulting to the kernel fan-in plus the bias. The
-    returned value refines toward that target over a run of **timestep** calls,
-    within the stochastic-computing error of the streams. The numeric input is
-    held fixed for the whole run.
+    with **scale** :math:`s` defaulting to the kernel fan-in plus the bias,
+    within the stochastic-computing error of the streams. Stepping the run one
+    timestep at a time through ``forward_timestep()`` returns the same value
+    progressively refined.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import conv_ugemm_hub
+        from napl.sim.module import conv_ugemm_hub
 
         layer = conv_ugemm_hub(torch.zeros(2, 1, 3, 3), padding=1)
-        for _ in range(256):
-            output_value = layer(torch.ones(1, 1, 4, 4))
+        output_value = layer(torch.ones(1, 1, 4, 4))
 
     .. container:: api-references
 
@@ -43,6 +43,8 @@ class conv_ugemm_hub(napl_base):
 
         *uBrain: A Unary Brain Computer Interface*, ISCA, 2022.
     """
+    #: Whether each call is one streaming timestep; one hub call is a whole run.
+    streaming = False
 
 
     def __init__(
@@ -128,10 +130,12 @@ class conv_ugemm_hub(napl_base):
         # Encoding, the core, and decoding are combinational within one timestep.
         #: Hardware latency and timing metadata for the wrapped layer.
         self.hw.pp_delay = self.core.hw.pp_delay
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
 
         #: Empty, since the numeric ports carry no stream encoding.
         self.encoding_io = {}
-        self.polarity_io = {'input_value': self.polarity, 'output': self.polarity}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -146,22 +150,28 @@ class conv_ugemm_hub(napl_base):
         pass
 
 
-    def forward(self, input_value):
-        """Process one timestep for a fixed numeric NCHW input.
+    @napl_sim_timesteps
+    def forward(self, input):
+        """Run a complete **timestep**-cycle run for a fixed numeric NCHW input.
 
         Args:
-            input_value: Numeric tensor shaped
+            input: Numeric tensor shaped
                 ``(batch, in_channels, height, width)``, in ``[0, 1]`` for
                 unipolar or ``[-1, 1]`` for bipolar streams.
 
         Returns:
-            The progressively decoded output tensor shaped
-            ``(batch, out_channels, output_height, output_width)``.
+            The decoded output tensor shaped
+            ``(batch, out_channels, output_height, output_width)``, taken after
+            the final timestep of the run.
 
-        The call advances the encoder, the core, the decoder, and this layer's
-        ``timestep_cur`` once. Pass the same numeric input on every call of a
-        run; the returned value refines as the run proceeds.
+        The call is a fresh run: it resets this layer and its children, holds
+        the numeric input fixed for **timestep** timesteps, and counts those
+        timesteps on the streaming encoder, core, and decoder rather than on
+        this layer's ``timestep_cur``. Any state a caller set beforehand is
+        discarded, so repeating the call on the same input returns the same
+        value. Call ``forward_timestep(input)`` instead to advance one timestep
+        and read the progressively refined value.
         """
-        reference_encode_bit = self.reference_encode(input_value)
+        reference_encode_bit = self.reference_encode(input)
         self.decoder(self.core(reference_encode_bit))
         return self.decoder.spike_value

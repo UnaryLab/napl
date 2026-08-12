@@ -9,13 +9,13 @@ module relu_sat_tb;
     reg  i_clk;
     reg  i_rst_n;
     reg  i_input;
-    wire o_out;
+    wire o_output;
 
     relu_sat dut (
         .i_clk  (i_clk),
         .i_rst_n(i_rst_n),
         .i_input   (i_input),
-        .o_out  (o_out)
+        .o_output  (o_output)
     );
 
     // 10 ns clock period.
@@ -53,9 +53,9 @@ module relu_sat_tb;
                 i_input = in_b;
                 #1;
                 n = n + 1;
-                if (o_out !== exp_out) begin
+                if (o_output !== exp_out) begin
                     $display("FAIL cycle %0d: rst=%b i_input=%b got %b exp %b",
-                             n, rst_b, in_b, o_out, exp_out);
+                             n, rst_b, in_b, o_output, exp_out);
                     fails = fails + 1;
                 end
                 @(posedge i_clk);

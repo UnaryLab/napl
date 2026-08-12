@@ -12,7 +12,7 @@ module mul_ugemm_unipolar #(
     input  wire             i_rst_n,
     input  wire             i_input_0,
     input  wire [WIDTH:0]   i_input_1,   // fixed-point operand in [0, 2**WIDTH]
-    output wire             o_out
+    output wire             o_output
 );
 
     reg  [WIDTH-1:0] seq_idx;
@@ -29,7 +29,7 @@ module mul_ugemm_unipolar #(
     assign num_seq = num_seq_rom[seq_idx];
 
     assign spike = (i_input_1 > {1'b0, num_seq}) ? 1'b1 : 1'b0;
-    assign o_out = i_input_0 & spike;
+    assign o_output = i_input_0 & spike;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

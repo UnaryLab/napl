@@ -6,7 +6,7 @@ from napl.utils._shared_test import benchmark, devices
 
 
 def test_butterfly_fp_is_napl_module():
-    """Verify the single-shot contract and known answer across devices, including timing."""
+    """Verify the non-streaming contract and known answer across devices, including timing."""
     performance_inputs_cpu = tuple(
         torch.linspace(-1, 1, 131072, dtype=global_config.ntype)
         for _ in range(6)

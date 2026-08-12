@@ -17,9 +17,16 @@ the model, AND emitted into ../vec/square_dff_params.vh as `GEN_DEPTH so the
 testbench overrides the RTL parameter with the same value. RTL and sim therefore
 inherit DEPTH from one place; they cannot drift.
 
+DEPTH is also a shape parameter: the RTL delay line is a generate-for whose
+cell-to-cell shift only exists when DEPTH > 1, so a DEPTH-1 elaboration never
+builds it. SHIFT_DEPTH is the second, multi-cell elaboration carried alongside
+DEPTH, emitted as `GEN_SHIFT_DEPTH, and the testbench instantiates both. The
+same drive stream feeds both, so the extra coverage costs columns, not rows.
+
 Output: ../vec/square_dff.vec, one line per timestep:
 
-    <rst> <i_input> <out_unipolar> <out_bipolar>   (each 0/1, space-separated)
+    <rst> <i_input> <out_unipolar> <out_bipolar> <out_shift_unipolar> <out_shift_bipolar>
+    (each 0/1, space-separated)
 
 rst=1 marks cycles where reset() is applied (to the model) / i_rst_n pulsed low
 (in the RTL) BEFORE driving i_input.
@@ -42,6 +49,9 @@ PARAMS = Path(__file__).resolve().parent.parent / "vec" / "square_dff_params.vh"
 # Sizing and encoder settings mirror test_square_dff.py.
 # DEPTH sizes the embedded DFF delay line.
 SQUARE_DFF = {"polarity": "bipolar", "depth": 1}
+# Second elaborated depth, which is what puts cells between the write end and the
+# read end of the delay line.
+SHIFT_DEPTH = 3
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
 
 # Split the encoded operands to reset after the delay line has changed.
@@ -56,8 +66,8 @@ for _i, _v in enumerate(_VALUES):
         DRIVE.append((_rst, _s))
 
 
-def run(polarity):
-    model = square_dff(config={"polarity": polarity, "depth": SQUARE_DFF["depth"]})
+def run(polarity, depth):
+    model = square_dff(config={"polarity": polarity, "depth": depth})
     model.reset()
     outs = []
     for rst, s in DRIVE:
@@ -69,22 +79,27 @@ def run(polarity):
 
 
 def main():
-    out_uni = run("unipolar")
-    out_bi = run("bipolar")
+    depth = SQUARE_DFF["depth"]
+    out_uni = run("unipolar", depth)
+    out_bi = run("bipolar", depth)
+    shift_uni = run("unipolar", SHIFT_DEPTH)
+    shift_bi = run("bipolar", SHIFT_DEPTH)
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     model = square_dff(config=dict(SQUARE_DFF))
     PARAMS.write_text(
-        f"`define GEN_DEPTH {SQUARE_DFF['depth']}\n"
+        f"`define GEN_DEPTH {depth}\n"
+        f"`define GEN_SHIFT_DEPTH {SHIFT_DEPTH}\n"
         f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
     )
 
     with VEC.open("w") as f:
-        for (rst, s), u, b in zip(DRIVE, out_uni, out_bi):
-            f.write(f"{rst} {s} {u} {b}\n")
+        for (rst, s), u, b, su, sb in zip(DRIVE, out_uni, out_bi, shift_uni, shift_bi):
+            f.write(f"{rst} {s} {u} {b} {su} {sb}\n")
     print(
         f"wrote {VEC} ({len(DRIVE)} vectors) and {PARAMS} "
-        f"(GEN_DEPTH={SQUARE_DFF['depth']}, GEN_PP_DELAY={model.hw.pp_delay})"
+        f"(GEN_DEPTH={depth}, GEN_SHIFT_DEPTH={SHIFT_DEPTH}, "
+        f"GEN_PP_DELAY={model.hw.pp_delay})"
     )
 
 

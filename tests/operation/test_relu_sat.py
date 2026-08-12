@@ -49,12 +49,11 @@ def _kernel_specific_checks():
 
         r_value = torch.nn.ReLU()(input)
         error, _ = relu_sat_inst.accuracy.analyze(r_value, verbose=True)
-        rmse = error.pow(2).mean().sqrt()
-        assert rmse <= CONFIG['tolerance_scale'] / math.sqrt(codec_config['timestep']), rmse
+        max_error = error.abs().max()
         assert relu_sat_inst.relu_sat.timestep_cur == codec_config['timestep']
         relu_sat_inst.reset()
         assert relu_sat_inst.relu_sat.timestep_cur == 0
-        print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')
+        print(f'[{device}] max_error={max_error:.4f}, time: {elapsed.seconds * 1000:.1f} ms')
 
     print('Test passed.')
 
@@ -67,7 +66,7 @@ def make_values(_polarity):
     return (torch.linspace(-1.0, 1.0, 128),)
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(-1.0, 1.0, 131072),)
 
 
@@ -77,15 +76,17 @@ def analytic_reference(values, _polarity):
 
 def known_answer_case(_polarity):
     values = torch.tensor([-1.0, 0.0, 1.0])
-    return (values,), torch.tensor([0.0, 0.0, 1.0]), 0.35
+    # The saturating counter holds rate 0 and rate 0.5 at bipolar zero and
+    # passes rate 1 through, leaving only the encoder's 1 / N rate step. The
+    # tolerance is twice that step in bipolar value units.
+    return (values,), torch.tensor([0.0, 0.0, 1.0])
 
 
 CONFIG = {
     'polarities': ['bipolar'],
-    'tolerance_scale': 5.5,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,

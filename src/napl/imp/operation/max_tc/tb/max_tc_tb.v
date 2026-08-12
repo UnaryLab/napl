@@ -6,9 +6,9 @@
 
 module max_tc_tb;
     reg  i_input_0, i_input_1;
-    wire o_out;
+    wire o_output;
 
-    max_tc dut (.i_input_0(i_input_0), .i_input_1(i_input_1), .o_out(o_out));
+    max_tc dut (.i_input_0(i_input_0), .i_input_1(i_input_1), .o_output(o_output));
 
     integer fd, code, n, fails;
     reg a, b, exp_out;
@@ -29,8 +29,8 @@ module max_tc_tb;
                 i_input_1 = b;
                 #1;
                 n = n + 1;
-                if (o_out !== exp_out) begin
-                    $display("FAIL in_0=%b in_1=%b : got %b exp %b", a, b, o_out, exp_out);
+                if (o_output !== exp_out) begin
+                    $display("FAIL in_0=%b in_1=%b : got %b exp %b", a, b, o_output, exp_out);
                     fails = fails + 1;
                 end
             end

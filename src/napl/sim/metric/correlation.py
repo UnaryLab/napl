@@ -28,7 +28,7 @@ class correlation(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import correlation
+        from napl.sim.metric import correlation
 
         metric = correlation()
         stream = torch.tensor([1.0, 1.0, 0.0, 0.0])
@@ -116,7 +116,7 @@ class correlation(napl_base):
             else:
                 self.input_1_d.resize_as_(input_1_d).copy_(input_1_d)
 
-        # addcmul and add promote bool inputs to the accumulator dtype exactly.
+        # Bool masks mark which elements of each stream carry a one this timestep.
         input_1_is_1 = torch.ne(input_1, 0)
         input_2_is_1 = torch.ne(input_2, 0)
 
@@ -182,7 +182,7 @@ class correlation(napl_base):
 
         Returns:
             A pair containing the per-element SCC tensor and its complete
-            :class:`napl.sim.metric._shared.Analysis` summary.
+            ``Analysis`` summary.
 
         This method does not change the accumulated metric state.
 
@@ -196,12 +196,12 @@ class correlation(napl_base):
             message = 'Metric is not valid. Please call forward() before analyze().'
             logger.error(message)
             raise AssertionError(message)
-        correlation = self.correlation
+        corr_val = self.correlation
         result = analyze(
-            correlation,
+            corr_val,
             verbose=verbose,
             report='Correlation',
             value='correlation',
             timestep=self.timestep_cur,
         )
-        return correlation, result
+        return corr_val, result

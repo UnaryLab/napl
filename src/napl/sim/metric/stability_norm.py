@@ -88,7 +88,7 @@ class stability_norm(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import stability_norm
+        from napl.sim.metric import stability_norm
 
         metric = stability_norm(torch.ones(1))
         for _ in range(2):
@@ -154,6 +154,8 @@ class stability_norm(napl_base):
         self.max_prob: torch.Tensor
         self.register_buffer('max_prob', (prob + half).clamp(max=1).detach())
 
+        self.polarity_io = {'input': self.polarity}
+
 
     def _reset(self):
         """
@@ -165,12 +167,12 @@ class stability_norm(napl_base):
         pass
 
 
-    def forward(self, spike):
+    def forward(self, input):
         """
         Record one spike-stream timestep for normalized-stability analysis.
 
         Args:
-            spike: Current 0/1 spike tensor with the same logical shape as
+            input: Current 0/1 spike tensor with the same logical shape as
                 ``source``.
 
         Calling the metric increments its timestep and advances the child
@@ -182,7 +184,7 @@ class stability_norm(napl_base):
 
             metric(torch.ones(1))
         """
-        self.stability(spike)
+        self.stability(input)
 
 
     @property
@@ -233,7 +235,7 @@ class stability_norm(napl_base):
 
         Returns:
             A pair containing the per-element normalized-stability tensor and its
-            complete :class:`napl.sim.metric._shared.Analysis` summary.
+            complete ``Analysis`` summary.
 
         This method does not change the accumulated metric state.
 
@@ -247,12 +249,12 @@ class stability_norm(napl_base):
             message = 'Metric is not valid. Please call forward() before analyze().'
             logger.error(message)
             raise AssertionError(message)
-        stability_norm = self.stability_norm
+        stability_norm_val = self.stability_norm
         result = analyze(
-            stability_norm,
+            stability_norm_val,
             verbose=verbose,
             report='Normalized stability',
             value='normalized stability',
             timestep=self.timestep_cur,
         )
-        return stability_norm, result
+        return stability_norm_val, result

@@ -23,7 +23,7 @@ class lt_rc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import lt_rc
+        from napl.sim.operation import lt_rc
 
         compare = lt_rc()
         result = compare(torch.tensor([0], dtype=torch.int8),
@@ -55,8 +55,8 @@ class lt_rc(napl_base):
         #: Hardware latency and timing metadata for the registered comparator output.
         self.hw.pp_delay = 1
 
-        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc'}
-        self.polarity_io = {}
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
+        self.polarity_io = {'output': 'unipolar'}
         self.correlation_i = {}
         self.stability_flux = 1.0
 

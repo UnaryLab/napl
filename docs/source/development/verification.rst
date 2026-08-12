@@ -12,7 +12,7 @@ Simulation gates
 
 Execution model
    Streaming calls advance exactly one timestep. Reset and replay reproduce
-   outputs. Single-shot calls process a full tensor without advancing
+   outputs. Non-streaming calls process a full tensor without advancing
    ``timestep_cur``.
 
 Device coverage
@@ -41,8 +41,8 @@ Test entry points
 -----------------
 
 Streaming kernels start from ``tests/template_streaming_kernel.py``.
-Single-shot trainable kernels start from
-``tests/template_single_shot_trainable.py``. Both use suite drivers in
+Non-streaming trainable kernels start from
+``tests/template_non_streaming_trainable.py``. Both use suite drivers in
 ``napl.utils._shared_test``.
 
 Run a focused pytest target through the project environment::

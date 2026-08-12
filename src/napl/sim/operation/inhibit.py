@@ -28,22 +28,16 @@ class inhibit(napl_base):
     with :math:`y_{\max}=1` for unipolar and :math:`y_{\max}=+1` for bipolar
     streams.
 
-    Relative to Tzimpragos et al. (2019): napl shares that paper's value-to-time
-    direction, value = arrival time with a larger value arriving later, and
-    carries it on a falling rather than a rising edge. Complementing both inputs
-    and the output recovers the paper's rising-edge gate exactly, so the pass
-    condition :math:`x_0 \le x_1` above is the paper's :math:`j \le i` with no
-    mirroring, ``input_data`` being the data signal :math:`j` and ``input_inhibit`` the
-    inhibiting signal :math:`i`. This is the paper's Fig. 3(c) synchronous form,
-    in which a simultaneous arrival passes, rather than the Fig. 3(d)
-    asynchronous latch realizing strict :math:`j < i`.
+    This is the synchronous form of the gate, in which a simultaneous arrival
+    passes, rather than the asynchronous latch that realizes a strict
+    :math:`x_0 < x_1` block.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import inhibit
+        from napl.sim.operation import inhibit
 
         gate = inhibit()
         output = gate(torch.tensor([1], dtype=torch.int8),

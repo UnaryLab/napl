@@ -24,7 +24,7 @@ class shiftreg(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import shiftreg
+        from napl.sim.operation import shiftreg
 
         delay = shiftreg({'depth': 2})
         output = delay(torch.tensor([1], dtype=torch.int8))
@@ -59,7 +59,7 @@ class shiftreg(napl_base):
         #: Circular slot each element reads and then replaces, one index per element.
         self.head: torch.Tensor
         self.register_buffer('head', torch.zeros((), dtype=torch.long))
-        # reg[head] is depth cycles old; RTL reset uses the same alternating i % 2 pattern.
+        # reg[head] is depth cycles old, so the modeled latency equals depth.
         #: Hardware latency and timing metadata, with latency equal to :attr:`depth`.
         self.hw.pp_delay = self.depth
 
@@ -82,7 +82,7 @@ class shiftreg(napl_base):
         self.head.resize_(()).zero_()
 
 
-    def forward(self, input: torch.tensor):
+    def forward(self, input: torch.Tensor):
         """
         Push one input timestep through the shift register.
 

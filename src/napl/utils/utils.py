@@ -234,7 +234,7 @@ def interpolate_oneD_linear(desired_x, known):
 
 def interpolate_oneD_quadratic(desired_x, known):
     """
-    utility function that performs 1D linear interpolation with a known energy value
+    utility function that performs 1D quadratic interpolation with a known energy value
     :param desired_x: integer value of the desired attribute/argument
     :param known: list of dictionary [{x: <value>, y: <energy>}]
     :return energy value with desired attribute/argument

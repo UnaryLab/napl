@@ -15,7 +15,7 @@ class min_rc(napl_base):
        y = \min(p_0,p_1).
 
     Alongside the selected stream, the call returns the running argmin index,
-    where ``1`` denotes ``input_0`` and ``0`` denotes ``input_1``. Before any
+    where ``0`` denotes ``input_0`` and ``1`` denotes ``input_1``. Before any
     stream difference is observed, the returned index is ``1``.
 
     .. rubric:: Example
@@ -23,7 +23,7 @@ class min_rc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import min_rc
+        from napl.sim.operation import min_rc
 
         minimum = min_rc()
         spike, index = minimum(torch.tensor([0], dtype=torch.int8),
@@ -47,7 +47,7 @@ class min_rc(napl_base):
         """
         super().__init__(config, [], optional_key_list=['polarity'], polarity_required=False)
 
-        #: Previous selection decision used to route the synchronized minimum stream.
+        #: Previous selection decision used to route the minimum stream to the output.
         self.index: torch.Tensor
         self.register_buffer('index', torch.zeros(1, dtype=torch.int8))
         #: Skew synchronizer that correlates the two input streams before selection.
@@ -55,7 +55,7 @@ class min_rc(napl_base):
         #: Hardware latency and timing metadata for the combinational minimum output.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
+        self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc', 'index': 'rc'}
         self.polarity_io = {}
         self.correlation_i = {}
         self.stability_flux = 1.0
@@ -63,7 +63,7 @@ class min_rc(napl_base):
 
     def _reset(self):
         """
-        Restore the local comparison state to its initial value.
+        Restore the local selection state to choose the second input.
         """
         self.index.resize_(1).zero_()
 
@@ -78,8 +78,8 @@ class min_rc(napl_base):
 
         Returns:
             A pair ``(output, index)``. ``output`` is selected using the prior
-            state, while ``index`` is the updated state where ``1`` selects the
-            first input and ``0`` selects the second.
+            state, while ``index`` is the updated argmin, where ``0`` denotes the
+            first input and ``1`` denotes the second.
 
         **Example:**
 

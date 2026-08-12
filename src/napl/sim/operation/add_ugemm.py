@@ -22,16 +22,17 @@ class add_ugemm(napl_base):
     The number of reduced streams is taken from the first input and stays fixed
     until ``reset()``.
 
-    The accumulator width bounds the running accumulation to the signed range of
-    that width, so the realized output rate departs from the target once the
-    accumulation reaches the range.
+    The accumulator width bounds the running accumulation: to the signed range of
+    that width in scaled mode, and to that range around the emitted-spike count in
+    non-scaled mode. The realized output rate departs from the target once the
+    accumulation reaches the bound.
 
     .. rubric:: Example
 
     .. code-block:: python
 
         import torch
-        from napl import add_ugemm
+        from napl.sim.operation import add_ugemm
 
         adder = add_ugemm({'polarity': 'unipolar', 'scaled': True, 'width': 10})
         output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
@@ -152,7 +153,6 @@ class add_ugemm(napl_base):
                 updated = updated.clamp(self.acc_min, self.acc_max)
             self.accumulator.resize_as_(updated).copy_(updated.detach())
 
-        # Integer spikes promote exactly into the ntype accumulators.
         if self.scaled:
             output = torch.ge(self.accumulator, self.acc_bound).type(self.stype)
             self.accumulator.sub_(output, alpha=self.acc_bound)

@@ -19,7 +19,7 @@ module signabs_tb;
         .i_rst_n (rst_n),
         .i_input    (in_bit),
         .o_sign  (sign_bit),
-        .o_abs   (abs_bit)
+        .o_magnitude   (abs_bit)
     );
 
     integer fd, code, n, fails;

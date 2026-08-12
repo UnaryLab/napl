@@ -18,10 +18,6 @@ regime the test's `gen_rand_tensor` covers.
 import torch
 
 from napl.sim.operation import encode
-# `encode` applies this to its own configuration, so every encoder a generator
-# builds is covered whether or not the generator calls it. Generators call it
-# directly for a model configuration that never reaches an encoder.
-from napl.sim.operation.encode import require_seeded_sys  # noqa: F401
 
 
 def encode_value(codec_config, value):

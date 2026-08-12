@@ -11,12 +11,12 @@ module mul_gaines_tb;
     mul_gaines_unipolar dut_uni (
         .i_input_0(i_input_0),
         .i_input_1(i_input_1),
-        .o_out(o_uni)
+        .o_output(o_uni)
     );
     mul_gaines_bipolar dut_bi (
         .i_input_0(i_input_0),
         .i_input_1(i_input_1),
-        .o_out(o_bi)
+        .o_output(o_bi)
     );
 
     integer fd;

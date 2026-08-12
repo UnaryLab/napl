@@ -8,15 +8,15 @@
 module min_rc_tb;
     reg  clk, rst_n;
     reg  in_0, in_1;
-    wire o_min, o_argmin;
+    wire o_output, o_index;
 
     min_rc dut (
         .i_clk   (clk),
         .i_rst_n (rst_n),
         .i_input_0  (in_0),
         .i_input_1  (in_1),
-        .o_min   (o_min),
-        .o_argmin(o_argmin)
+        .o_output (o_output),
+        .o_index  (o_index)
     );
 
     // 10ns clock
@@ -54,14 +54,14 @@ module min_rc_tb;
                 in_1 = b;
                 #1;
                 n = n + 1;
-                if (o_min !== exp_min) begin
+                if (o_output !== exp_min) begin
                     $display("FAIL[min] cyc=%0d in_0=%b in_1=%b : got %b exp %b",
-                             n, a, b, o_min, exp_min);
+                             n, a, b, o_output, exp_min);
                     fails = fails + 1;
                 end
-                if (o_argmin !== exp_arg) begin
+                if (o_index !== exp_arg) begin
                     $display("FAIL[arg] cyc=%0d in_0=%b in_1=%b : got %b exp %b",
-                             n, a, b, o_argmin, exp_arg);
+                             n, a, b, o_index, exp_arg);
                     fails = fails + 1;
                 end
                 // advance one timestep: latch dff/cnt next-state

@@ -7,9 +7,9 @@
 module mul_gaines_unipolar (
     input  wire i_input_0,
     input  wire i_input_1,
-    output wire o_out
+    output wire o_output
 );
-    assign o_out = i_input_0 & i_input_1;
+    assign o_output = i_input_0 & i_input_1;
 endmodule
 
 `default_nettype wire

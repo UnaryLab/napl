@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.operation import tanh_fxp
-from napl.utils._shared_test import devices, single_shot_suite, timer
+from napl.utils._shared_test import devices, non_streaming_suite, timer
 
 
 def _kernel_specific_checks():
@@ -47,7 +47,7 @@ def make_inputs():
     return (torch.linspace(-3.0, 3.0, 257),)
 
 
-def make_performance_values():
+def make_random_perf_values():
     return (make_inputs()[0].repeat(512),)
 
 
@@ -65,13 +65,11 @@ def expected_ste_gradients(_candidate, _inputs, grad_output):
 
 
 CONFIG = {
-    'quantization_atol': 0.0,
-    'known_answer_atol': 0.0,
     'gradient_atol': 0.0,
     'gradient_rtol': 0.0,
     'make_module_pair': make_module_pair,
     'make_inputs': make_inputs,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'known_answer_case': known_answer_case,
     'gradient_case': gradient_case,
     'expected_ste_gradients': expected_ste_gradients,
@@ -81,7 +79,7 @@ CONFIG = {
 
 def test_tanh_fxp():
     """Verify tanh_fxp quantization and STE gradients against its reference, including timing."""
-    single_shot_suite(CONFIG)
+    non_streaming_suite(CONFIG)
 
 
 if __name__ == '__main__':

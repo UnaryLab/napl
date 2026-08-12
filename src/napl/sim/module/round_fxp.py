@@ -7,11 +7,9 @@ from napl.utils import pow2_rshift
 
 class _round_ste_fn(torch.autograd.Function):
     """
-    Straight-through rounding: round to a fixed-point grid on the forward pass, pass
-    the gradient through unchanged on the backward pass. Plain round()/floor()/ceil()
-    have zero gradient everywhere, which is useless for quantization-aware training.
-    Semantics: round(x << f).clamp(min,max) >> f, using the float-safe pow2 shift shims
-    instead of integer operators.
+    Straight-through rounding: the forward pass computes
+    ``round(x << fracwidth).clamp(min_val, max_val) >> fracwidth`` with the float-safe
+    pow2 shift shims, and the backward pass passes the gradient through unchanged.
     """
 
 
@@ -21,6 +19,8 @@ class _round_ste_fn(torch.autograd.Function):
         return pow2_rshift(scaled, fracwidth)
 
 
+    # Rounding has a zero derivative everywhere, so the pass-through stands in for it and
+    # keeps quantization-aware training able to update the input.
     @staticmethod
     def backward(ctx, grad_output):
         return grad_output, None, None, None
@@ -62,7 +62,7 @@ class round_fxp(napl_base):
     r"""
     Quantize a tensor to a signed fixed-point format.
 
-    This single-shot binary-domain kernel rounds to increments of
+    This non-streaming binary-domain kernel rounds to increments of
     ``2**(-fracwidth)`` and clamps to the representable range. Use it for
     quantization-aware training because the input gradient passes through unchanged.
 
@@ -83,12 +83,12 @@ class round_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import round_fxp
+        from napl.sim.module import round_fxp
 
         operation = round_fxp({'intwidth': 3, 'fracwidth': 4})
         output = operation(torch.tensor([0.1, -0.3]))
     """
-    #: Marks this quantizer as a single-shot tensor operation.
+    #: Marks this quantizer as a non-streaming tensor operation.
     streaming = False
 
 
@@ -110,6 +110,7 @@ class round_fxp(napl_base):
 
               - **intwidth**: Number of integer magnitude bits; the default is ``3``.
               - **fracwidth**: Number of fractional bits; the default is ``4``.
+              - **polarity**: Optional stream encoding, accepted but unused by this kernel.
               - **name**: Optional module name.
         """
         super().__init__(config, ['intwidth', 'fracwidth'], optional_key_list=['polarity'])
@@ -123,8 +124,6 @@ class round_fxp(napl_base):
         #: Smallest scaled integer retained before conversion back to a tensor value.
         self.min_val = -(2**(self.intwidth + self.fracwidth))
         # The simulator applies the saturating clamp combinationally.
-        #: Modeled scalar latency of the single-shot quantizer.
-        self.delay = 0
 
         self.encoding_io = {}
         self.polarity_io = {}

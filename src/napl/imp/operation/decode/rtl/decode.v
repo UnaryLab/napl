@@ -11,13 +11,13 @@ module decode #(
 ) (
     input  wire             i_clk,
     input  wire             i_rst_n,
-    input  wire             i_spike,        // input spike stream
+    input  wire             i_input,        // input spike stream
     output wire [WIDTH:0]   o_spike_count   // running count, including this cycle's spike
 );
     // WIDTH+1 bits: the count reaches 2**WIDTH after a full timestep run.
     reg [WIDTH:0] count;
 
-    assign o_spike_count = count + {{WIDTH{1'b0}}, i_spike};
+    assign o_spike_count = count + {{WIDTH{1'b0}}, i_input};
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

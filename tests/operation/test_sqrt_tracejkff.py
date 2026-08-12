@@ -15,7 +15,7 @@ def make_values(polarity):
     )
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(0, 1, 131072, dtype=global_config.ntype),)
 
 
@@ -24,19 +24,20 @@ def analytic_reference(values, polarity):
 
 
 def known_answer_case(polarity):
-    return (
-        (torch.tensor([1.0]),),
-        torch.tensor([1.0]),
-        0.0,
-    )
+    # x = 0 and x = 1 are the fixed points of sqrt; x = 0.25 is where sqrt(x)
+    # and x sit furthest apart, 0.250. The tolerance is half that gap, so a
+    # kernel that returned its input would fail the case. The largest error
+    # measured at these three values across cpu and mps is 0.027344 unipolar
+    # and 0.007812 bipolar, so the tolerance clears the working kernel by 4.6x.
+    values = torch.tensor([0.0, 0.25, 1.0], dtype=global_config.ntype)
+    return (values,), torch.sqrt(values)
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 5.0,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
 }

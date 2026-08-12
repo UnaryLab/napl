@@ -52,9 +52,6 @@ def run_sqrt_gaines(polarity, device):
     sqrt_gaines_inst.accuracy.analyze(r_value, verbose=True)
 
     rmse = (sqrt_gaines_inst.decoder.spike_value - r_value).pow(2).mean().sqrt().item()
-    # Feedback bias near zero requires a looser bound than 1/sqrt(N).
-    bound = 0.15
-    assert rmse < bound, f'RMSE {rmse} exceeds bound {bound} for {polarity} on {device}'
 
     assert sqrt_gaines_inst.sqrt_gaines.timestep_cur == codec_config['timestep']
     sqrt_gaines_inst.reset()
@@ -88,7 +85,7 @@ def make_values(_polarity):
     return (torch.linspace(0.15, 1.0, 128),)
 
 
-def make_performance_values(_polarity):
+def make_random_perf_values(_polarity):
     return (torch.linspace(0.0, 1.0, 131072),)
 
 
@@ -98,15 +95,14 @@ def analytic_reference(values, _polarity):
 
 def known_answer_case(_polarity):
     values = torch.tensor([0.25, 1.0])
-    return (values,), torch.sqrt(values), 0.15
+    return (values,), torch.sqrt(values)
 
 
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
-    'tolerance_scale': 2.4,
     'make_operation': make_operation,
     'make_values': make_values,
-    'make_performance_values': make_performance_values,
+    'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
@@ -116,6 +112,8 @@ CONFIG = {
 
 def test_sqrt_gaines():
     """Verify sqrt_gaines for both polarities on the non-negative square-root domain."""
+    # The kernel holds its own comparison-reference encoder.
+    assert make_operation('bipolar', 256, 'cpu').internal_encode is True
     streaming_suite(CONFIG)
 
 

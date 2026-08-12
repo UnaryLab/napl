@@ -22,12 +22,12 @@ class relu_fxp(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_fxp
+        from napl.sim.operation import relu_fxp
 
         operation = relu_fxp({'scale': 1.0})
         output = operation(torch.tensor([-1.0, 0.5, 2.0]))
     """
-    #: Marks this activation as a single-shot tensor operation.
+    #: Marks this activation as a non-streaming tensor operation.
     streaming = False
 
 
@@ -56,7 +56,7 @@ class relu_fxp(napl_base):
 
     def _reset(self):
         """
-        Reset no local state; this single-shot kernel is stateless.
+        Reset no local state; this non-streaming kernel is stateless.
         """
         pass
 

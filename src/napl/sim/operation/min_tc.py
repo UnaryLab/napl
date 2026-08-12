@@ -22,7 +22,7 @@ class min_tc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import min_tc
+        from napl.sim.operation import min_tc
 
         minimum = min_tc()
         output = minimum(torch.tensor([1], dtype=torch.int8),

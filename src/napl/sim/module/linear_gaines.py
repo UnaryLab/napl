@@ -1,7 +1,9 @@
+import math
+
 import torch
 
 from napl.sim.base import napl_base
-from napl.sim.operation import add_gaines, encode
+from napl.sim.operation import add_gaines, encode, gen_num_seq
 from loguru import logger
 
 
@@ -9,7 +11,7 @@ class linear_gaines(napl_base):
     r"""Apply a streaming Gaines ``gMUL + gADD`` fully connected layer.
 
     Use this variant to reproduce the first UnarySim Gaines linear design or to
-    compare scaled random-threshold and non-scaled unipolar OR addition. Every
+    compare scaled MUX-select and non-scaled unipolar OR addition. Every
     input feature carries its own rate-coded weight sequence, taken from a distinct
     Sobol dimension, and a Gaines adder replaces :class:`linear_mix`'s scaled accumulator,
     so the target is the affine map
@@ -35,7 +37,7 @@ class linear_gaines(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import linear_gaines
+        from napl.sim.module import linear_gaines
 
         layer = linear_gaines(torch.zeros(3, 2),
                                config={"polarity": "bipolar", "timestep": 4,
@@ -79,15 +81,16 @@ class linear_gaines(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: First weight sequence dimension, with one dimension per input feature above it, the bias on ``dim + in_features`` and the scaled threshold on ``dim + in_features + 1``; the default is ``2``.
-              - **scaled**: Use random-threshold scaled addition when ``True``; the default is ``True``.
+              - **dim**: First weight sequence dimension, with one dimension per input feature above it, the bias on ``dim + in_features`` and the scaled adder's MUX select sequence on ``dim + in_features + 1``; the default is ``2``.
+              - **scaled**: Use MUX-select scaled addition, which picks one input per timestep by a Sobol-derived index, when ``True``; the default is ``True``.
               - **name**: Optional instance label.
 
         In scaled mode, ``in_features + has_bias`` must be a power of two.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['dim', 'scaled'], polarity_required=True)
 
-        #: Whether the Gaines adder uses random-threshold scaled addition.
+        #: Whether the Gaines adder uses MUX-select scaled addition, selecting one
+        #: input bit per timestep by a Sobol-derived index.
         self.scaled = config.get('scaled', True)
         if self.polarity == 'bipolar' and not self.scaled:
             message = 'Non-scaled Gaines addition in linear_gaines does not support bipolar data.'
@@ -118,13 +121,14 @@ class linear_gaines(napl_base):
                 f'<{config["generator"]}> does not decorrelate by dim (identical sequences across '
                 f'operands). Use a sobol-family generator, or decorrelate the input and weight '
                 f'streams by distinct seeds.')
+        # One gen_num_seq per input feature is stacked here so forward thresholds the whole stack in a single torch.gt, standing in for encode at its ceil(log2(timestep)) period width without building encode module objects.
+        seq_width = math.ceil(math.log2(config['timestep']))
         w_num_seq = torch.stack([
-            encode({
-                'polarity': self.polarity,
-                'timestep': config['timestep'],
+            gen_num_seq(config={
+                'width': seq_width,
                 'generator': config['generator'],
                 'dim': dim + feature,
-            }).num_seq
+            })
             for feature in range(self.in_features)
         ], dim=1)
         #: Encode-owned threshold sequences, one column per input feature.
@@ -174,8 +178,8 @@ class linear_gaines(napl_base):
         #: Hardware latency and timing metadata for the streaming layer.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input_spike': 'rc', 'output': 'rc'}
-        self.polarity_io = {'input_spike': self.polarity, 'output': self.polarity}
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
         self.stability_flux = 1.0
 
@@ -185,11 +189,11 @@ class linear_gaines(napl_base):
         pass
 
 
-    def forward(self, input_spike):
+    def forward(self, input):
         """Process one input-spike timestep.
 
         Args:
-            input_spike: ``0``/``1`` tensor whose last dimension is
+            input: ``0``/``1`` tensor whose last dimension is
                 ``in_features``.
 
         Returns:
@@ -198,9 +202,10 @@ class linear_gaines(napl_base):
         The call advances the optional bias encoder, Gaines adder, and
         ``timestep_cur``. The weight sequence row follows ``timestep_cur``.
         """
-        xf = input_spike.type(self.ntype)
+        xf = input.type(self.ntype)
         weight_prob = (self.weight + 1) / 2 if self.polarity == 'bipolar' else self.weight
         sequence_index = (self.timestep_cur - 1) % self.w_num_seq.size(0)
+        # Inline threshold standing in for encode, which offers no per-feature sequence stack.
         w_bit = torch.gt(
             weight_prob, self.w_num_seq[sequence_index]
         ).type(self.ntype)

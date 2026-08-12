@@ -11,7 +11,7 @@ module relu_cnt #(
     input  wire i_clk,
     input  wire i_rst_n,
     input  wire i_input,    // input spike (bipolar rate-coded)
-    output wire o_out    // ReLU output spike
+    output wire o_output // ReLU output spike
 );
     localparam [WIDTH-1:0] MAX  = {WIDTH{1'b1}};        // 2^WIDTH - 1
     localparam [WIDTH-1:0] HALF = (1 << (WIDTH - 1));   // 2^(WIDTH-1)
@@ -20,11 +20,11 @@ module relu_cnt #(
 
     wire below_half = (acc < HALF);
 
-    assign o_out = i_input | below_half;
+    assign o_output = i_input | below_half;
 
-    // Up/down saturating counter: +1 when o_out, -1 otherwise, clamped to [0, MAX].
+    // Up/down saturating counter: +1 when o_output, -1 otherwise, clamped to [0, MAX].
     wire [WIDTH-1:0] acc_next =
-        o_out ? ((acc == MAX) ? MAX : acc + 1'b1)
+        o_output ? ((acc == MAX) ? MAX : acc + 1'b1)
               : ((acc == {WIDTH{1'b0}}) ? {WIDTH{1'b0}} : acc - 1'b1);
 
     always @(posedge i_clk or negedge i_rst_n) begin

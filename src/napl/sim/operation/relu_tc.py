@@ -15,11 +15,8 @@ class relu_tc(napl_base):
 
        y = \max(x,0).
 
-    Because :math:`\max(x,0)` is the temporal maximum of the input against a
-    stream carrying the value zero, the kernel generates that zero reference
-    internally with a composed :class:`napl.encode` instance and takes the
-    temporal maximum against it, which is the comparison :class:`napl.max_tc`
-    performs on two supplied streams.
+    The zero reference stream is generated internally, so the kernel takes a
+    single input stream.
 
     napl temporal streams emit ones and then zeros, with the falling edge
     later for larger values, and a bipolar zero falls at the midpoint of the
@@ -32,7 +29,7 @@ class relu_tc(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import relu_tc
+        from napl.sim.operation import relu_tc
 
         operation = relu_tc({'width': 8})
         output = operation(torch.tensor([0.0, 1.0]))
@@ -43,6 +40,9 @@ class relu_tc(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: The zero reference is encoded from a cycle counter, so the RTL
+    #: counterpart holds its own encoder instead of sharing an external one.
+    internal_encode = True
 
 
     def __init__(self, config={'width': 8}):
@@ -113,5 +113,6 @@ class relu_tc(napl_base):
             output = operation(torch.tensor([0.0, 1.0]))
         """
         reference_encode_bit = self.reference_encode(input.new_zeros(1))
+        # ORing two temporal codes keeps the later falling edge, the temporal maximum.
         output = input.type(torch.int8) | reference_encode_bit.type(torch.int8)
         return output.type(self.stype)

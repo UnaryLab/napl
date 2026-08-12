@@ -10,7 +10,7 @@ module square_dff_bipolar #(
     input  wire i_clk,    // sample clock; one tick == one Python forward()
     input  wire i_rst_n,  // active-low reset -> Python reset() (clears delay reg)
     input  wire i_input,     // input spike stream
-    output wire o_out     // squared product spike
+    output wire o_output  // squared product spike
 );
     // depth-DEPTH delay line: in_d[0] is the oldest cell (the delayed copy used
     // this cycle); in_d[DEPTH-1] holds the most recently written input.
@@ -38,6 +38,6 @@ module square_dff_bipolar #(
     endgenerate
 
     // Combinational XNOR of the current input and its oldest delayed copy.
-    assign o_out = ~(i_input ^ in_d[0]);
+    assign o_output = ~(i_input ^ in_d[0]);
 endmodule
 `default_nettype wire

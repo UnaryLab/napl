@@ -6,13 +6,13 @@ the Verilog against the *actual* simulator, not a hand-derived truth table.
 sync_skewed is stateful: a saturating WIDTH-bit counter buffers the lead/lag
 between two spike streams. reset() sets cnt = 0. We drive the model from reset()
 with a deterministic input stream chosen to exercise every regime (push, pop,
-00/11 pass-through, and both saturation limits) and record (in_1, in_2, out_1,
-out_2) every cycle. The output at cycle t is what forward() returns at that
+00/11 pass-through, and both saturation limits) and record (in_0, in_1, out_0,
+out_1) every cycle. The output at cycle t is what forward() returns at that
 timestep: computed from cnt BEFORE the update.
 
 Output: ../vec/sync_skewed.vec, one line per cycle:
 
-    <in_1> <in_2> <out_1> <out_2>     (each 0/1, space-separated)
+    <in_0> <in_1> <out_0> <out_1>     (each 0/1, space-separated)
 
 The sizing param WIDTH is the single source of truth here: it is read from the
 op config (mirroring test_sync_skewed.py's sync_skewed_config), used to build the
@@ -51,10 +51,10 @@ def build_stream():
 def emit_segment(model, f, stream):
     rows = 0
     for a, b in stream:
-        in_1 = torch.tensor(a, dtype=model.stype)
-        in_2 = torch.tensor(b, dtype=model.stype)
-        o1, o2 = model(in_1, in_2)
-        f.write(f"{a} {b} {int(o1.item())} {int(o2.item())}\n")
+        in_0 = torch.tensor(a, dtype=model.stype)
+        in_1 = torch.tensor(b, dtype=model.stype)
+        out_0, out_1 = model(in_0, in_1)
+        f.write(f"{a} {b} {int(out_0.item())} {int(out_1.item())}\n")
         rows += 1
     return rows
 

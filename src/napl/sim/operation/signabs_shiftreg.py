@@ -29,7 +29,7 @@ class signabs_shiftreg(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import signabs_shiftreg
+        from napl.sim.operation import signabs_shiftreg
 
         operation = signabs_shiftreg({'depth': 8})
         sign, magnitude = operation(torch.tensor([0.0, 1.0]))
@@ -81,8 +81,8 @@ class signabs_shiftreg(napl_base):
         #: Hardware latency and timing metadata for the combinational outputs.
         self.hw.pp_delay = 0
 
-        self.encoding_io = {'input': 'rc', 'magnitude': 'rc'}
-        self.polarity_io = {'input': 'bipolar', 'magnitude': 'unipolar'}
+        self.encoding_io = {'input': 'rc', 'sign': 'rc', 'magnitude': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'sign': 'unipolar', 'magnitude': 'unipolar'}
         self.correlation_i = {}
         self.stability_flux = 1.0
 

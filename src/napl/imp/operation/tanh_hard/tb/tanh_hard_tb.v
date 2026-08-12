@@ -6,9 +6,9 @@
 
 module tanh_hard_tb;
     reg  i_input;
-    wire o_out;
+    wire o_output;
 
-    tanh_hard dut (.i_input(i_input), .o_out(o_out));
+    tanh_hard dut (.i_input(i_input), .o_output(o_output));
 
     integer fd, code, n, fails;
     reg in_b, exp_out;
@@ -28,8 +28,8 @@ module tanh_hard_tb;
                 i_input = in_b;
                 #1;
                 n = n + 1;
-                if (o_out !== exp_out) begin
-                    $display("FAIL cycle %0d: i_input=%b got %b exp %b", n, in_b, o_out, exp_out);
+                if (o_output !== exp_out) begin
+                    $display("FAIL cycle %0d: i_input=%b got %b exp %b", n, in_b, o_output, exp_out);
                     fails = fails + 1;
                 end
             end

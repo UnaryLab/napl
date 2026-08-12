@@ -49,7 +49,7 @@ from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "div_iscb.vec"
 
-# Width of the bi2uni helper baked into div_iscb_bi2uni.v.
+# Width the bipolar variant elaborates its bi2uni helpers at.
 B2U_WIDTH = 3
 # Six silent cycles then two spiking ones, appended after the main stream: the
 # sixth silent cycle presents -5 to a clamp at -4.

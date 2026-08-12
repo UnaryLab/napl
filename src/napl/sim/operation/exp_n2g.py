@@ -25,7 +25,7 @@ class exp_n2g(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import exp_n2g
+        from napl.sim.operation import exp_n2g
 
         operation = exp_n2g()
         output = operation(torch.tensor([0.0, 1.0]))

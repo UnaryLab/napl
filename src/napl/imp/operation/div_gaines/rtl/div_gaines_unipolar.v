@@ -12,7 +12,7 @@ module div_gaines_unipolar #(
     input  wire i_rst_n,
     input  wire i_dividend,
     input  wire i_divisor,
-    output wire o_out
+    output wire o_output
 );
     localparam [WIDTH-1:0] CNT_MAX = {WIDTH{1'b1}};
     localparam [WIDTH-1:0] CNT_INIT = {
@@ -29,9 +29,9 @@ module div_gaines_unipolar #(
     initial $readmemb("vec/div_gaines_rom.hex", rng_rom);
 
     assign rng_value = rng_rom[rng_idx];
-    assign o_out = (cnt > rng_value);
+    assign o_output = (cnt > rng_value);
     assign increment = i_dividend;
-    assign decrement = o_out & i_divisor;
+    assign decrement = o_output & i_divisor;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin

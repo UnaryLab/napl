@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 // Rate-coded gt_rc equivalent with a width-2 sync_skewed counter.
-// o_out is the pre-update result register, so pp_delay=1.
+// o_output is the pre-update result register, so pp_delay=1.
 // Each posedge is one Python timestep; active-low reset loads result=1, cnt=0.
 
 
@@ -10,7 +10,7 @@ module gt_rc (
     input  wire i_rst_n,
     input  wire i_input_0,
     input  wire i_input_1,
-    output wire o_out
+    output wire o_output
 );
     reg       dff;        // result register, reset to 1
     reg [1:0] cnt;        // sync_skewed skew counter, 0..3, reset to 0
@@ -22,7 +22,7 @@ module gt_rc (
     wire cnt_not_min = (cnt != 2'd0);
     wire cnt_not_max = (cnt != 2'd3);
 
-    // sync_skewed output_1 (a's skewed stream): see header derivation.
+    // sync_skewed output_0 (a's skewed stream): see header derivation.
     wire sync_0 = diff ? (a ? ~cnt_not_max : cnt_not_min) : a;
     wire sync_1 = b;
 
@@ -54,6 +54,6 @@ module gt_rc (
         end
     end
 
-    assign o_out = dff;
+    assign o_output = dff;
 endmodule
 `default_nettype wire

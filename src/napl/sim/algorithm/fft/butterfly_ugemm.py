@@ -2,7 +2,7 @@ import torch
 from loguru import logger
 
 from napl.sim.base import napl_base
-from napl.sim.operation import add_any, mul_ugemm
+from napl.sim.operation import add_scale, mul_ugemm
 
 
 class butterfly_ugemm(napl_base):
@@ -45,7 +45,7 @@ class butterfly_ugemm(napl_base):
     The multiplier holds its own number sequence and accepts no sequence
     dimension, so every instance built from the same ``mul_config`` carries a
     bit-identical weight sequence. Chained instances still decorrelate, because
-    ``mul_ugemm`` advances its sequence index only on enabling timesteps: fed
+    ``mul_ugemm`` advances its sequence indices conditionally on the data: fed
     distinct data, their index pointers diverge and they read different points
     of the shared sequence.
 
@@ -54,11 +54,11 @@ class butterfly_ugemm(napl_base):
     .. code-block:: python
 
         import torch
-        from napl import decode, encode
-        from napl.sim.algorithm.fft import butterfly_ugemm
+        from napl.sim.operation import decode, encode
+        from napl.sim.algorithm import butterfly_ugemm
 
         codec = {'polarity': 'bipolar', 'timestep': 256, 'generator': 'sobol'}
-        adder = {'polarity': 'bipolar', 'scale': 3, 'width': 6}
+        adder = {'polarity': 'bipolar', 'scale': 3, 'intwidth': 6, 'fracwidth': 0}
         twiddle_real = torch.tensor([0.5])
         twiddle_imag = torch.tensor([0.5])
         operation = butterfly_ugemm(twiddle_real, twiddle_imag, codec, adder)
@@ -116,18 +116,25 @@ class butterfly_ugemm(napl_base):
                 ``"bipolar"``.
               - **scale**: Required output carry scale, reported afterwards as
                 :attr:`compensation`.
-              - **width**: Required signed accumulator width in bits, which must
-                satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``,
-                where the adder fan-in is ``entry = 3``, ``delta_max`` is the
-                largest per-timestep accumulator step ``(entry + scale) / 2``
+              - **intwidth**: Required integer bits of the signed accumulator,
+                including the sign bit.
+              - **fracwidth**: Required fractional bits of the signed
+                accumulator. The accumulator rail
+                ``acc_max = 2 ** (intwidth + fracwidth - 1) - 1`` must satisfy
+                ``acc_max >= (scale_raw - grid) + delta_max`` in raw units of
+                ``2 ** -fracwidth``, where the adder fan-in is
+                ``entry_raw = 3 * 2 ** fracwidth``, ``scale_raw`` is the
+                quantized scale in raw units, ``delta_max`` is the largest
+                per-timestep accumulator step ``(entry_raw + scale_raw) / 2``
                 for this bipolar adder, and ``grid`` is the accumulator step
-                (``0.5`` when ``entry - scale`` is odd, else ``1``). This bound
-                is static for ``scale >= entry``; for ``scale < entry`` the
-                width must also satisfy ``2 ** (width - 1) > entry``, a minimum
-                burst-headroom floor rather than a safety bound, since the
-                accumulator then drains by at most ``scale`` per timestep and
-                correctness is conditional on the long-run mean inflow staying
-                below ``scale`` (see :class:`add_any`).
+                (``0.5`` when ``entry_raw - scale_raw`` is odd, else ``1``).
+                This bound is static for ``scale >= entry``; for
+                ``scale < entry`` the accumulator must also satisfy
+                ``acc_max + 1 > entry_raw``, a minimum burst-headroom floor
+                rather than a safety bound, since the accumulator then drains by
+                at most ``scale`` per timestep and correctness is conditional on
+                the long-run mean inflow staying below ``scale`` (see
+                :class:`add_scale`).
               - **name**: Optional component label; the default is ``None``.
 
         Construction stores the twiddle factor and the per-lane sign and bias
@@ -163,37 +170,35 @@ class butterfly_ugemm(napl_base):
         self.lane = twiddle_real.numel()
         #: Conditional-spike multiplier for the four stacked twiddle products.
         self.mul_wx = mul_ugemm(dict(mul_config))
-        #: Adder fan-in: the input spike, the twiddle product, and the complement bias.
+        #: Adder fan-in covering the input spike and the two twiddle-product spikes.
         self.add_entry = 3
         #: Scaled unary adder that combines each input spike with its twiddle term.
-        self.add_y = add_any(dict(add_config))
+        self.add_y = add_scale(dict(add_config))
 
-        add_scale, add_width = self.add_y.scale, self.add_y.width
-        if not isinstance(add_width, int):
-            message = f'butterfly_ugemm accumulator width must be int: got <{add_width}>.'
-            logger.error(message)
-            raise AssertionError(message)
-        # Before thresholding, the accumulator holds the largest sub-threshold
-        # residue (scale - grid) plus one timestep's step, which the bipolar
-        # offset (entry - scale)/2 halves. For scale < entry the accumulator
-        # drains by at most scale per timestep, so the width also carries a
-        # burst-headroom floor that absorbs one worst-case timestep.
-        delta_max = (self.add_entry + add_scale) / 2
-        grid = 0.5 if (self.add_entry - add_scale) % 2 else 1
-        if (2 ** (add_width - 1) - 1 < (add_scale - grid) + delta_max
-                or (add_scale < self.add_entry and 2 ** (add_width - 1) <= self.add_entry)):
+        adder_scale = self.add_y.scale
+        # The fan-in and step bounds are restated in the accumulator's raw units of
+        # 2 ** -fracwidth to check that its rail holds the largest sub-threshold residue
+        # (scale - grid) plus one timestep's step delta_max, plus one worst-case burst
+        # timestep when scale is below the fan-in.
+        acc_max = self.add_y.acc_max
+        entry_raw = self.add_entry * 2**self.add_y.fracwidth
+        scale_raw = self.add_y.scale_raw
+        delta_max = (entry_raw + scale_raw) / 2
+        grid = 0.5 if (entry_raw - scale_raw) % 2 else 1
+        if (acc_max < (scale_raw - grid) + delta_max
+                or (scale_raw < entry_raw and acc_max + 1 <= entry_raw)):
             message = (
-                f'butterfly_ugemm accumulator width <{add_width}> too small for fan-in '
-                f'<{self.add_entry}> and scale <{add_scale}>: for this bipolar-only adder '
-                f'2**(width-1) - 1 must be >= (scale - grid) + delta_max, with grid <{grid}> '
-                f'and delta_max <{delta_max}>, and 2**(width-1) must be > entry when '
-                f'scale < entry, or partial sums saturate. Increase width.'
+                f'butterfly_ugemm accumulator maximum <{acc_max}> raw units too small for fan-in '
+                f'<{self.add_entry}> and scale <{adder_scale}>: for this bipolar-only adder '
+                f'acc_max must be >= (scale_raw - grid) + delta_max, with grid <{grid}> '
+                f'and delta_max <{delta_max}> in raw units of <{self.add_y.grid}>, and acc_max + 1 '
+                f'must be > entry when scale < entry, or partial sums saturate. Increase intwidth.'
             )
             logger.error(message)
             raise AssertionError(message)
 
         #: Factor the output streams are divided by, equal to the adder scale.
-        self.compensation = add_scale
+        self.compensation = adder_scale
 
         # The twiddle is a stage constant, so its stacked operand and the per-lane
         # sign and bias constants are built once instead of per call.
@@ -225,6 +230,8 @@ class butterfly_ugemm(napl_base):
         # Multiplication and addition are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming butterfly.
         self.hw.pp_delay = 0
+        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
+        self.internal_encode = any(part.internal_encode for part in self.children())
 
         #: Rate coding on every spike port, which the class neither encodes nor decodes.
         self.encoding_io = {port: 'rc' for port in

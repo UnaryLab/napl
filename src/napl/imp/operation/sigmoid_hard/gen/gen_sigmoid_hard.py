@@ -3,17 +3,21 @@ Generate golden test vectors for the sigmoid_hard RTL straight from napl's
 functional Python model (napl.sim.operation.sigmoid_hard) -- so the testbench checks
 the Verilog against the *actual* simulator, not a hand-derived truth table.
 
-sigmoid_hard is add_any(scale=2, width=3) fed the pre-reduced sum (input+1); the
+sigmoid_hard is add_scale(scale=2, intwidth=4) fed the pre-reduced sum (input+1); the
 unipolar and bipolar variants are numerically identical (bipolar offset
 (entry-scale)/2 = 0), so a single module covers both. It is stateful (an
 accumulator), so we drive a multi-cycle input stream and record per-cycle I/O,
 starting from model.reset() at t=0, and inject a MID-STREAM reset() to prove the
 RTL's i_rst_n reproduces the model's reset from a dirtied accumulator state.
 
-sigmoid_hard's config key_list is just ['polarity']; its scale=2 / width=3 are
-fixed inside the add_any submodule (intrinsic hard-sigmoid constants, not
-config-derived sizing keys), so there is no sizing parameter to inherit and the
-RTL is validated as-is (no <op>_params.vh emitted).
+sigmoid_hard's config key_list is ['polarity'] plus the optional `width`, which
+sets the add_scale submodule's intwidth and defaults to 4; scale=2 is an intrinsic
+hard-sigmoid constant. intwidth sets only the accumulator clamp bounds, and those
+are unreachable at every width the model accepts: add_scale rejects width below 3
+(scale 2 exceeds its accumulator maximum), and at width 3 the clamp is already
+[-4, 3] while the accumulator holds 0 or 1. So width changes no output bit, the
+RTL carries no sizing parameter, and the module is validated as-is (no
+<op>_params.vh emitted).
 
 Output: vec/sigmoid_hard.vec, one line per cycle:
 
