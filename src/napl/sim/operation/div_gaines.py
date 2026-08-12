@@ -105,7 +105,6 @@ class div_gaines(napl_base):
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}
         self.correlation_i = {('dividend', 'divisor'): 'zero'}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

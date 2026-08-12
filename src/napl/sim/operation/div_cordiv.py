@@ -110,7 +110,6 @@ class div_cordiv(napl_base):
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': 'unipolar', 'divisor': 'unipolar', 'output': 'unipolar'}
         self.correlation_i = {('dividend', 'divisor'): 'pos'}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

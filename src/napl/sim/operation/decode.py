@@ -74,7 +74,6 @@ class decode(napl_base):
         self.encoding_io = {}
         self.polarity_io = {'input': self.polarity}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

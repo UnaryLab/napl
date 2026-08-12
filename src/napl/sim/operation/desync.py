@@ -99,7 +99,6 @@ class desync(napl_base):
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
                             'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

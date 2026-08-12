@@ -307,6 +307,39 @@ def mgu_node(lanes=3, hidden=3, in_size=4, width=10, depth_ismul=6, n_hidden=Non
                        "config": config, "lanes": lanes}}
 
 
+def clamp_node(polarity, lo, hi, fracwidth=8, timestep=256):
+    """One clamp node with the given saturation bounds and fractional grid."""
+    return {"class": "clamp",
+            "config": {"polarity": polarity, "lo": lo, "hi": hi,
+                       "fracwidth": fracwidth, "timestep": timestep}}
+
+
+def eq_rc_node(tolerance, timestep=256, polarity="unipolar"):
+    """One eq_rc node with the given tolerance on the tenths grid."""
+    return {"class": "eq_rc",
+            "config": {"polarity": polarity, "tolerance": tolerance,
+                       "timestep": timestep}}
+
+
+def mul_scale_node(polarity, intwidth, fracwidth, scale):
+    """One mul_scale node with the given accumulator format and scale."""
+    return {"class": "mul_scale",
+            "config": {"polarity": polarity, "scale": scale,
+                       "intwidth": intwidth, "fracwidth": fracwidth}}
+
+
+def sub_scale_node(intwidth, fracwidth, scale):
+    """One sub_scale node with the given accumulator format and scale."""
+    return {"class": "sub_scale",
+            "config": {"scale": scale, "intwidth": intwidth, "fracwidth": fracwidth}}
+
+
+def sample_hold_node(timestep=256, trigger_timestep=100):
+    """One sample_hold node with the given trigger period."""
+    return {"class": "sample_hold",
+            "config": {"timestep": timestep, "trigger_timestep": trigger_timestep}}
+
+
 def rejection_cases():
     """One node per (rtl_module, requires clause), each violating that clause."""
     cases = [
@@ -338,6 +371,19 @@ def rejection_cases():
         # timestep 256 gives SEQ_WIDTH 8, so depth_ismul 8 is a run that cannot
         # outlast the multiplier shift register.
         ("mgu_hard_mix_bipolar", "SEQ_WIDTH > SR_WIDTH", mgu_node(depth_ismul=8)),
+        # eq_rc rounds the tolerance onto a tenths grid, so a tolerance that lands
+        # between two tenths has no integer numerator.
+        ("eq_rc", "config['tolerance'] * 10 == floor(config['tolerance'] * 10 + 0.5)",
+         eq_rc_node(tolerance=0.05)),
+        # sub_scale is single-variant. Clauses resolve in order: a too-wide
+        # accumulator, then a fractional grid, then a non-integral scale.
+        ("sub_scale", "config['intwidth'] <= 30", sub_scale_node(31, 0, 2)),
+        ("sub_scale", "config['fracwidth'] == 0", sub_scale_node(8, 4, 2)),
+        ("sub_scale", "config['scale'] == int(config['scale'])",
+         sub_scale_node(8, 0, 2.5)),
+        # sample_hold clocks its sampler on a power-of-two trigger period.
+        ("sample_hold", "2 ** int(log2(config['trigger_timestep'])) == config['trigger_timestep']",
+         sample_hold_node(trigger_timestep=100)),
     ]
     for polarity in ("unipolar", "bipolar"):
         # WIDTH 31 overflows the 32-bit constants on its own; WIDTH 30 with a
@@ -416,6 +462,26 @@ def rejection_cases():
              conv_node(polarity, width=31, class_name="conv_ugemm")),
             (f"conv_ugemm_{polarity}", "SCALE == int(SCALE)",
              conv_node(polarity, scale=3.4, class_name="conv_ugemm")),
+            # clamp's bounds each round onto the fractional grid, so a bound off
+            # that grid has no integer form. The lo clause resolves before the hi
+            # clause, so each case keeps the other bound on the grid.
+            (f"clamp_{polarity}",
+             "config['lo'] * 2 ** FRACWIDTH == floor(config['lo'] * 2 ** FRACWIDTH + 0.5)",
+             clamp_node(polarity, lo=0.001, hi=1.0)),
+            (f"clamp_{polarity}",
+             "config['hi'] * 2 ** FRACWIDTH == floor(config['hi'] * 2 ** FRACWIDTH + 0.5)",
+             clamp_node(polarity, lo=0.0, hi=0.001)),
+            # mul_scale runs on the integer grid. Clauses resolve in order: a
+            # too-wide accumulator, then a fractional grid, then a non-integral
+            # scale, then a scale past the accumulator's signed range.
+            (f"mul_scale_{polarity}", "config['intwidth'] <= 30",
+             mul_scale_node(polarity, 31, 0, 2)),
+            (f"mul_scale_{polarity}", "config['fracwidth'] == 0",
+             mul_scale_node(polarity, 8, 4, 2)),
+            (f"mul_scale_{polarity}", "config['scale'] == int(config['scale'])",
+             mul_scale_node(polarity, 8, 0, 2.5)),
+            (f"mul_scale_{polarity}", "config['scale'] <= 2 ** (config['intwidth'] - 1) - 1",
+             mul_scale_node(polarity, 3, 0, 4)),
         ]
         if polarity == "unipolar":
             cases += [

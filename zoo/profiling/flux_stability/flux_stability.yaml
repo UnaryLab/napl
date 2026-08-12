@@ -1,0 +1,1112 @@
+module:
+  conv:
+    conv_gaines:
+      bipolar:
+        flux_stability: 0.133701
+        n_inputs: 16
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 4
+        - 8
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.788274
+        n_inputs: 16
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 4
+        - 8
+        - 8
+        timesteps: 256
+    conv_mix:
+      bipolar:
+        flux_stability: 1.006024
+        n_inputs: 27
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.033913
+        n_inputs: 27
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+    conv_ugemm:
+      bipolar:
+        flux_stability: 1.068042
+        n_inputs: 27
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.045373
+        n_inputs: 27
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+  linear:
+    linear_gaines:
+      bipolar:
+        flux_stability: 0.102708
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.625878
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+    linear_mix:
+      bipolar:
+        flux_stability: 0.981622
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.026662
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+    linear_ugemm:
+      bipolar:
+        flux_stability: 1.054585
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.046743
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 32
+        - 8
+        timesteps: 256
+  pool:
+    avgpool2d_ugemm:
+      bipolar:
+        flux_stability: 1.043334
+        n_inputs: 4
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.01686
+        n_inputs: 4
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 3
+        - 8
+        - 8
+        timesteps: 256
+  recurrent:
+    mgu_hard_mix:
+      bipolar:
+        flux_stability: 0.206461
+        model: single_step
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2
+        - 4
+        timesteps: 256
+operation:
+  add:
+    add_desync:
+      bipolar:
+        flux_stability: 0.787273
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.910678
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    add_gaines:
+      bipolar:
+        flux_stability: 0.155464
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 8
+        - 2048
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.368665
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 8
+        - 2048
+        timesteps: 256
+    add_scale:
+      bipolar:
+        flux_stability: 1.053861
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.019769
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+    add_scale_dyn:
+      bipolar:
+        flux_stability: 1.053861
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.019769
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+    add_ugemm:
+      bipolar:
+        flux_stability: 1.053861
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.019769
+        n_inputs: 8
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 2048
+        - 8
+        timesteps: 256
+  clamp:
+    clamp:
+      bipolar:
+        flux_stability: 1.044843
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.011101
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  compare:
+    eq_rc:
+      bipolar:
+        flux_stability: 0.880504
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.799701
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    gt_rc:
+      bipolar:
+        flux_stability: 0.967809
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.861365
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    lt_rc:
+      bipolar:
+        flux_stability: 0.965496
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.859306
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  convert:
+    bi2uni:
+      bipolar:
+        flux_stability: 0.998933
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    uni2bi:
+      unipolar:
+        flux_stability: 0.985072
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  div:
+    div_cordiv:
+      unipolar:
+        flux_stability: 0.779251
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    div_gaines:
+      bipolar:
+        flux_stability: 0.23941
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.138318
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    div_iscb:
+      bipolar:
+        flux_stability: 0.635632
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.909916
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    div_scale:
+      bipolar:
+        flux_stability: 1.070017
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.036338
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    div_scale_dyn:
+      bipolar:
+        flux_stability: 1.070017
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.036338
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  exp:
+    exp_n1:
+      unipolar:
+        flux_stability: 0.882776
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    exp_n2g:
+      bipolar:
+        flux_stability: 0.449853
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  inhibit:
+    inhibit:
+      bipolar:
+        flux_stability: 5.104431
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 3.123225
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  log:
+    log_n1:
+      unipolar:
+        flux_stability: 0.859764
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  logic:
+    and_corr:
+      unipolar:
+        flux_stability: 0.994934
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    or_sat:
+      unipolar:
+        flux_stability: 1.000368
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  max:
+    max_rc:
+      bipolar:
+        flux_stability: 0.987773
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.991619
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    max_sync:
+      bipolar:
+        flux_stability: 1.009709
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.00621
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    max_tc:
+      bipolar:
+        flux_stability: 0.821593
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.902852
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  min:
+    min_rc:
+      bipolar:
+        flux_stability: 0.845404
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.933278
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    min_sync:
+      bipolar:
+        flux_stability: 0.995618
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.998997
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    min_tc:
+      bipolar:
+        flux_stability: 1.179081
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.097295
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  mul:
+    mul_gaines:
+      bipolar:
+        flux_stability: 0.825063
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.986686
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    mul_scale:
+      bipolar:
+        flux_stability: 0.859656
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.956147
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    mul_ugemm:
+      bipolar:
+        flux_stability: 0.948459
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.979022
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    mul_ugemm_dyn:
+      bipolar:
+        flux_stability: 0.672712
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.905517
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    mul_unibi:
+      bipolar:
+        flux_stability: 0.95335
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    mul_unibi_mux:
+      bipolar:
+        flux_stability: 0.892433
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  mux:
+    mux_select:
+      bipolar:
+        flux_stability: 0.832468
+        n_inputs: 3
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.953322
+        n_inputs: 3
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  negate:
+    negate:
+      bipolar:
+        flux_stability: 1.0
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  pow:
+    pow_n:
+      bipolar:
+        flux_stability: 0.097709
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.483194
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  relu:
+    relu_cnt:
+      bipolar:
+        flux_stability: 1.057767
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    relu_sat:
+      bipolar:
+        flux_stability: 1.063328
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    relu_shiftreg:
+      bipolar:
+        flux_stability: 0.701759
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    relu_tc:
+      bipolar:
+        flux_stability: 0.590248
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  sequential:
+    counter:
+      unipolar:
+        flux_stability: 0.570344
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    dff:
+      bipolar:
+        flux_stability: 0.856181
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.934706
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    jkff:
+      unipolar:
+        flux_stability: 0.036063
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sample_hold:
+      bipolar:
+        flux_stability: 1.0
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.0
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    shiftreg:
+      bipolar:
+        flux_stability: 0.959029
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.980854
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  sigmoid:
+    sigmoid_hard:
+      bipolar:
+        flux_stability: 1.098039
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.036929
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  signabs:
+    signabs:
+      bipolar:
+        flux_stability: 0.903888
+        n_inputs: 1
+        n_outputs: 2
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    signabs_interleave:
+      bipolar:
+        flux_stability: 0.809074
+        n_inputs: 1
+        n_outputs: 2
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    signabs_shiftreg:
+      bipolar:
+        flux_stability: 0.697254
+        n_inputs: 1
+        n_outputs: 2
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  sqrt:
+    sqrt_emit:
+      bipolar:
+        flux_stability: 0.679903
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.864154
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sqrt_gaines:
+      bipolar:
+        flux_stability: 0.194325
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.416915
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sqrt_traceiscb:
+      bipolar:
+        flux_stability: 0.633388
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.738562
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sqrt_tracejkff:
+      bipolar:
+        flux_stability: 0.748934
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.650474
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  square:
+    square_dff:
+      bipolar:
+        flux_stability: 0.303238
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.83687
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  sub:
+    sub_scale:
+      bipolar:
+        flux_stability: 1.038787
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 4096
+        timesteps: 256
+    subabs:
+      unipolar:
+        flux_stability: 1.008833
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  sync:
+    decorr:
+      bipolar:
+        flux_stability: 0.924596
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.969886
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    desync:
+      bipolar:
+        flux_stability: 1.009981
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.005167
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sync:
+      bipolar:
+        flux_stability: 1.008906
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.006306
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    sync_skewed:
+      bipolar:
+        flux_stability: 0.525879
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.784405
+        n_inputs: 2
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  tanh:
+    tanh_hard:
+      bipolar:
+        flux_stability: 1.0
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 1.0
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    tanh_p1:
+      unipolar:
+        flux_stability: 0.685446
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+    tanh_pn:
+      bipolar:
+        flux_stability: 0.541333
+        n_inputs: 1
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+  wta:
+    wta:
+      bipolar:
+        flux_stability: 0.682026
+        n_inputs: 3
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256
+      unipolar:
+        flux_stability: 0.749488
+        n_inputs: 3
+        n_outputs: 1
+        seed: 0
+        shape:
+        - 16384
+        timesteps: 256

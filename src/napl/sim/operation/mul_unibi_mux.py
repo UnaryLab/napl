@@ -68,7 +68,6 @@ class mul_unibi_mux(napl_base):
         # The select leg passes input_b through on input_u, so the two need
         # decorrelated operands.
         self.correlation_i = {('input_u', 'input_b'): 'zero'}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

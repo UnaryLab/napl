@@ -126,7 +126,6 @@ class mul_ugemm(napl_base):
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -63,7 +63,6 @@ class sigmoid_hard(napl_base):
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

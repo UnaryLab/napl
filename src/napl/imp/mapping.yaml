@@ -149,9 +149,63 @@
     COUNT_WIDTH: ceil(log2(ENTRY + 1))
     ACC_WIDTH: ceil(log2(2 * ENTRY * len(SEGMENT) + 1)) + 1
 
+- rtl_module: and_corr
+  layer: operation
+  sim_module: sim/operation/and_corr.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters: {}
+
 - rtl_module: bi2uni
   layer: operation
   sim_module: sim/operation/bi2uni.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    WIDTH: "config['width']"
+
+- rtl_module: clamp_bipolar
+  layer: operation
+  sim_module: sim/operation/clamp.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    FRACWIDTH: "get(config, 'fracwidth', 8)"
+    LO: "floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
+    HI: "floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+    TIMESTEP: "len(SEGMENT)"
+  requires:
+    # The band bounds must land on the 2^-fracwidth grid so LO and HI are exact integers.
+    - "config['lo'] * 2 ** FRACWIDTH == floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
+    - "config['hi'] * 2 ** FRACWIDTH == floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+
+- rtl_module: clamp_unipolar
+  layer: operation
+  sim_module: sim/operation/clamp.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    FRACWIDTH: "get(config, 'fracwidth', 8)"
+    LO: "floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
+    HI: "floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+    TIMESTEP: "len(SEGMENT)"
+  requires:
+    # The band bounds must land on the 2^-fracwidth grid so LO and HI are exact integers.
+    - "config['lo'] * 2 ** FRACWIDTH == floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
+    - "config['hi'] * 2 ** FRACWIDTH == floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+
+- rtl_module: counter
+  layer: operation
+  sim_module: sim/operation/counter.py
   inputs:
     input: i_input
   outputs:
@@ -343,6 +397,26 @@
     WIDTH: "ceil(log2(config['timestep']))"
     FRAC: "ceil(log2(config['timestep'])) + 1"
 
+- rtl_module: eq_rc
+  layer: operation
+  sim_module: sim/operation/eq_rc.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters:
+    VALUE_GAIN: "2 if get(config, 'polarity') == 'bipolar' else 1"
+    TOL_NUM: "floor(config['tolerance'] * 10 + 0.5)"
+    TOL_DEN: "10"
+    # The elapsed-timestep counter is sized to hold the run length (one bit of
+    # headroom over its bit width), matching the model's timestep counter.
+    TW: "floor(log2(len(SEGMENT))) + 2"
+  requires:
+    # The float tolerance is carried as TOL_NUM/10, exact only on the tenths grid.
+    # The RTL relation is invariant to a common factor, so any k/10 tolerance is faithful.
+    - "config['tolerance'] * 10 == floor(config['tolerance'] * 10 + 0.5)"
+
 - rtl_module: exp_n1
   layer: operation
   sim_module: sim/operation/exp_n1.py
@@ -393,6 +467,16 @@
   outputs:
     q: o_q
   parameters: {}
+
+- rtl_module: log_n1
+  layer: operation
+  sim_module: sim/operation/log_n1.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
 
 - rtl_module: lt_rc
   layer: operation
@@ -488,6 +572,50 @@
     output: o_output
   parameters: {}
 
+- rtl_module: mul_scale_bipolar
+  layer: operation
+  sim_module: sim/operation/mul_scale.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+  requires:
+    # 2 ** WIDTH is a 32-bit elaboration constant, so cap WIDTH (the RTL guards this too).
+    - "config['intwidth'] <= 30"
+    # The accumulator counts whole units, so only the integer grid (fracwidth 0)
+    # has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the model rounds the scale to an integer, so SCALE tracks the
+    # request only when it is already integral.
+    - "config['scale'] == int(config['scale'])"
+    # The datapath sizing assumes the per-spike addend stays below 2 ** (WIDTH - 1).
+    - "config['scale'] <= 2 ** (config['intwidth'] - 1) - 1"
+
+- rtl_module: mul_scale_unipolar
+  layer: operation
+  sim_module: sim/operation/mul_scale.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+  requires:
+    # 2 ** WIDTH is a 32-bit elaboration constant, so cap WIDTH (the RTL guards this too).
+    - "config['intwidth'] <= 30"
+    # The accumulator counts whole units, so only the integer grid (fracwidth 0)
+    # has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the model rounds the scale to an integer, so SCALE tracks the
+    # request only when it is already integral.
+    - "config['scale'] == int(config['scale'])"
+    # The datapath sizing assumes the per-spike addend stays below 2 ** (WIDTH - 1).
+    - "config['scale'] <= 2 ** (config['intwidth'] - 1) - 1"
+
 - rtl_module: mul_ugemm_bipolar
   layer: operation
   sim_module: sim/operation/mul_ugemm.py
@@ -552,6 +680,17 @@
     output: o_output
   parameters: {}
 
+- rtl_module: mux_select
+  layer: operation
+  sim_module: sim/operation/mux_select.py
+  inputs:
+    select: i_select
+    input_a: i_input_a
+    input_b: i_input_b
+  outputs:
+    output: o_output
+  parameters: {}
+
 - rtl_module: negate
   layer: operation
   sim_module: sim/operation/negate.py
@@ -560,6 +699,36 @@
   outputs:
     output: o_output
   parameters: {}
+
+- rtl_module: or_sat
+  layer: operation
+  sim_module: sim/operation/or_sat.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters: {}
+
+- rtl_module: pow_n_bipolar
+  layer: operation
+  sim_module: sim/operation/pow_n.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    N: "config['n']"
+
+- rtl_module: pow_n_unipolar
+  layer: operation
+  sim_module: sim/operation/pow_n.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    N: "config['n']"
 
 - rtl_module: relu_cnt
   layer: operation
@@ -599,6 +768,21 @@
     output: o_output
   parameters:
     WIDTH: "config['width']"
+
+- rtl_module: sample_hold
+  layer: operation
+  sim_module: sim/operation/sample_hold.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+    TRIGGER: "config['trigger_timestep']"
+  requires:
+    # count_k / TRIGGER is exact and the shift reproduces the model only when the
+    # trigger is a power of two.
+    - "2 ** int(log2(config['trigger_timestep'])) == config['trigger_timestep']"
 
 - rtl_module: shiftreg
   layer: operation
@@ -745,6 +929,27 @@
     output: o_output
   parameters:
     DEPTH: "config['depth']"
+
+- rtl_module: sub_scale
+  layer: operation
+  sim_module: sim/operation/sub_scale.py
+  inputs:
+    input_0: i_input_0
+    input_1: i_input_1
+  outputs:
+    output: o_output
+  parameters:
+    SCALE: "config['scale']"
+    WIDTH: "config['intwidth']"
+  requires:
+    # The inner add_scale accumulator is a 32-bit elaboration constant, so cap WIDTH.
+    - "config['intwidth'] <= 30"
+    # The accumulator counts whole spikes, so only the integer grid (fracwidth 0)
+    # has a hardware form.
+    - "config['fracwidth'] == 0"
+    # On that grid the model rounds the scale to an integer, so SCALE tracks the
+    # request only when it is already integral.
+    - "config['scale'] == int(config['scale'])"
 
 - rtl_module: subabs
   layer: operation

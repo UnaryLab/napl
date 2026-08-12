@@ -108,7 +108,7 @@ def test_mul_unibi_contract():
     assert 'state' in dict(operation.named_buffers())
     assert operation.state.shape == (1,)
     assert operation.state.dtype == torch.int8
-    assert operation.stability_flux == 1.0
+    assert operation.flux_stability == 1.0
     # The divider flip-flop is per element, so it takes the input shape on the
     # first call and toggles on every element where input_u is low.
     operation(_spike(0, (2, 3), 'cpu'), _spike(1, (2, 3), 'cpu'))

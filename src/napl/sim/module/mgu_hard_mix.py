@@ -130,7 +130,6 @@ class mgu_hard_mix(napl_base):
         self.encoding_io = {'input': 'rc', 'hx': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'hx': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

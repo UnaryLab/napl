@@ -1,0 +1,25 @@
+"""Flux-stability profile for the signabs streaming operation."""
+
+from napl.sim.operation import signabs
+
+from profile_common import profile_op
+
+
+def profile():
+    """Return the flux-stability result dicts for signabs, one per supported polarity."""
+    # Multi-output: the sign stream decodes to -sign(v) and the magnitude to |v|.
+    return [
+        profile_op(
+            signabs,
+            ctor={'width': 3, 'polarity': 'bipolar'},
+            inputs=[{'range': (-1.0, 1.0), 'polarity': 'bipolar', 'shape': (16384,)}],
+            reference=lambda values, polarity: (-values[0].sign(), values[0].abs()),
+            timesteps=256,
+            seed=0,
+        ),
+    ]
+
+
+if __name__ == '__main__':
+    for r in profile():
+        print(r)

@@ -80,7 +80,6 @@ class relu_tc(napl_base):
         self.encoding_io = {'input': 'tc', 'output': 'tc'}
         self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

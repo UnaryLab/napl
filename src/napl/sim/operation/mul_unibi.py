@@ -65,7 +65,6 @@ class mul_unibi(napl_base):
         self.polarity_io = {'input_u': 'unipolar', 'input_b': 'bipolar', 'output': 'bipolar'}
         # AND(input_u, input_b) needs decorrelated operands.
         self.correlation_i = {('input_u', 'input_b'): 'zero'}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

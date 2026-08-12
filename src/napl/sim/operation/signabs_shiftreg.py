@@ -84,7 +84,6 @@ class signabs_shiftreg(napl_base):
         self.encoding_io = {'input': 'rc', 'sign': 'rc', 'magnitude': 'rc'}
         self.polarity_io = {'input': 'bipolar', 'sign': 'unipolar', 'magnitude': 'unipolar'}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

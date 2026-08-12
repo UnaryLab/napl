@@ -5,8 +5,24 @@ import torch
 from loguru import logger
 from dataclasses import dataclass, field
 from napl.utils import read_yaml
-from functools import wraps
+from functools import lru_cache, wraps
+from importlib.resources import files
 from inspect import unwrap
+
+
+@lru_cache(maxsize=None)
+def _load_flux_map(package):
+    """Return the package's flux_stability.yaml as class -> polarity -> float, or {} if absent."""
+    try:
+        resource = files(package).joinpath('flux_stability.yaml')
+        if not resource.is_file():
+            return {}
+        path = str(resource)
+    except (FileNotFoundError, ModuleNotFoundError, NotADirectoryError, OSError,
+            AttributeError, ValueError):
+        return {}
+    # A present-but-corrupt yaml raises loud at first construction; read_yaml is outside the guard.
+    return read_yaml(path) or {}
 
 
 torch_dtype_map = {
@@ -275,12 +291,18 @@ class napl_base(torch.nn.Module):
         #: ``forward()`` parameter names; ``"zero"``, ``"pos"``, or ``"neg"``.
         self.correlation_i = {}
 
-        if not isinstance(getattr(type(self), 'stability_flux', None), property):
-            #: Relative output stability flux of this module. A subclass may
-            #: expose ``stability_flux`` as a property instead, as the
+        if not isinstance(getattr(type(self), 'flux_stability', None), property):
+            #: Relative output flux stability of this module. A subclass may
+            #: expose ``flux_stability`` as a property instead, as the
             #: stability_flux metric does for its measured value, and then no
-            #: placeholder is set here.
-            self.stability_flux = 1.0
+            #: placeholder is set here. flux_stability comes from the class's
+            #: package profiling yaml when present, else 1.0; the class's own
+            #: package is already imported by construction time and the yaml is
+            #: data-only, so no import cycle.
+            flux_map = _load_flux_map(type(self).__module__.rsplit('.', 1)[0])
+            entry = flux_map.get(type(self).__name__)
+            polarity = getattr(self, 'polarity', None)
+            self.flux_stability = entry.get(polarity, 1.0) if isinstance(entry, dict) else 1.0
 
 
     def _reset(self):

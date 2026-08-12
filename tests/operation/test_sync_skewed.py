@@ -172,7 +172,7 @@ def test_sync_skewed_contract():
     assert operation.polarity_io == {}, operation.polarity_io
     assert operation.correlation_i == {}, operation.correlation_i
     assert operation.hw.pp_delay == 0
-    assert operation.stability_flux == 1.0
+    assert operation.flux_stability == 1.0
 
 
 def test_sync_skewed():

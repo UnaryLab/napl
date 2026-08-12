@@ -108,7 +108,7 @@ def test_mul_unibi_mux_contract():
     assert 'state' in dict(operation.named_buffers())
     assert operation.state.shape == (1,)
     assert operation.state.dtype == torch.int8
-    assert operation.stability_flux == 1.0
+    assert operation.flux_stability == 1.0
     # The toggle state is scalar and stays scalar, so it broadcasts to any shape.
     operation(_spike(1, (2, 3), 'cpu'), _spike(1, (2, 3), 'cpu'))
     assert operation.state.shape == (1,)

@@ -116,7 +116,6 @@ class fft_dyn_hub(napl_base):
             for port in ('input_real', 'input_imag', 'output_real', 'output_imag')
         }
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

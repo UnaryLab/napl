@@ -82,7 +82,6 @@ class inhibit(napl_base):
         self.encoding_io = {'input_data': 'tc', 'input_inhibit': 'tc', 'output': 'tc'}
         self.polarity_io = {}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

@@ -72,7 +72,6 @@ class subabs(napl_base):
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output': 'rc'}
         self.polarity_io = {'input_0': 'unipolar', 'input_1': 'unipolar', 'output': 'unipolar'}
         self.correlation_i = {('input_0', 'input_1'): 'pos'}
-        self.stability_flux = 1.0
 
 
     def _reset(self):

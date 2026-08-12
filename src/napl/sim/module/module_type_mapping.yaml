@@ -1,0 +1,5 @@
+# Data-only taxonomy mapping each module group to its member module names.
+conv: [conv_gaines, conv_mix, conv_ugemm]
+linear: [linear_gaines, linear_mix, linear_ugemm]
+pool: [avgpool2d_ugemm]
+recurrent: [mgu_hard_mix]

@@ -162,7 +162,6 @@ class butterfly_ugemm_dyn(napl_base):
         self.polarity_io = {port: self.polarity for port in
                             ('x0r', 'x0i', 'x1r', 'x1i', 'y0r', 'y0i', 'y1r', 'y1i')}
         self.correlation_i = {}
-        self.stability_flux = 1.0
 
 
     def _reset(self):
