@@ -1,5 +1,5 @@
-Base API
-========
+Base
+====
 
 .. currentmodule:: napl.sim.base
 

@@ -13,26 +13,33 @@ render signatures and docstrings from the source tree.
    :maxdepth: 2
    :caption: Design
 
-   design/architecture
-   design/execution
-   design/state_and_metrics
-   design/hardware
+   design/overview
+   design/psp_101
+   design/workflow
 
 .. toctree::
    :maxdepth: 2
-   :caption: Development
+   :caption: Simulation
 
-   development/verification
+   Overview <api/overview>
+   Reference API <api/index>
 
 .. toctree::
    :maxdepth: 2
-   :caption: SIM API
+   :caption: Implementation
 
-   Reference <api/index>
+   implementation/overview
+   implementation/tree
+   implementation/verification
 
-Canonical project policies remain in `ARCHITECTURE.md`_, `RULE_SIM.md`_, and
-`RULE_IMP.md`_ at the repository root.
+.. toctree::
+   :maxdepth: 2
+   :caption: Synthesis
 
-.. _ARCHITECTURE.md: https://github.com/UnaryLab/napl/blob/main/ARCHITECTURE.md
-.. _RULE_SIM.md: https://github.com/UnaryLab/napl/blob/main/RULE_SIM.md
-.. _RULE_IMP.md: https://github.com/UnaryLab/napl/blob/main/RULE_IMP.md
+   synthesis/overview
+   synthesis/napl_to_rtl
+   synthesis/user_to_system
+
+For how NAPL is verified, see :doc:`Workflow <design/workflow>` for the Python
+model and how to check a unit, and :doc:`Verification <implementation/verification>`
+for the bit-exact hardware co-simulation.

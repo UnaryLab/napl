@@ -1,5 +1,5 @@
-Module API
-==========
+Module
+======
 
 .. currentmodule:: napl.sim.module
 

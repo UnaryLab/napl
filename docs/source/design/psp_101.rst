@@ -1,0 +1,103 @@
+PSP 101
+=======
+
+*Programmable spike processing* (PSP) is a way of computing in which values are
+carried by streams of spikes rather than by fixed binary words, and a
+computation is built by composing small operations into a processing pipeline.
+This page explains how PSP works in general, so you can decide whether it fits
+your problem before reaching for napl specifics. The :doc:`workflow` page
+then covers how napl realizes PSP layer by layer.
+
+The concept
+-----------
+
+PSP computes on one-bit *spike streams*: instead of a single fixed-point or
+floating-point number, a value is represented by a stream of 0/1 bits whose
+average rate over time encodes the number. This is the idea behind *unary
+computing* and *stochastic computing*, where simple gates on bit streams stand
+in for the arithmetic units of a conventional datapath. A multiply, for example,
+can become a single AND gate on two independent streams.
+
+*Programmable* means you build a network by composing small pieces. Because the
+operations share one calling contract, they compose: an encoder feeds an
+operation, operations build up a layer, layers build up a network, and a metric
+watches any stream along the way. Longer streams generally give more accurate
+results at the cost of more timesteps, so stream length is the
+accuracy-versus-latency knob.
+
+The workflow
+------------
+
+A PSP computation follows one path, *encode* then *process* then
+*decode or analyze*::
+
+   number or tensor
+          |
+       encode
+          |
+   one-bit spike stream
+          |
+   operations or streaming layers
+          |
+   decode or metric
+
+An encoder turns a value into spikes by comparing it against a generated number
+sequence, so the fraction of 1s in the stream tracks the value. It supports
+*rate encoding* (spike order is randomized, the value lives in the average) and
+*temporal encoding* (spike order carries meaning); the two differ only in how
+the encoder orders spikes. Operations then process the stream one spike per
+input per timestep, and at the end you either *decode* a spike stream back to a
+number or *analyze* it with a metric.
+
+What you can measure about a stream, and why
+--------------------------------------------
+
+A metric watches a stream (or, in one case, builds one) so you can quantify how
+well the representation is doing its job. Each observing metric is called once
+per timestep, then read for a running result or an ``analyze`` summary.
+
+Accuracy
+   :class:`napl.sim.metric.accuracy` decodes a spike stream and tracks how close
+   its running value is to a reference. As more timesteps arrive the decoded
+   value converges, and the metric reports the *progressive error*, the signed
+   gap between the decoded value so far and the reference. Use it to watch
+   precision build up or to decide when a stream is accurate enough.
+
+Correlation
+   :class:`napl.sim.metric.correlation` measures the stochastic cross-correlation
+   (SCC) between two spike streams. Correlated bit streams are a core resource in
+   stochastic computing (many operations depend on operands being correlated or
+   uncorrelated), and SCC quantifies that from the counts of the four bit pairs
+   seen over the run. The result ranges from ``-1`` for fully anticorrelated
+   streams through ``0`` for independent streams to ``1`` for fully correlated
+   streams.
+
+Stability, flux, and normalized stability
+   :class:`napl.sim.metric.stability` measures how early a stream settles near
+   its source value: it records the last timestep at which the progressive error
+   exceeded a threshold, and stability is the fraction of the run that remains
+   after that point. :class:`napl.sim.metric.stability_flux` compares two streams
+   by the ratio of their stabilities, for when relative stability matters more
+   than either absolute value. :class:`napl.sim.metric.stability_norm` divides a
+   stream's observed stability by the best any stream of the same length could
+   reach for the same source value and threshold, giving a value in ``[0, 1]``
+   that is comparable across different encoded values.
+
+Building a stream at a target stability
+   :class:`napl.sim.metric.stability_builder` is the inverse of the metrics
+   above: instead of measuring an incoming stream, each call emits the next spike
+   of a stream it has designed to hold a requested normalized stability while
+   still decoding to the configured source value. Use it to create controlled
+   inputs for testing how a downstream module behaves at a known stability.
+
+What PSP suits
+--------------
+
+PSP fits problems that tolerate its trade-offs rather than fighting them.
+Because accuracy builds progressively with stream length, it suits workloads
+that tolerate approximate or progressive precision and can stop early once a
+result is good enough. Because values are carried as spike streams over time, it
+is a natural match for streaming or temporal data. And because a spike operation
+can be a handful of gates, it suits low-area hardware where a full binary
+datapath would be too costly. These are the classes of problem PSP is built for;
+which specific applications you build on it is up to you.

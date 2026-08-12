@@ -1,5 +1,5 @@
-SIM API reference
-=================
+Reference API
+=============
 
 These pages are generated from the signatures and docstrings of the public
 classes exported by ``napl``.

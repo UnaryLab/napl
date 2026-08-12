@@ -1,5 +1,5 @@
-Metric API
-==========
+Metric
+======
 
 .. currentmodule:: napl.sim.metric
 

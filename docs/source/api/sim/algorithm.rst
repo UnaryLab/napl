@@ -1,5 +1,5 @@
-Algorithm API
-=============
+Algorithm
+=========
 
 .. currentmodule:: napl.sim.algorithm
 

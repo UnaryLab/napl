@@ -1,5 +1,5 @@
-Operation API
-=============
+Operation
+=========
 
 .. currentmodule:: napl.sim.operation
 
