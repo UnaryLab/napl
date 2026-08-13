@@ -1,4 +1,4 @@
-"""Shared runner for the flux-stability profiling suite.
+"""Shared runner for operation and module flux-stability profiles.
 
 Flux stability of one streaming op run is the mean over encoded input streams i of
     output_stability_scalar / input_stability_scalar_i,
@@ -12,10 +12,16 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.operation import encode
-from napl.sim.metric import stability
+from napl.sim.metric import accuracy, stability
 
 # Denominator floor so a fully unstable input stream does not divide by zero.
 _EPS = 1e-12
+
+
+def _output_rmse(monitors, refs):
+    """Return the mean per-stream RMSE from final accuracy errors."""
+    errors = [monitor.analyze(ref)[0] for monitor, ref in zip(monitors, refs)]
+    return torch.stack([error.square().mean().sqrt() for error in errors]).mean().item()
 
 
 def profile_op(op_class, *, ctor, inputs, reference, apply=None,
@@ -46,7 +52,7 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
         seed: Torch manual seed for reproducibility.
 
     Returns:
-        A result dict with keys ``flux_stability``, ``polarity``, ``timesteps``,
+        A result dict with keys ``flux_stability``, ``rmse``, ``polarity``, ``timesteps``,
         ``shape``, ``seed``, ``n_inputs`` (effective inputs, counting each reduced
         slice separately), and ``n_outputs``.
     """
@@ -88,6 +94,7 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
     if not isinstance(refs, tuple):
         refs = (refs,)
     out_monitors = [stability(r, {'polarity': out_polarity, 'threshold': 0.05}) for r in refs]
+    out_accuracy = [accuracy({'polarity': out_polarity}) for _ in refs]
 
     # Stream: encode each input, feed its input monitor, apply the op, feed each output monitor.
     for _ in range(timesteps):
@@ -101,8 +108,9 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
         out_spikes = apply(op, spikes, values)
         if not isinstance(out_spikes, tuple):
             out_spikes = (out_spikes,)
-        for spike, mon in zip(out_spikes, out_monitors):
+        for spike, mon, acc in zip(out_spikes, out_monitors, out_accuracy):
             mon(spike)
+            acc(spike)
 
     output_stab = torch.stack([m.stability.mean() for m in out_monitors]).mean()
 
@@ -118,10 +126,12 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
             denoms.extend(sliced.mean(dim=1).unbind())
 
     flux = torch.stack([output_stab / d.clamp_min(_EPS) for d in denoms]).mean().item()
+    rmse = _output_rmse(out_accuracy, refs)
 
     first_encoded_shape = list(values[encoded_index[0]].shape)
     return {
         'flux_stability': flux,
+        'rmse': rmse,
         'polarity': polarity,
         'timesteps': timesteps,
         'shape': first_encoded_shape,
@@ -159,7 +169,7 @@ def profile_module(make_op, *, activation, reference, polarity,
         seed: Torch manual seed for reproducibility.
 
     Returns:
-        A result dict with keys ``flux_stability``, ``polarity``, ``timesteps``,
+        A result dict with keys ``flux_stability``, ``rmse``, ``polarity``, ``timesteps``,
         ``shape``, ``seed``, ``n_inputs`` (effective inputs), and ``n_outputs``.
     """
     torch.manual_seed(seed)
@@ -182,6 +192,7 @@ def profile_module(make_op, *, activation, reference, polarity,
     if not isinstance(refs, tuple):
         refs = (refs,)
     out_monitors = [stability(r, {'polarity': polarity, 'threshold': 0.05}) for r in refs]
+    out_accuracy = [accuracy({'polarity': polarity}) for _ in refs]
 
     # Recurrent module: seed hx from init once, then feed the previous output spike back.
     hx_spike = None
@@ -204,8 +215,9 @@ def profile_module(make_op, *, activation, reference, polarity,
             out = op(act_spike, hx_spike)
             hx_spike = out
         out_spikes = out if isinstance(out, tuple) else (out,)
-        for spike, mon in zip(out_spikes, out_monitors):
+        for spike, mon, acc in zip(out_spikes, out_monitors, out_accuracy):
             mon(spike)
+            acc(spike)
 
     output_stab = torch.stack([m.stability.mean() for m in out_monitors]).mean()
 
@@ -228,9 +240,11 @@ def profile_module(make_op, *, activation, reference, polarity,
             denoms = list(U.mean(dim=(0, 1, 3)).unbind())
 
     flux = torch.stack([output_stab / d.clamp_min(_EPS) for d in denoms]).mean().item()
+    rmse = _output_rmse(out_accuracy, refs)
 
     return {
         'flux_stability': flux,
+        'rmse': rmse,
         'polarity': polarity,
         'timesteps': timesteps,
         'shape': list(act_value.shape),

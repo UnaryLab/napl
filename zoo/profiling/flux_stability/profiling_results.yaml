@@ -5,6 +5,7 @@ module:
         flux_stability: 0.133701
         n_inputs: 16
         n_outputs: 1
+        rmse: 0.066006
         seed: 0
         shape:
         - 2
@@ -16,6 +17,7 @@ module:
         flux_stability: 0.788274
         n_inputs: 16
         n_outputs: 1
+        rmse: 0.026419
         seed: 0
         shape:
         - 2
@@ -28,6 +30,7 @@ module:
         flux_stability: 1.006024
         n_inputs: 27
         n_outputs: 1
+        rmse: 0.005133
         seed: 0
         shape:
         - 2
@@ -39,6 +42,7 @@ module:
         flux_stability: 1.033913
         n_inputs: 27
         n_outputs: 1
+        rmse: 0.001313
         seed: 0
         shape:
         - 2
@@ -51,6 +55,7 @@ module:
         flux_stability: 1.068042
         n_inputs: 27
         n_outputs: 1
+        rmse: 0.004659
         seed: 0
         shape:
         - 2
@@ -62,6 +67,7 @@ module:
         flux_stability: 1.045373
         n_inputs: 27
         n_outputs: 1
+        rmse: 0.001214
         seed: 0
         shape:
         - 2
@@ -75,6 +81,7 @@ module:
         flux_stability: 0.102708
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.090639
         seed: 0
         shape:
         - 32
@@ -84,6 +91,7 @@ module:
         flux_stability: 0.625878
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.042236
         seed: 0
         shape:
         - 32
@@ -94,6 +102,7 @@ module:
         flux_stability: 0.981622
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.005801
         seed: 0
         shape:
         - 32
@@ -103,6 +112,7 @@ module:
         flux_stability: 1.026662
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.001422
         seed: 0
         shape:
         - 32
@@ -113,6 +123,7 @@ module:
         flux_stability: 1.054585
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.00468
         seed: 0
         shape:
         - 32
@@ -122,6 +133,7 @@ module:
         flux_stability: 1.046743
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.001392
         seed: 0
         shape:
         - 32
@@ -133,6 +145,7 @@ module:
         flux_stability: 1.043334
         n_inputs: 4
         n_outputs: 1
+        rmse: 0.002736
         seed: 0
         shape:
         - 2
@@ -144,6 +157,7 @@ module:
         flux_stability: 1.01686
         n_inputs: 4
         n_outputs: 1
+        rmse: 0.001368
         seed: 0
         shape:
         - 2
@@ -158,6 +172,7 @@ module:
         model: single_step
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.033166
         seed: 0
         shape:
         - 2
@@ -170,6 +185,7 @@ operation:
         flux_stability: 0.787273
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.028269
         seed: 0
         shape:
         - 16384
@@ -178,6 +194,7 @@ operation:
         flux_stability: 0.910678
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.014135
         seed: 0
         shape:
         - 16384
@@ -187,6 +204,7 @@ operation:
         flux_stability: 0.155464
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.155458
         seed: 0
         shape:
         - 8
@@ -196,6 +214,7 @@ operation:
         flux_stability: 0.368665
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.077729
         seed: 0
         shape:
         - 8
@@ -206,6 +225,7 @@ operation:
         flux_stability: 1.053861
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.002389
         seed: 0
         shape:
         - 2048
@@ -215,6 +235,7 @@ operation:
         flux_stability: 1.019769
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.001195
         seed: 0
         shape:
         - 2048
@@ -225,6 +246,7 @@ operation:
         flux_stability: 1.053861
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.002389
         seed: 0
         shape:
         - 2048
@@ -234,6 +256,7 @@ operation:
         flux_stability: 1.019769
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.001195
         seed: 0
         shape:
         - 2048
@@ -244,6 +267,7 @@ operation:
         flux_stability: 1.053861
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.002389
         seed: 0
         shape:
         - 2048
@@ -253,6 +277,7 @@ operation:
         flux_stability: 1.019769
         n_inputs: 8
         n_outputs: 1
+        rmse: 0.001195
         seed: 0
         shape:
         - 2048
@@ -264,6 +289,7 @@ operation:
         flux_stability: 1.044843
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.003223
         seed: 0
         shape:
         - 16384
@@ -272,6 +298,7 @@ operation:
         flux_stability: 1.011101
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.001611
         seed: 0
         shape:
         - 16384
@@ -282,6 +309,7 @@ operation:
         flux_stability: 0.880504
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.073648
         seed: 0
         shape:
         - 16384
@@ -290,6 +318,7 @@ operation:
         flux_stability: 0.799701
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.069998
         seed: 0
         shape:
         - 16384
@@ -299,6 +328,7 @@ operation:
         flux_stability: 0.967809
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.106018
         seed: 0
         shape:
         - 16384
@@ -307,6 +337,7 @@ operation:
         flux_stability: 0.861365
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.106018
         seed: 0
         shape:
         - 16384
@@ -316,6 +347,7 @@ operation:
         flux_stability: 0.965496
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.106018
         seed: 0
         shape:
         - 16384
@@ -324,6 +356,7 @@ operation:
         flux_stability: 0.859306
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.106018
         seed: 0
         shape:
         - 16384
@@ -334,6 +367,7 @@ operation:
         flux_stability: 0.998933
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.004562
         seed: 0
         shape:
         - 16384
@@ -343,6 +377,7 @@ operation:
         flux_stability: 0.985072
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002252
         seed: 0
         shape:
         - 16384
@@ -353,6 +388,7 @@ operation:
         flux_stability: 0.779251
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.025571
         seed: 0
         shape:
         - 16384
@@ -362,6 +398,7 @@ operation:
         flux_stability: 0.23941
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.177575
         seed: 0
         shape:
         - 16384
@@ -370,6 +407,7 @@ operation:
         flux_stability: 0.138318
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.069472
         seed: 0
         shape:
         - 16384
@@ -379,6 +417,7 @@ operation:
         flux_stability: 0.635632
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.057551
         seed: 0
         shape:
         - 16384
@@ -387,6 +426,7 @@ operation:
         flux_stability: 0.909916
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.011277
         seed: 0
         shape:
         - 16384
@@ -396,6 +436,7 @@ operation:
         flux_stability: 1.070017
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002252
         seed: 0
         shape:
         - 16384
@@ -404,6 +445,7 @@ operation:
         flux_stability: 1.036338
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.001126
         seed: 0
         shape:
         - 16384
@@ -413,6 +455,7 @@ operation:
         flux_stability: 1.070017
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002252
         seed: 0
         shape:
         - 16384
@@ -421,6 +464,7 @@ operation:
         flux_stability: 1.036338
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.001126
         seed: 0
         shape:
         - 16384
@@ -431,6 +475,7 @@ operation:
         flux_stability: 0.882776
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.006712
         seed: 0
         shape:
         - 16384
@@ -440,6 +485,7 @@ operation:
         flux_stability: 0.449853
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.037208
         seed: 0
         shape:
         - 16384
@@ -450,6 +496,7 @@ operation:
         flux_stability: 5.104431
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.049609
         seed: 0
         shape:
         - 16384
@@ -458,6 +505,7 @@ operation:
         flux_stability: 3.123225
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.024805
         seed: 0
         shape:
         - 16384
@@ -468,6 +516,7 @@ operation:
         flux_stability: 0.859764
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.015421
         seed: 0
         shape:
         - 16384
@@ -478,6 +527,7 @@ operation:
         flux_stability: 0.994934
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002267
         seed: 0
         shape:
         - 16384
@@ -487,6 +537,7 @@ operation:
         flux_stability: 1.000368
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.003303
         seed: 0
         shape:
         - 16384
@@ -497,6 +548,7 @@ operation:
         flux_stability: 0.987773
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.008841
         seed: 0
         shape:
         - 16384
@@ -505,6 +557,7 @@ operation:
         flux_stability: 0.991619
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.004421
         seed: 0
         shape:
         - 16384
@@ -514,6 +567,7 @@ operation:
         flux_stability: 1.009709
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.006036
         seed: 0
         shape:
         - 16384
@@ -522,6 +576,7 @@ operation:
         flux_stability: 1.00621
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.003018
         seed: 0
         shape:
         - 16384
@@ -531,6 +586,7 @@ operation:
         flux_stability: 0.821593
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.004533
         seed: 0
         shape:
         - 16384
@@ -539,6 +595,7 @@ operation:
         flux_stability: 0.902852
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002267
         seed: 0
         shape:
         - 16384
@@ -549,6 +606,7 @@ operation:
         flux_stability: 0.845404
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.013349
         seed: 0
         shape:
         - 16384
@@ -557,6 +615,7 @@ operation:
         flux_stability: 0.933278
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.006674
         seed: 0
         shape:
         - 16384
@@ -566,6 +625,7 @@ operation:
         flux_stability: 0.995618
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.005771
         seed: 0
         shape:
         - 16384
@@ -574,6 +634,7 @@ operation:
         flux_stability: 0.998997
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002886
         seed: 0
         shape:
         - 16384
@@ -583,6 +644,7 @@ operation:
         flux_stability: 1.179081
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.004535
         seed: 0
         shape:
         - 16384
@@ -591,6 +653,7 @@ operation:
         flux_stability: 1.097295
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002267
         seed: 0
         shape:
         - 16384
@@ -601,6 +664,7 @@ operation:
         flux_stability: 0.825063
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.01021
         seed: 0
         shape:
         - 16384
@@ -609,6 +673,7 @@ operation:
         flux_stability: 0.986686
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.003335
         seed: 0
         shape:
         - 16384
@@ -618,6 +683,7 @@ operation:
         flux_stability: 0.859656
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.007258
         seed: 0
         shape:
         - 16384
@@ -626,6 +692,7 @@ operation:
         flux_stability: 0.956147
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002289
         seed: 0
         shape:
         - 16384
@@ -635,6 +702,7 @@ operation:
         flux_stability: 0.948459
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.008378
         seed: 0
         shape:
         - 16384
@@ -643,6 +711,7 @@ operation:
         flux_stability: 0.979022
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.003431
         seed: 0
         shape:
         - 16384
@@ -652,6 +721,7 @@ operation:
         flux_stability: 0.672712
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.022898
         seed: 0
         shape:
         - 16384
@@ -660,6 +730,7 @@ operation:
         flux_stability: 0.905517
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.009937
         seed: 0
         shape:
         - 16384
@@ -669,6 +740,7 @@ operation:
         flux_stability: 0.95335
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.005571
         seed: 0
         shape:
         - 16384
@@ -678,6 +750,7 @@ operation:
         flux_stability: 0.892433
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.006844
         seed: 0
         shape:
         - 16384
@@ -688,6 +761,7 @@ operation:
         flux_stability: 0.832468
         n_inputs: 3
         n_outputs: 1
+        rmse: 0.008383
         seed: 0
         shape:
         - 16384
@@ -696,6 +770,7 @@ operation:
         flux_stability: 0.953322
         n_inputs: 3
         n_outputs: 1
+        rmse: 0.004192
         seed: 0
         shape:
         - 16384
@@ -706,6 +781,7 @@ operation:
         flux_stability: 1.0
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.004542
         seed: 0
         shape:
         - 16384
@@ -716,6 +792,7 @@ operation:
         flux_stability: 0.097709
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.258978
         seed: 0
         shape:
         - 16384
@@ -724,6 +801,7 @@ operation:
         flux_stability: 0.483194
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.085607
         seed: 0
         shape:
         - 16384
@@ -734,6 +812,7 @@ operation:
         flux_stability: 1.057767
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.003219
         seed: 0
         shape:
         - 16384
@@ -743,6 +822,7 @@ operation:
         flux_stability: 1.063328
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.003175
         seed: 0
         shape:
         - 16384
@@ -752,6 +832,7 @@ operation:
         flux_stability: 0.701759
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.051223
         seed: 0
         shape:
         - 16384
@@ -761,6 +842,7 @@ operation:
         flux_stability: 0.590248
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.003219
         seed: 0
         shape:
         - 16384
@@ -771,6 +853,7 @@ operation:
         flux_stability: 0.570344
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.026557
         seed: 0
         shape:
         - 16384
@@ -780,6 +863,7 @@ operation:
         flux_stability: 0.856181
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.011863
         seed: 0
         shape:
         - 16384
@@ -788,6 +872,7 @@ operation:
         flux_stability: 0.934706
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.005932
         seed: 0
         shape:
         - 16384
@@ -797,6 +882,7 @@ operation:
         flux_stability: 0.036063
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.131703
         seed: 0
         shape:
         - 16384
@@ -806,6 +892,7 @@ operation:
         flux_stability: 1.0
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.009031
         seed: 0
         shape:
         - 16384
@@ -814,6 +901,7 @@ operation:
         flux_stability: 1.0
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.004515
         seed: 0
         shape:
         - 16384
@@ -823,6 +911,7 @@ operation:
         flux_stability: 0.959029
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.004571
         seed: 0
         shape:
         - 16384
@@ -831,6 +920,7 @@ operation:
         flux_stability: 0.980854
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002286
         seed: 0
         shape:
         - 16384
@@ -841,6 +931,7 @@ operation:
         flux_stability: 1.098039
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002252
         seed: 0
         shape:
         - 16384
@@ -849,6 +940,7 @@ operation:
         flux_stability: 1.036929
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.001126
         seed: 0
         shape:
         - 16384
@@ -859,6 +951,7 @@ operation:
         flux_stability: 0.903888
         n_inputs: 1
         n_outputs: 2
+        rmse: 0.085771
         seed: 0
         shape:
         - 16384
@@ -868,6 +961,7 @@ operation:
         flux_stability: 0.809074
         n_inputs: 1
         n_outputs: 2
+        rmse: 0.08867
         seed: 0
         shape:
         - 16384
@@ -877,6 +971,7 @@ operation:
         flux_stability: 0.697254
         n_inputs: 1
         n_outputs: 2
+        rmse: 0.244821
         seed: 0
         shape:
         - 16384
@@ -887,6 +982,7 @@ operation:
         flux_stability: 0.679903
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.047254
         seed: 0
         shape:
         - 16384
@@ -895,6 +991,7 @@ operation:
         flux_stability: 0.864154
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.02504
         seed: 0
         shape:
         - 16384
@@ -904,6 +1001,7 @@ operation:
         flux_stability: 0.194325
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.097659
         seed: 0
         shape:
         - 16384
@@ -912,6 +1010,7 @@ operation:
         flux_stability: 0.416915
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.087384
         seed: 0
         shape:
         - 16384
@@ -921,6 +1020,7 @@ operation:
         flux_stability: 0.633388
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.029314
         seed: 0
         shape:
         - 16384
@@ -929,6 +1029,7 @@ operation:
         flux_stability: 0.738562
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.033834
         seed: 0
         shape:
         - 16384
@@ -938,6 +1039,7 @@ operation:
         flux_stability: 0.748934
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.035944
         seed: 0
         shape:
         - 16384
@@ -946,6 +1048,7 @@ operation:
         flux_stability: 0.650474
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.031532
         seed: 0
         shape:
         - 16384
@@ -956,6 +1059,7 @@ operation:
         flux_stability: 0.303238
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.112478
         seed: 0
         shape:
         - 16384
@@ -964,6 +1068,7 @@ operation:
         flux_stability: 0.83687
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.028134
         seed: 0
         shape:
         - 16384
@@ -974,6 +1079,7 @@ operation:
         flux_stability: 1.038787
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.003142
         seed: 0
         shape:
         - 4096
@@ -983,6 +1089,7 @@ operation:
         flux_stability: 1.008833
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.001596
         seed: 0
         shape:
         - 16384
@@ -993,6 +1100,7 @@ operation:
         flux_stability: 0.924596
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.007131
         seed: 0
         shape:
         - 16384
@@ -1001,6 +1109,7 @@ operation:
         flux_stability: 0.969886
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.003565
         seed: 0
         shape:
         - 16384
@@ -1010,6 +1119,7 @@ operation:
         flux_stability: 1.009981
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.004528
         seed: 0
         shape:
         - 16384
@@ -1018,6 +1128,7 @@ operation:
         flux_stability: 1.005167
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002264
         seed: 0
         shape:
         - 16384
@@ -1027,6 +1138,7 @@ operation:
         flux_stability: 1.008906
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.004502
         seed: 0
         shape:
         - 16384
@@ -1035,6 +1147,7 @@ operation:
         flux_stability: 1.006306
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.002251
         seed: 0
         shape:
         - 16384
@@ -1044,6 +1157,7 @@ operation:
         flux_stability: 0.525879
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.035695
         seed: 0
         shape:
         - 16384
@@ -1052,6 +1166,7 @@ operation:
         flux_stability: 0.784405
         n_inputs: 2
         n_outputs: 1
+        rmse: 0.017848
         seed: 0
         shape:
         - 16384
@@ -1062,6 +1177,7 @@ operation:
         flux_stability: 1.0
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.004542
         seed: 0
         shape:
         - 16384
@@ -1070,6 +1186,7 @@ operation:
         flux_stability: 1.0
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.002271
         seed: 0
         shape:
         - 16384
@@ -1079,6 +1196,7 @@ operation:
         flux_stability: 0.685446
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.016505
         seed: 0
         shape:
         - 16384
@@ -1088,6 +1206,7 @@ operation:
         flux_stability: 0.541333
         n_inputs: 1
         n_outputs: 1
+        rmse: 0.268672
         seed: 0
         shape:
         - 16384
@@ -1098,6 +1217,7 @@ operation:
         flux_stability: 0.682026
         n_inputs: 3
         n_outputs: 1
+        rmse: 0.625184
         seed: 0
         shape:
         - 16384
@@ -1106,6 +1226,7 @@ operation:
         flux_stability: 0.749488
         n_inputs: 3
         n_outputs: 1
+        rmse: 0.312592
         seed: 0
         shape:
         - 16384

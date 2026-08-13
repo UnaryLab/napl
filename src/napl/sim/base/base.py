@@ -12,9 +12,9 @@ from inspect import unwrap
 
 @lru_cache(maxsize=None)
 def _load_flux_map(package):
-    """Return the package's flux_stability.yaml as class -> polarity -> float, or {} if absent."""
+    """Return packaged flux stability as class -> polarity -> float, or {} if absent."""
     try:
-        resource = files(package).joinpath('flux_stability.yaml')
+        resource = files(package).joinpath('profiling_results.yaml')
         if not resource.is_file():
             return {}
         path = str(resource)
@@ -22,7 +22,16 @@ def _load_flux_map(package):
             AttributeError, ValueError):
         return {}
     # A present-but-corrupt yaml raises loud at first construction; read_yaml is outside the guard.
-    return read_yaml(path) or {}
+    profiling_results = read_yaml(path) or {}
+    return {
+        class_name: {
+            polarity: metrics['flux_stability']
+            for polarity, metrics in entry.items()
+            if isinstance(metrics, dict) and 'flux_stability' in metrics
+        }
+        for class_name, entry in profiling_results.items()
+        if isinstance(entry, dict)
+    }
 
 
 torch_dtype_map = {

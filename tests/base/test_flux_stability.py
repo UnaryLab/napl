@@ -1,7 +1,7 @@
-"""Tests for the base constructor filling flux_stability from packaged profiling yamls.
+"""Tests for the base constructor filling flux_stability from packaged profiling results.
 
 Verifies that napl_base fills flux_stability from each class's package
-flux_stability.yaml keyed by class name and polarity, falling back to 1.0 when
+profiling_results.yaml keyed by class name and polarity, falling back to 1.0 when
 the class, polarity, or yaml is absent, and that the loader is cached.
 """
 
@@ -18,12 +18,12 @@ from napl.utils._shared_test import devices
 
 
 def _yaml_value(package, cls, polarity):
-    text = files(package).joinpath('flux_stability.yaml').read_text()
-    return yaml.safe_load(text)[cls][polarity]
+    text = files(package).joinpath('profiling_results.yaml').read_text()
+    return yaml.safe_load(text)[cls][polarity]['flux_stability']
 
 
 def test_profiled_operation():
-    """A profiled op's flux_stability equals its operation-yaml value on every device."""
+    """A profiled op's flux_stability equals its operation profiling value on every device."""
     expected = _yaml_value('napl.sim.operation', 'mul_gaines', 'bipolar')
     for device in devices():
         operation = mul_gaines({'polarity': 'bipolar'}).to(device)
@@ -31,7 +31,7 @@ def test_profiled_operation():
 
 
 def test_profiled_module():
-    """A profiled module's flux_stability equals its module-yaml value on every device."""
+    """A profiled module's flux_stability equals its module profiling value on every device."""
     expected = _yaml_value('napl.sim.module', 'linear_ugemm', 'bipolar')
     config = {'polarity': 'bipolar', 'timestep': 64, 'generator': 'sobol',
               'dim': 1, 'scale': None, 'width': 12}
@@ -42,7 +42,7 @@ def test_profiled_module():
 
 
 def test_unprofiled_metric_falls_back():
-    """A metric (its package has no flux_stability.yaml) falls back to 1.0 on every device."""
+    """A metric (its package has no profiling_results.yaml) falls back to 1.0 on every device."""
     for device in devices():
         metric = stability_flux(torch.ones(1), torch.ones(1)).to(device)
         assert metric.flux_stability == 1.0
