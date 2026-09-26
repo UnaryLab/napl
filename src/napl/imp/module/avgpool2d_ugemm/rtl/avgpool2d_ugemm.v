@@ -34,9 +34,10 @@ module avgpool2d_ugemm #(
         end
     endfunction
 
-    // add_scale_unipolar holds A = 2*acc and fires at 2*SCALE, so A stays below
-    // 2 * KERNEL_AREA before a fire; one timestep adds at most 2*ENTRY, another
-    // 2 * KERNEL_AREA. WIDTH must let ACC_HI = 2**WIDTH - 2 cover that peak.
+    // add_scale_unipolar fires at SCALE and leaves acc at most KERNEL_AREA - 1,
+    // and one timestep adds at most ENTRY = KERNEL_AREA, so the pre-clamp sum
+    // peaks at 2 * KERNEL_AREA - 1. WIDTH must let ACC_HI = 2**(WIDTH-1) - 1 cover
+    // that peak; clog2(4 * KERNEL_AREA + 2) gives ACC_HI >= 2 * KERNEL_AREA.
     localparam integer ACC_WIDTH = clog2(4 * KERNEL_AREA + 2);
 
     genvar lane;

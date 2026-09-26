@@ -172,7 +172,7 @@ def test_sync_skewed_contract():
     assert operation.polarity_io == {}, operation.polarity_io
     assert operation.correlation_i == {}, operation.correlation_i
     assert operation.hw.pp_delay == 0
-    assert operation.flux_stability == 1.0
+    assert operation.flux_stability == [1.0]
 
 
 def test_sync_skewed():
@@ -180,6 +180,19 @@ def test_sync_skewed():
     streaming_suite(CONFIG)
 
 
+def test_sync_skewed_rejects_invalid_width():
+    """Verify the width guard rejects negative, fractional, and boolean values and builds at 0."""
+    for value in (-1, 0.5, True):
+        try:
+            sync_skewed({'width': value})
+        except AssertionError as error:
+            assert 'Invalid width' in str(error), str(error)
+        else:
+            raise AssertionError(f'sync_skewed accepted invalid width <{value}>')
+    assert sync_skewed({'width': 0}).width == 0
+
+
 if __name__ == '__main__':
     test_sync_skewed_contract()
     test_sync_skewed()
+    test_sync_skewed_rejects_invalid_width()

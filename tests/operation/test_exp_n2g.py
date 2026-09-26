@@ -111,5 +111,18 @@ def test_exp_n2g():
     streaming_suite(CONFIG)
 
 
+def test_exp_n2g_rejects_invalid_depth():
+    """Verify the depth guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for value in (0, -1, 0.5, True):
+        try:
+            exp_n2g({'depth': value})
+        except AssertionError as error:
+            assert 'Invalid depth' in str(error), str(error)
+        else:
+            raise AssertionError(f'exp_n2g accepted invalid depth <{value}>')
+    assert exp_n2g({'depth': 1}).depth == 1
+
+
 if __name__ == '__main__':
     test_exp_n2g()
+    test_exp_n2g_rejects_invalid_depth()

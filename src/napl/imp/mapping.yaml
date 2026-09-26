@@ -1,17 +1,6 @@
 # Simulation class -> RTL module bindings, read by napl/syn/translate.py.
 # Keys, the allowed `layer` values and its default, the expression language, and
 # the generator self-check contract are documented in RULE_IMP.md ("mapping.yaml").
-- rtl_module: add_desync
-  layer: operation
-  sim_module: sim/operation/add_desync.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    output: o_output
-  parameters:
-    DEPTH: "config['depth']"
-
 - rtl_module: add_gaines
   layer: operation
   sim_module: sim/operation/add_gaines.py
@@ -24,6 +13,26 @@
     SCALED: "config['scaled']"
     ENTRY: "config['entry']"
     SELECT_WIDTH: "log2(config['entry'])"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # Scaled mode reads its selector sequence from vec/add_gaines_rom.hex, which
+    # gen_add_gaines.py generates from its own model configuration: eight rows
+    # holding the selector list [0, 4, 6, 2, 3, 7, 5, 1]. No parameter carries
+    # the ROM contents, so scaled mode has a hardware form exactly for the
+    # configurations whose model draws that same sequence: the three names
+    # sharing gen_num_seq's Sobol branch, at entry 8, at a dimension whose first
+    # eight Sobol points are that list. `seed` and `taps` reach no Sobol code
+    # path, so they stay unrestricted here, and unscaled mode reads no sequence
+    # at all.
+    - "not config['scaled'] or lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+    # add_gaines.v reads the ROM into select_rom[0:ENTRY-1], so an entry above
+    # the ROM's eight rows leaves the rows past the eighth X, and an entry below
+    # it walks a shorter selector cycle than the model's.
+    - "not config['scaled'] or ENTRY == 8"
+    # A configuration has a hardware form when its model draws the ROM's
+    # selector list, which the clause generates from the model and compares
+    # against the list gen_add_gaines.py writes into the ROM.
+    - "not config['scaled'] or model_seq('add_gaines', config) == [0, 4, 6, 2, 3, 7, 5, 1]"
 
 - rtl_module: add_scale_bipolar
   layer: operation
@@ -39,6 +48,7 @@
     WIDTH: "config['intwidth']"
     ENTRY: input.size(dim)
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
     # The RTL accumulator counts whole spikes, so only the integer grid of the
@@ -64,6 +74,7 @@
     WIDTH: "config['intwidth']"
     ENTRY: input.size(dim)
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     # The accumulator, the scale bus and the reduction all land in one 32-bit
     # elaboration constant, and the Python constructor caps scale_max at
@@ -88,6 +99,7 @@
     WIDTH: "config['intwidth']"
     ENTRY: input.size(dim)
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     # The accumulator, the scale bus and the reduction all land in one 32-bit
     # elaboration constant, and the Python constructor caps scale_max at
@@ -111,6 +123,7 @@
     WIDTH: "config['intwidth']"
     ENTRY: input.size(dim)
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     - "2 ** WIDTH + 3 * ENTRY + 1 <= 2 ** 31 - 1"
     # The RTL accumulator counts whole spikes, so only the integer grid of the
@@ -133,7 +146,16 @@
     SCALED: "config['scaled']"
     ENTRY: input.size(dim)
     COUNT_WIDTH: ceil(log2(ENTRY + 1))
-    ACC_WIDTH: ceil(log2(2 * ENTRY * len(SEGMENT) + 1)) + 1
+    # Non-scaled, the register holds twice the gap between the accumulator and the
+    # emitted count, within [-(ENTRY-1)*len(SEGMENT), (ENTRY-1)*len(SEGMENT) + 2].
+    ACC_WIDTH: ceil(log2((ENTRY - 1) * len(SEGMENT) + 3)) + 1
+  requires:
+    # RTL-only: the simulation class clamps its accumulator to the signed width
+    # and the RTL does not, so each clause admits only a width the run never
+    # reaches. Scaled, the pre-carry sum peaks at 2*ENTRY-1, or at ENTRY when the
+    # segment is one step; non-scaled, the gap peaks at ((ENTRY-1)*len(SEGMENT) + 2) / 2.
+    - "not config['scaled'] or ENTRY + (ENTRY - 1) * (len(SEGMENT) > 1) <= 2 ** (get(config, 'width', 10) - 1) - 1"
+    - "config['scaled'] or (ENTRY - 1) * len(SEGMENT) + 2 <= 2 ** get(config, 'width', 10) - 2"
 
 - rtl_module: add_ugemm_unipolar
   layer: operation
@@ -147,17 +169,16 @@
     SCALED: "config['scaled']"
     ENTRY: input.size(dim)
     COUNT_WIDTH: ceil(log2(ENTRY + 1))
-    ACC_WIDTH: ceil(log2(2 * ENTRY * len(SEGMENT) + 1)) + 1
-
-- rtl_module: and_corr
-  layer: operation
-  sim_module: sim/operation/and_corr.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    output: o_output
-  parameters: {}
+    # Non-scaled, the register holds twice the gap between the accumulator and the
+    # emitted count, within [0, 2*((ENTRY-1)*len(SEGMENT) + 1)].
+    ACC_WIDTH: ceil(log2(2 * ((ENTRY - 1) * len(SEGMENT) + 1) + 1)) + 1
+  requires:
+    # RTL-only: the simulation class clamps its accumulator to the signed width
+    # and the RTL does not, so each clause admits only a width the run never
+    # reaches. Scaled, the pre-carry sum peaks at 2*ENTRY-1, or at ENTRY when the
+    # segment is one step; non-scaled, the gap peaks at (ENTRY-1)*len(SEGMENT) + 1.
+    - "not config['scaled'] or ENTRY + (ENTRY - 1) * (len(SEGMENT) > 1) <= 2 ** (get(config, 'width', 10) - 1) - 1"
+    - "config['scaled'] or (ENTRY - 1) * len(SEGMENT) + 1 <= 2 ** (get(config, 'width', 10) - 1) - 1"
 
 - rtl_module: bi2uni
   layer: operation
@@ -169,9 +190,9 @@
   parameters:
     WIDTH: "config['width']"
 
-- rtl_module: clamp_bipolar
+- rtl_module: clamp_sat_bipolar
   layer: operation
-  sim_module: sim/operation/clamp.py
+  sim_module: sim/operation/clamp_sat.py
   inputs:
     input: i_input
   outputs:
@@ -180,15 +201,24 @@
     FRACWIDTH: "get(config, 'fracwidth', 8)"
     LO: "floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
     HI: "floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
-    TIMESTEP: "len(SEGMENT)"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # The band bounds must land on the 2^-fracwidth grid so LO and HI are exact integers.
     - "config['lo'] * 2 ** FRACWIDTH == floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
     - "config['hi'] * 2 ** FRACWIDTH == floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+    # The three constant streams ride Sobol dimensions dim, dim+1, dim+2, whose
+    # direction vectors are baked into C0/C1/C2_DIRVEC. No parameter carries the
+    # dimension, so only the default 2 the tables were emitted for has a
+    # hardware form.
+    - "get(config, 'dim', 2) == 2"
+    # Those same tables are baked FRACWIDTH + 1 = 9 bits wide, the width of the
+    # SEQ_W encoders they feed. No parameter carries the table width, so only the
+    # default 8 the tables were emitted for has a hardware form.
+    - "get(config, 'fracwidth', 8) == 8"
 
-- rtl_module: clamp_unipolar
+- rtl_module: clamp_sat_unipolar
   layer: operation
-  sim_module: sim/operation/clamp.py
+  sim_module: sim/operation/clamp_sat.py
   inputs:
     input: i_input
   outputs:
@@ -197,21 +227,87 @@
     FRACWIDTH: "get(config, 'fracwidth', 8)"
     LO: "floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
     HI: "floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
-    TIMESTEP: "len(SEGMENT)"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # The band bounds must land on the 2^-fracwidth grid so LO and HI are exact integers.
     - "config['lo'] * 2 ** FRACWIDTH == floor(config['lo'] * 2 ** FRACWIDTH + 0.5)"
     - "config['hi'] * 2 ** FRACWIDTH == floor(config['hi'] * 2 ** FRACWIDTH + 0.5)"
+    # The three constant streams ride Sobol dimensions dim, dim+1, dim+2, whose
+    # direction vectors are baked into C0/C1/C2_DIRVEC. No parameter carries the
+    # dimension, so only the default 2 the tables were emitted for has a
+    # hardware form.
+    - "get(config, 'dim', 2) == 2"
+    # Those same tables are baked FRACWIDTH + 1 = 9 bits wide, the width of the
+    # SEQ_W encoders they feed. No parameter carries the table width, so only the
+    # default 8 the tables were emitted for has a hardware form.
+    - "get(config, 'fracwidth', 8) == 8"
 
-- rtl_module: counter
+- rtl_module: clamp_sat_dyn
   layer: operation
-  sim_module: sim/operation/counter.py
+  sim_module: sim/operation/clamp_sat_dyn.py
+  inputs:
+    input: i_input
+    lo: i_lo
+    hi: i_hi
+  outputs:
+    output: o_output
+  # One module serves both polarities and nothing here is configuration-dependent:
+  # the band arrives on the two bound ports, and the stage shape the RTL is built
+  # around (unit scale, the integer grid, the 3/5/3 entry counts, and the stage
+  # accumulator width) is fixed in the simulation class rather than read from its
+  # config, whose only key is the polarity. So every clamp_sat_dyn configuration has
+  # this hardware form and no requires clause restricts it. The stage accumulator
+  # width reaches WIDTH, which the RTL defaults to the model's 4 and which carries
+  # add_scale_bipolar's own 32-bit elaboration guard.
+
+- rtl_module: clamp_comp
+  layer: operation
+  sim_module: sim/operation/clamp_comp.py
   inputs:
     input: i_input
   outputs:
     output: o_output
   parameters:
-    WIDTH: "config['width']"
+    # The simulation class fixes the bound-sequence period at 2**9 rather than
+    # reading it from the config, so this literal is the binding to that constant;
+    # gen_clamp_comp.py compares it against the model's own constant_len, and a
+    # class that moved the period fails the co-simulation here.
+    SEQ_W: "9"
+    # A bound reaches the encoder as the probability the model thresholds against
+    # the sequence: b for a unipolar bound and (b + 1) / 2 for a bipolar one, in
+    # units of 2**-SEQ_W. The polarity reaches the circuit only through these two
+    # codes, so one bare module serves both.
+    LO_CODE: "floor((config['lo'] if config['polarity'] == 'unipolar' else (config['lo'] + 1) / 2) * 2 ** SEQ_W + 0.5)"
+    HI_CODE: "floor((config['hi'] if config['polarity'] == 'unipolar' else (config['hi'] + 1) / 2) * 2 ** SEQ_W + 0.5)"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # Each bound's probability must land on the 2**-SEQ_W threshold grid, so the
+    # code the encoder compares is the bound itself. Off the grid the model keeps
+    # the exact probability and thresholds one sequence point differently, which
+    # the rounded parameter cannot express.
+    - "(config['lo'] if config['polarity'] == 'unipolar' else (config['lo'] + 1) / 2) * 2 ** SEQ_W == LO_CODE"
+    - "(config['hi'] if config['polarity'] == 'unipolar' else (config['hi'] + 1) / 2) * 2 ** SEQ_W == HI_CODE"
+    # The two bound streams ride Sobol dimensions dim and dim + 1, whose direction
+    # vectors are baked into LO_DIRVEC and HI_DIRVEC. No parameter carries the
+    # dimension, so only the default 2 the tables were emitted for has a hardware
+    # form.
+    - "get(config, 'dim', 2) == 2"
+
+- rtl_module: clamp_comp_dyn
+  layer: operation
+  sim_module: sim/operation/clamp_comp_dyn.py
+  inputs:
+    input: i_input
+    lo: i_lo
+    hi: i_hi
+  outputs:
+    output: o_output
+  parameters: {}
+  # One module serves both polarities and nothing here is configuration-dependent:
+  # the band arrives on the two bound ports, the two selectors carry no sizing
+  # field, and the class config holds only the polarity, which the selectors never
+  # read. So every clamp_comp_dyn configuration has this hardware form, the module
+  # declares no parameter, and no requires clause restricts it.
 
 - rtl_module: decode
   layer: operation
@@ -237,6 +333,42 @@
     IDX_W: "1 if config['depth'] <= 2 else int(ceil(log2(config['depth'])))"
     SEQ_LEN: "config['timestep']"
     SEQ_W: "1 if config['timestep'] <= 2 else int(ceil(log2(config['timestep'])))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # Both buffer positions come from vec/decorr_rom.hex, which gen_decorr.py
+    # generates from its own model configuration, the `sys` sequences at seeds 7
+    # and 8. No parameter carries the ROM contents, so the only configuration
+    # with a hardware form is the one whose model draws those same sequences.
+    # get_sysrand_seq reads neither `dim` nor `taps`, so both stay unrestricted
+    # here.
+    - "lower(get(config, 'generator', 'sys')) == 'sys'"
+    - "get(config, 'seed', None) == 7"
+    # Each ROM word packs the two positions as two IDX_W-bit fields, so the word
+    # width follows IDX_W and not the depth: depth 3 reads the same four-bit
+    # words. What pins the depth is the ROM contents, positions the generator
+    # drew for a depth-4 buffer. decorr.v is parameterized over DEPTH, so this
+    # clause pins the current generated instance, regenerable at other depths.
+    - "DEPTH == 4"
+    # decorr.v reads the ROM into idx_rom[0:SEQ_LEN-1] and wraps its counter at
+    # SEQ_LEN, and the model wraps its own index the same way, so the 256 ROM
+    # words hold one period of the length-256 sequences. A run of another length
+    # draws different sequences, which those words do not carry: a shorter one
+    # walks a prefix the model never draws, and a longer one replays these 256
+    # positions where the model draws a longer sequence. decorr.v is
+    # parameterized over SEQ_LEN, so this clause pins the current generated
+    # instance, regenerable at other lengths.
+    - "SEQ_LEN == 256"
+
+- rtl_module: delay
+  layer: operation
+  sim_module: sim/operation/delay.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    DEPTH: "config['depth']"
+    INIT: "0 if get(config, 'init', 'zero') == 'zero' else 1"
 
 - rtl_module: desync
   layer: operation
@@ -247,16 +379,6 @@
   outputs:
     output_0: o_output_0
     output_1: o_output_1
-  parameters:
-    DEPTH: "config['depth']"
-
-- rtl_module: dff
-  layer: operation
-  sim_module: sim/operation/dff.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
   parameters:
     DEPTH: "config['depth']"
 
@@ -272,7 +394,24 @@
     DEPTH: "config['depth']"
     WIDTH: "log2(config['depth'])"
   requires:
-    - "2 ** int(WIDTH) == DEPTH"
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # The simulator builds a one-row buffer, but div_cordiv.v's index needs
+    # WIDTH >= 1 bits and no co-simulation covers DEPTH 1.
+    - "DEPTH >= 2"
+    # The history index is hardwired in div_cordiv.v as the bit-reversed gray
+    # code of the cyclic counter, which is the Sobol sequence at dimension 1.
+    # No parameter carries the sequence, so the only configurations with a
+    # hardware form are the ones whose model draws that same sequence: the three
+    # names sharing gen_num_seq's Sobol branch, at a dimension whose first DEPTH
+    # points reproduce that index order. The clause below generates the model's
+    # sequence and compares it against the index order div_cordiv.v's gates
+    # build, so it admits every such dimension at every depth. Dimension 1 does
+    # so at every depth, and the buffer holds DEPTH points only, so shallow
+    # buffers admit more dimensions: at depth 2 every dimension does, since
+    # every Sobol dimension opens 0 then 0.5. `seed` and `taps` reach no Sobol
+    # code path, so they stay unrestricted here.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+    - "model_seq('div_cordiv', config) == gray_index(DEPTH)"
 
 - rtl_module: div_gaines_bipolar
   layer: operation
@@ -327,6 +466,7 @@
     SCALE: "config['scale']"
     WIDTH: "config['intwidth']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     # The RTL accumulator counts whole spikes, so only the integer grid of the
     # simulation model, fracwidth 0, has a hardware form.
@@ -348,6 +488,7 @@
     SCALE_W: "ceil(log2(config['scale_max'] + 1))"
     WIDTH: "config['intwidth']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     - "WIDTH <= 30"
     # The RTL accumulator counts whole spikes, so only the integer grid of the
     # simulation model, fracwidth 0, has a hardware form.
@@ -364,6 +505,7 @@
   parameters:
     SCALE_W: "ceil(log2(config['scale_max'] + 1))"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # The RTL accumulator counts whole spikes, so only the integer grid of the
     # simulation model, fracwidth 0, has a hardware form.
     - "config['fracwidth'] == 0"
@@ -378,6 +520,7 @@
   parameters:
     SCALE: "config['scale']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # The RTL accumulator counts whole spikes, so only the integer grid of the
     # simulation model, fracwidth 0, has a hardware form.
     - "config['fracwidth'] == 0"
@@ -396,26 +539,90 @@
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
     FRAC: "ceil(log2(config['timestep'])) + 1"
+    # Sequence circuit encode.v instantiates, one per branch of gen_num_seq:
+    # `sobol`, `rc`, and `rate` share the Sobol branch at the same dimension,
+    # `tc` and `temporal` share the ascending ramp, and the two LFSR forms each
+    # have their own. `sys` reaches none of these and is rejected below.
+    GENERATOR: "0 if lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate'] else (1 if lower(get(config, 'generator', 'sobol')) == 'lfsr' else (2 if lower(get(config, 'generator', 'sobol')) == 'lfsr_ext' else 3))"
+    # Feedback tap mask of the default polynomial get_lfsr_seq takes from
+    # LFSR().get_fpolyList(m=WIDTH)[0], indexed by WIDTH. gen_encode.py replays
+    # every entry against the model sequence, so a wrong row fails the co-sim
+    # rather than translating into wrong hardware. The modes that read no taps
+    # resolve 0, which keeps a width outside the table from failing the index
+    # for them; for the LFSR modes the width bound below is what enforces it.
+    TAPS: "[0, 0, 3, 5, 9, 9, 33, 65, 113, 33, 129, 513, 2369][WIDTH] if (lower(get(config, 'generator', 'sobol')) in ['lfsr', 'lfsr_ext'] and WIDTH <= 12) else 0"
+    # get_lfsr_seq's default seed is [0]*(width-1) + [1], the state 1, which is
+    # also the opening state of the extended cycle. A configuration carrying its
+    # own seed is rejected below rather than resolved here.
+    SEED: "1"
+    # One direction-vector table per Sobol dimension the generator emits, and
+    # the simulation class rejects a dimension below one before this resolves.
+    # A dimension above four has no table, so it resolves the d1 path: encode.v
+    # reads DIRVEC_FILE only for GENERATOR 0, which is rejected below at such a
+    # dimension. All four paths are the same length as the module's default,
+    # which Verilog string parameter overrides truncate to.
+    DIRVEC_FILE: "['vec/encode_dirvec_d1.hex', 'vec/encode_dirvec_d2.hex', 'vec/encode_dirvec_d3.hex', 'vec/encode_dirvec_d4.hex'][get(config, 'dim', 1) - 1] if get(config, 'dim', 1) <= 4 else 'vec/encode_dirvec_d1.hex'"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # WIDTH is ceil(log2(timestep)), so a single-timestep stream asks for a
+    # zero-bit counter, which has no hardware form. Two timesteps give one bit.
+    - "config['timestep'] >= 2"
+    # The simulator draws any Sobol dimension up to 21201, but the RTL holds
+    # direction-vector tables for dimensions 1 to 4 only. The other generators
+    # draw the same sequence at every dimension and read no table.
+    - "get(config, 'dim', 1) <= 4 or GENERATOR != 0"
+    # Every generator with a sequence circuit behind it. `sys` is the one legal
+    # gen_num_seq generator with no hardware: it is a Mersenne-Twister
+    # permutation drawn at construction, which no online circuit reproduces,
+    # seeded or not.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate', 'lfsr', 'lfsr_ext', 'tc', 'temporal']"
+    # The LFSR modes resolve their taps from the table above, which runs from
+    # WIDTH 2, the narrowest width with a feedback polynomial and the bound
+    # get_lfsr_seq itself raises on, to WIDTH 12. Outside that range the mode has
+    # no verified tap row, so it is rejected instead of resolving TAPS 0.
+    - "lower(get(config, 'generator', 'sobol')) not in ['lfsr', 'lfsr_ext'] or (ceil(log2(config['timestep'])) >= 2 and ceil(log2(config['timestep'])) <= 12)"
+    # SEED is the default seed's state. A configuration naming its own seed walks
+    # a different cycle, which the resolved parameters would not carry.
+    - "lower(get(config, 'generator', 'sobol')) not in ['lfsr', 'lfsr_ext'] or 'seed' not in config"
+    # TAPS is the default polynomial's tap mask. A configuration naming its own
+    # taps walks a different polynomial, which the resolved parameters would not
+    # carry. The other generators read no taps, so the clause is inert for them.
+    - "lower(get(config, 'generator', 'sobol')) not in ['lfsr', 'lfsr_ext'] or 'taps' not in config"
 
-- rtl_module: eq_rc
+- rtl_module: encode_hold
   layer: operation
-  sim_module: sim/operation/eq_rc.py
+  sim_module: sim/operation/encode_hold.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    WIDTH: "ceil(log2(config['timestep']))"
+    TRIGGER: "config['trigger_timestep']"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['timestep'] >= 2"
+    # count_k / TRIGGER is exact and the shift reproduces the model only when the
+    # trigger is a power of two.
+    - "2 ** int(log2(config['trigger_timestep'])) == config['trigger_timestep']"
+    # encode_hold.v instantiates encode without overriding its GENERATOR, so the
+    # re-emitted stream always walks the Sobol sequence at the default dimension.
+    # No parameter carries that choice, so the only configurations with a
+    # hardware form are the three names sharing gen_num_seq's Sobol branch.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+
+- rtl_module: eq
+  layer: operation
+  sim_module: sim/operation/eq.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
   outputs:
     output: o_output
   parameters:
-    VALUE_GAIN: "2 if get(config, 'polarity') == 'bipolar' else 1"
-    TOL_NUM: "floor(config['tolerance'] * 10 + 0.5)"
-    TOL_DEN: "10"
-    # The elapsed-timestep counter is sized to hold the run length (one bit of
-    # headroom over its bit width), matching the model's timestep counter.
-    TW: "floor(log2(len(SEGMENT))) + 2"
-  requires:
-    # The float tolerance is carried as TOL_NUM/10, exact only on the tenths grid.
-    # The RTL relation is invariant to a common factor, so any k/10 tolerance is faithful.
-    - "config['tolerance'] * 10 == floor(config['tolerance'] * 10 + 0.5)"
+    WIDTH: "config['width']"
+    TOLERANCE: "config['tolerance']"
 
 - rtl_module: exp_n1
   layer: operation
@@ -426,6 +633,19 @@
     output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # exp_n1.v reads its four coefficient streams from vec/exp_n1_rom.hex, which
+    # gen_exp_n1.py bakes from Sobol dimensions 1 to 4. No parameter carries the
+    # generator or the dimension, so only the Sobol-branch names at the default
+    # dim 1 have a hardware form.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+    - "get(config, 'dim', 1) == 1"
+    # exp_n1.v reads the ROM into coef_rom[0:2**WIDTH-1] and wraps its index at
+    # 2**WIDTH, and gen_exp_n1.py bakes the ROM for one WIDTH 8 period of 256
+    # words, so WIDTH 8 is the verified hardware form and the one this entry
+    # admits.
+    - "WIDTH == 8"
 
 - rtl_module: exp_n2g
   layer: operation
@@ -436,11 +656,12 @@
     output: o_output
   parameters:
     DEPTH: "config['depth']"
-    GAIN: "config['gain']"
+    # The simulation class defaults gain to 1.
+    GAIN: "get(config, 'gain', 1)"
 
-- rtl_module: gt_rc
+- rtl_module: gt
   layer: operation
-  sim_module: sim/operation/gt_rc.py
+  sim_module: sim/operation/gt.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -448,9 +669,9 @@
     output: o_output
   parameters: {}
 
-- rtl_module: inhibit
+- rtl_module: inhibit_tc
   layer: operation
-  sim_module: sim/operation/inhibit.py
+  sim_module: sim/operation/inhibit_tc.py
   inputs:
     input_data: i_input_data
     input_inhibit: i_input_inhibit
@@ -477,10 +698,23 @@
     output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # log_n1.v reads its four coefficient streams from vec/log_n1_rom.hex, which
+    # gen_log_n1.py bakes from Sobol dimensions 1 to 4. No parameter carries the
+    # generator or the dimension, so only the Sobol-branch names at the default
+    # dim 1 have a hardware form.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+    - "get(config, 'dim', 1) == 1"
+    # log_n1.v reads the ROM into coef_rom[0:2**WIDTH-1] and wraps its index at
+    # 2**WIDTH, and gen_log_n1.py bakes the ROM for one WIDTH 8 period of 256
+    # words, so WIDTH 8 is the verified hardware form and the one this entry
+    # admits.
+    - "WIDTH == 8"
 
-- rtl_module: lt_rc
+- rtl_module: lt
   layer: operation
-  sim_module: sim/operation/lt_rc.py
+  sim_module: sim/operation/lt.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -488,9 +722,9 @@
     output: o_output
   parameters: {}
 
-- rtl_module: max_rc
+- rtl_module: max
   layer: operation
-  sim_module: sim/operation/max_rc.py
+  sim_module: sim/operation/max.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -520,9 +754,9 @@
     output: o_output
   parameters: {}
 
-- rtl_module: min_rc
+- rtl_module: min
   layer: operation
-  sim_module: sim/operation/min_rc.py
+  sim_module: sim/operation/min.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -583,6 +817,7 @@
     SCALE: "config['scale']"
     WIDTH: "config['intwidth']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # 2 ** WIDTH is a 32-bit elaboration constant, so cap WIDTH (the RTL guards this too).
     - "config['intwidth'] <= 30"
     # The accumulator counts whole units, so only the integer grid (fracwidth 0)
@@ -591,8 +826,6 @@
     # On that grid the model rounds the scale to an integer, so SCALE tracks the
     # request only when it is already integral.
     - "config['scale'] == int(config['scale'])"
-    # The datapath sizing assumes the per-spike addend stays below 2 ** (WIDTH - 1).
-    - "config['scale'] <= 2 ** (config['intwidth'] - 1) - 1"
 
 - rtl_module: mul_scale_unipolar
   layer: operation
@@ -605,6 +838,7 @@
     SCALE: "config['scale']"
     WIDTH: "config['intwidth']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # 2 ** WIDTH is a 32-bit elaboration constant, so cap WIDTH (the RTL guards this too).
     - "config['intwidth'] <= 30"
     # The accumulator counts whole units, so only the integer grid (fracwidth 0)
@@ -613,8 +847,6 @@
     # On that grid the model rounds the scale to an integer, so SCALE tracks the
     # request only when it is already integral.
     - "config['scale'] == int(config['scale'])"
-    # The datapath sizing assumes the per-spike addend stays below 2 ** (WIDTH - 1).
-    - "config['scale'] <= 2 ** (config['intwidth'] - 1) - 1"
 
 - rtl_module: mul_ugemm_bipolar
   layer: operation
@@ -626,10 +858,14 @@
     output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['timestep'] >= 2"
 
-- rtl_module: mul_ugemm_dyn_bipolar
+- rtl_module: mul_ugemm_regen_bipolar
   layer: operation
-  sim_module: sim/operation/mul_ugemm_dyn.py
+  sim_module: sim/operation/mul_ugemm_regen.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -638,9 +874,9 @@
   parameters:
     WIDTH: "config['width']"
 
-- rtl_module: mul_ugemm_dyn_unipolar
+- rtl_module: mul_ugemm_regen_unipolar
   layer: operation
-  sim_module: sim/operation/mul_ugemm_dyn.py
+  sim_module: sim/operation/mul_ugemm_regen.py
   inputs:
     input_0: i_input_0
     input_1: i_input_1
@@ -659,6 +895,10 @@
     output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['timestep'] >= 2"
 
 - rtl_module: mul_unibi
   layer: operation
@@ -700,35 +940,27 @@
     output: o_output
   parameters: {}
 
-- rtl_module: or_sat
+- rtl_module: pow_delay_bipolar
   layer: operation
-  sim_module: sim/operation/or_sat.py
-  inputs:
-    input_0: i_input_0
-    input_1: i_input_1
-  outputs:
-    output: o_output
-  parameters: {}
-
-- rtl_module: pow_n_bipolar
-  layer: operation
-  sim_module: sim/operation/pow_n.py
+  sim_module: sim/operation/pow_delay.py
   inputs:
     input: i_input
   outputs:
     output: o_output
   parameters:
     N: "config['n']"
+    DEPTH: "get(config, 'depth', 1)"
 
-- rtl_module: pow_n_unipolar
+- rtl_module: pow_delay_unipolar
   layer: operation
-  sim_module: sim/operation/pow_n.py
+  sim_module: sim/operation/pow_delay.py
   inputs:
     input: i_input
   outputs:
     output: o_output
   parameters:
     N: "config['n']"
+    DEPTH: "get(config, 'depth', 1)"
 
 - rtl_module: relu_cnt
   layer: operation
@@ -740,6 +972,16 @@
   parameters:
     WIDTH: "config['width']"
 
+- rtl_module: relu_delay
+  layer: operation
+  sim_module: sim/operation/relu_delay.py
+  inputs:
+    input: i_input
+  outputs:
+    output: o_output
+  parameters:
+    DEPTH: "config['depth']"
+
 - rtl_module: relu_sat
   layer: operation
   sim_module: sim/operation/relu_sat.py
@@ -748,16 +990,6 @@
   outputs:
     output: o_output
   parameters: {}
-
-- rtl_module: relu_shiftreg
-  layer: operation
-  sim_module: sim/operation/relu_shiftreg.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
-  parameters:
-    DEPTH: "config['depth']"
 
 - rtl_module: relu_tc
   layer: operation
@@ -768,31 +1000,6 @@
     output: o_output
   parameters:
     WIDTH: "config['width']"
-
-- rtl_module: sample_hold
-  layer: operation
-  sim_module: sim/operation/sample_hold.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
-  parameters:
-    WIDTH: "ceil(log2(config['timestep']))"
-    TRIGGER: "config['trigger_timestep']"
-  requires:
-    # count_k / TRIGGER is exact and the shift reproduces the model only when the
-    # trigger is a power of two.
-    - "2 ** int(log2(config['trigger_timestep'])) == config['trigger_timestep']"
-
-- rtl_module: shiftreg
-  layer: operation
-  sim_module: sim/operation/shiftreg.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
-  parameters:
-    DEPTH: "config['depth']"
 
 - rtl_module: sigmoid_hard
   layer: operation
@@ -814,6 +1021,17 @@
   parameters:
     WIDTH: "config['width']"
 
+- rtl_module: signabs_delay
+  layer: operation
+  sim_module: sim/operation/signabs_delay.py
+  inputs:
+    input: i_input
+  outputs:
+    sign: o_sign
+    magnitude: o_magnitude
+  parameters:
+    DEPTH: "config['depth']"
+
 - rtl_module: signabs_interleave
   layer: operation
   sim_module: sim/operation/signabs_interleave.py
@@ -824,17 +1042,6 @@
     magnitude: o_magnitude
   parameters:
     WIDTH: "config['width']"
-
-- rtl_module: signabs_shiftreg
-  layer: operation
-  sim_module: sim/operation/signabs_shiftreg.py
-  inputs:
-    input: i_input
-  outputs:
-    sign: o_sign
-    magnitude: o_magnitude
-  parameters:
-    DEPTH: "config['depth']"
 
 - rtl_module: sqrt_emit_bipolar
   layer: operation
@@ -910,26 +1117,6 @@
     output: o_output
   parameters: {}
 
-- rtl_module: square_dff_bipolar
-  layer: operation
-  sim_module: sim/operation/square_dff.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
-  parameters:
-    DEPTH: "config['depth']"
-
-- rtl_module: square_dff_unipolar
-  layer: operation
-  sim_module: sim/operation/square_dff.py
-  inputs:
-    input: i_input
-  outputs:
-    output: o_output
-  parameters:
-    DEPTH: "config['depth']"
-
 - rtl_module: sub_scale
   layer: operation
   sim_module: sim/operation/sub_scale.py
@@ -942,6 +1129,7 @@
     SCALE: "config['scale']"
     WIDTH: "config['intwidth']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
     # The inner add_scale accumulator is a 32-bit elaboration constant, so cap WIDTH.
     - "config['intwidth'] <= 30"
     # The accumulator counts whole spikes, so only the integer grid (fracwidth 0)
@@ -984,6 +1172,11 @@
     output_1: o_output_1
   parameters:
     WIDTH: "config['width']"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-bit skew counter builds in the simulator as a pass-through,
+    # but the RTL needs a counter bit.
+    - "WIDTH >= 1"
 
 - rtl_module: tanh_hard
   layer: operation
@@ -1003,6 +1196,19 @@
     output: o_output
   parameters:
     WIDTH: "ceil(log2(config['timestep']))"
+  requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # tanh_p1.v reads its four coefficient streams from vec/tanh_p1_rom.hex, which
+    # gen_tanh_p1.py bakes from Sobol dimensions 1 to 4. No parameter carries the
+    # generator or the dimension, so only the Sobol-branch names at the default
+    # dim 1 have a hardware form.
+    - "lower(get(config, 'generator', 'sobol')) in ['sobol', 'rc', 'rate']"
+    - "get(config, 'dim', 1) == 1"
+    # tanh_p1.v reads the ROM into coef_rom[0:2**WIDTH-1] and wraps its index at
+    # 2**WIDTH, and gen_tanh_p1.py bakes the ROM for one WIDTH 8 period of 256
+    # words, so WIDTH 8 is the verified hardware form and the one this entry
+    # admits.
+    - "WIDTH == 8"
 
 - rtl_module: tanh_pn
   layer: operation
@@ -1024,9 +1230,9 @@
   parameters:
     WIDTH: "config['width']"
 
-- rtl_module: wta
+- rtl_module: wta_tc
   layer: operation
-  sim_module: sim/operation/wta.py
+  sim_module: sim/operation/wta_tc.py
   inputs:
     input: i_input
     dim: null
@@ -1046,6 +1252,9 @@
     KERNEL_AREA: "area(config['kernel_size'])"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # lanes is the caller's elaboration count, which no constructor reads.
+    - "LANES == int(LANES) and LANES >= 1"
     - "get(config, 'stride') is None or get(config, 'stride') == config['kernel_size']"
 
 - rtl_module: conv_mix_bipolar
@@ -1055,7 +1264,7 @@
     input: i_input
     weight: i_weight
     bias: i_bias
-    # The bipolar pad encoder is held inside the RTL now, so the pad spike is
+    # The bipolar pad encoder is held inside the RTL, so the pad spike is
     # generated internally and no port carries it.
     pad_bits: null
   outputs:
@@ -1078,8 +1287,10 @@
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
-    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
     # the requested scale to an integer and compares against the rounded value,
@@ -1116,8 +1327,10 @@
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
-    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
     # the requested scale to an integer and compares against the rounded value,
@@ -1152,11 +1365,16 @@
     SCALE_WIDTH: "floor(log2(IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS) + 0.5)"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
-    - "get(config['config'], 'scaled', True)"
-    - "IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS >= 2"
-    - "2 ** SCALE_WIDTH == IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    # The patch tap count is the composed linear_gaines_bipolar's IN_FEATURES,
+    # whose weight-threshold table paths carry a two ASCII digit feature index,
+    # so feature 100 would name a path holding a colon, whose table does not
+    # exist and whose $readmemb leaves the thresholds X.
+    - "IN_CHANNELS * KERNEL_H * KERNEL_W <= 100"
 
 - rtl_module: conv_gaines_unipolar
   layer: module
@@ -1187,10 +1405,17 @@
     SCALED: "int(get(config['config'], 'scaled', True))"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
-    - "SCALED == 0 or IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS >= 2"
-    - "SCALED == 0 or 2 ** SCALE_WIDTH == IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
+    # The patch tap count is the composed linear_gaines_unipolar's IN_FEATURES,
+    # whose weight-threshold table paths carry a two ASCII digit feature index,
+    # so feature 100 would name a path holding a colon, whose table does not
+    # exist and whose $readmemb leaves the thresholds X. The table generate runs
+    # at either SCALED setting.
+    - "IN_CHANNELS * KERNEL_H * KERNEL_W <= 100"
 
 - rtl_module: conv_ugemm_bipolar
   layer: module
@@ -1219,8 +1444,10 @@
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
-    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
     # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
@@ -1256,8 +1483,10 @@
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     LANES: "config['lanes']"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[1] == input.size(1)"
-    - "2 ** (WIDTH - 1) > IN_CHANNELS * KERNEL_H * KERNEL_W + HAS_BIAS"
     - "LANES == BATCH * OUT_CHANNELS * ((IN_H + 2 * PADDING - DILATION * (KERNEL_H - 1) - 1) // STRIDE + 1) * ((IN_W + 2 * PADDING - DILATION * (KERNEL_W - 1) - 1) // STRIDE + 1)"
     # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
@@ -1283,8 +1512,14 @@
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
+    # A bias-only layer builds in the simulator, but the RTL input bus needs a bit.
+    - "IN_FEATURES >= 1"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
     # the requested scale to an integer and compares against the rounded value,
     # so SCALE tracks it only when the request is already integral.
@@ -1307,8 +1542,14 @@
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
+    # A bias-only layer builds in the simulator, but the RTL input bus needs a bit.
+    - "IN_FEATURES >= 1"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
     # the requested scale to an integer and compares against the rounded value,
     # so SCALE tracks it only when the request is already integral.
@@ -1332,10 +1573,16 @@
     # exactly a half, so floor(x + 0.5) is that rounding.
     SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "get(config['config'], 'scaled', True)"
-    - "IN_FEATURES + HAS_BIAS >= 2"
-    - "2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS"
+    # The per-feature weight-threshold table paths carry a two ASCII digit
+    # feature index, so feature 100 would name a path holding a colon, whose
+    # table does not exist and whose $readmemb leaves the thresholds X.
+    - "IN_FEATURES <= 100"
 
 - rtl_module: linear_gaines_unipolar
   layer: module
@@ -1356,9 +1603,17 @@
     SCALE_WIDTH: "floor(log2(IN_FEATURES + HAS_BIAS) + 0.5)"
     SCALED: "int(get(config['config'], 'scaled', True))"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "SCALED == 0 or IN_FEATURES + HAS_BIAS >= 2"
-    - "SCALED == 0 or 2 ** SCALE_WIDTH == IN_FEATURES + HAS_BIAS"
+    # The per-feature weight-threshold table paths carry a two ASCII digit
+    # feature index, so feature 100 would name a path holding a colon, whose
+    # table does not exist and whose $readmemb leaves the thresholds X. The
+    # table generate runs at either SCALED setting.
+    - "IN_FEATURES <= 100"
 
 - rtl_module: linear_ugemm_bipolar
   layer: module
@@ -1377,8 +1632,14 @@
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
+    # A bias-only layer builds in the simulator, but the RTL input bus needs a bit.
+    - "IN_FEATURES >= 1"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
     # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
@@ -1403,8 +1664,14 @@
     HAS_BIAS: "int(get(config, 'bias') is not None)"
     SCALE: "get(config['config'], 'scale') if get(config['config'], 'scale') is not None else IN_FEATURES + HAS_BIAS"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
+    # A single-timestep stream sizes the sequence counter at zero bits.
+    - "config['config']['timestep'] >= 2"
+    # A bias-only layer builds in the simulator, but the RTL input bus needs a bit.
+    - "IN_FEATURES >= 1"
     - "shape(config['weight'])[0] == config['lanes']"
-    - "2 ** (WIDTH - 1) > IN_FEATURES + HAS_BIAS"
     # The lane accumulator is add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
     # The module hardcodes fracwidth 0 into its inner add_scale, which rounds
@@ -1436,12 +1703,12 @@
     HAS_BIAS_F: "int(get(config, 'bias_f') is not None)"
     HAS_BIAS_N: "int(get(config, 'bias_n') is not None)"
   requires:
+    # RTL-only: each clause rejects configurations the simulation class builds.
+    # A zero-lane layer builds in the simulator, but the RTL has no lane to generate.
+    - "LANES >= 1"
     - "shape(config['weight_f'])[0] == config['lanes']"
     - "shape(config['weight_n'])[0] == config['lanes']"
     - "shape(config['weight_n'])[1] == shape(config['weight_f'])[1]"
     - "IN_SIZE >= 1"
-    - "2 ** (WIDTH - 1) > LANES + IN_SIZE + (1 if HAS_BIAS_F or HAS_BIAS_N else 0)"
     # The lane accumulators are add_scale_*, whose 32-bit elaboration constants cap WIDTH.
     - "WIDTH <= 30"
-    # timestep > 2 ** depth_ismul, restated on the parameters the RTL carries.
-    - "SEQ_WIDTH > SR_WIDTH"

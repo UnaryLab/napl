@@ -31,11 +31,7 @@ def main():
     model.reset()
     reset_at = len(stream) // 2
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_DEPTH {CONFIG['depth']}\n"
-        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
-    )
-
+    rows = 0
     with VEC.open("w") as output:
         for index, bit in enumerate(stream):
             if index == reset_at:
@@ -44,6 +40,14 @@ def main():
             input_spike = torch.tensor([bit], dtype=model.stype)
             result = int(model(input_spike).item())
             output.write(f"{bit} {result}\n")
+            rows += 1
+
+    # The R marker row is not a compared vector, so the count excludes it.
+    PARAMS.write_text(
+        f"`define GEN_DEPTH {CONFIG['depth']}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
         f"wrote {VEC} ({len(stream)} vectors, reset@{reset_at}) "

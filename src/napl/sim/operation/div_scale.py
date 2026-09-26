@@ -50,6 +50,8 @@ class div_scale(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(

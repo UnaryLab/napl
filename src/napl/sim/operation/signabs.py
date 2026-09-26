@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 
 
@@ -39,6 +40,8 @@ class signabs(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -56,13 +59,17 @@ class signabs(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Saturating-counter bit width; the default is ``3``.
+              - **width**: Saturating-counter bit width, an integer of at least 1; the default is ``3``. Other values raise ``AssertionError``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the bounded sign-and-magnitude accumulator in bits.
         self.width = config['width']
+        if type(self.width) is not int or self.width < 1:
+            message = f'Invalid width: <{self.width}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Largest value retained by the unsigned accumulator.
         self.acc_max = 2**self.width - 1

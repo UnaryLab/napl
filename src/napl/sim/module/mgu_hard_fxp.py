@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from napl.sim.base import napl_base
 from napl.sim.module._shared import _init_mgu_params
 from .round_fxp import round_fxp
-from napl.sim.operation import sigmoid_fxp, tanh_fxp
+from napl.sim.operation import sigmoid_hard_fxp, tanh_hard_fxp
 
 
 # Single source for every optional key: the signature default and the per-key fallback.
@@ -97,13 +97,13 @@ class mgu_hard_fxp(napl_base):
         #: Whether the forget and new gates use hard activations.
         self.hard = cfg['hard']
         #: Hard-tanh operator that bounds intermediate and output values.
-        self.htanh = tanh_fxp()
+        self.htanh = tanh_hard_fxp()
         #: Fixed-point quantizer applied to recurrent operands and parameters.
         self.trunc = round_fxp({'intwidth': cfg['intwidth'], 'fracwidth': cfg['fracwidth']})
         #: Activation applied to the forget gate.
-        self.fg_sigmoid = sigmoid_fxp() if self.hard else torch.nn.Sigmoid()
+        self.fg_sigmoid = sigmoid_hard_fxp() if self.hard else torch.nn.Sigmoid()
         #: Activation applied to the candidate hidden state.
-        self.ng_tanh = tanh_fxp() if self.hard else torch.nn.Tanh()
+        self.ng_tanh = tanh_hard_fxp() if self.hard else torch.nn.Tanh()
         _init_mgu_params(self, input_size, hidden_size, bias)
 
 

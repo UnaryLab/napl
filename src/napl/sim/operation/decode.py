@@ -36,6 +36,8 @@ class decode(napl_base):
         dec(torch.tensor([1.0, 0.0]))
         value = dec.spike_value
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'popcount'
 
 
     def __init__(
@@ -52,8 +54,9 @@ class decode(napl_base):
 
                 * **polarity** - ``"unipolar"`` or ``"bipolar"``. Defaults to
                   ``"bipolar"``.
-                * **timestep** - Maximum number of input timesteps. Defaults to
-                  ``256``.
+                * **timestep** - Maximum number of input timesteps, an integer of
+                  at least 1. Defaults to ``256``. Other values raise
+                  ``AssertionError``.
                 * **name** - Optional instance label. Defaults to ``None``.
 
         Construction initializes the spike counter to a scalar zero.
@@ -62,6 +65,10 @@ class decode(napl_base):
 
         #: Maximum number of spike timesteps accepted by this decoder.
         self.timestep = config['timestep']
+        if type(self.timestep) is not int or self.timestep < 1:
+            message = f'Invalid timestep: <{self.timestep}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Bit width needed to count through the configured stream length.
         self.width = math.ceil(math.log2(self.timestep))
 

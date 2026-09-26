@@ -41,6 +41,8 @@ class signabs_interleave(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(self, config={'width': 3}):

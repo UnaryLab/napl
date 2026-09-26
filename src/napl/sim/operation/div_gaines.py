@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 from .encode import encode
 
@@ -40,10 +41,13 @@ class div_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
-    #: The counter-comparison reference is encoded from a held number sequence,
-    #: so the RTL counterpart holds its own encoder instead of sharing an
-    #: external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The counter-comparison
+    #: reference is produced inside the operation from a held number sequence,
+    #: replayed in RTL from a baked RNG ROM addressed by its own index counter,
+    #: so no external stream feeds it and nothing here can be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -65,7 +69,7 @@ class div_gaines(napl_base):
             - **config** – Configuration mapping.
 
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
-              - **width**: Counter width in bits; the default is ``5``.
+              - **width**: Counter width in bits, an integer of at least 1; the default is ``5``. Other values raise ``AssertionError``.
               - **generator**: Number-sequence generator for quotient thresholds; the default is ``"Sobol"``.
               - **dim**: Generator dimension forwarded when the threshold sequence is built; the default is ``1``.
               - **name**: Optional instance label.
@@ -74,6 +78,10 @@ class div_gaines(napl_base):
 
         #: Saturating quotient-counter width in bits.
         self.width = config['width']
+        if type(self.width) is not int or self.width < 1:
+            message = f'Invalid width: <{self.width}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Encoder supplying the periodic quotient-spike threshold comparison.
         self.reference_encode = encode({'polarity': 'unipolar',

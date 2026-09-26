@@ -27,8 +27,14 @@ does not emit or generate any RTL source; it resolves, for each node:
 * ``port_map`` - a ``PortMap`` grouping the module's ``inputs`` and ``outputs``
   port names.
 
-Resolving a node walks three steps: select the mapping entry, resolve its
-parameters, and build the port map.
+Resolving a node walks five steps: select the mapping entry, resolve its
+``.v`` file, build the simulation class from the node config, resolve its
+parameters and check its ``requires`` conditions, and build the port map.
+Building the simulation class passes an operation its config mapping and a
+module its constructor arguments by name, leaving out ``lanes``; an
+``AssertionError``, ``ValueError``, or ``TypeError`` it raises becomes a
+``TranslationError`` naming the class, so translation rejects every
+configuration the simulation class rejects.
 
 Selecting the mapping entry
 ---------------------------
@@ -65,8 +71,11 @@ fields (the ones present in the file):
   input.size(dim)``). Empty when the module takes no parameters.
 * ``requires`` - optional guard expressions (a string or a list) that must all
   evaluate truthy for the configuration to be supported; a false guard raises
-  ``TranslationError``. Guards encode what a variant does not implement, such
-  as ``config['fracwidth'] == 0`` or ``WIDTH <= 30``.
+  ``TranslationError``. The simulation class has already rejected every
+  configuration its constructor rejects, so a ``requires`` block holds only
+  RTL-only restrictions, configurations the simulation class builds but the
+  RTL has no verified form for, such as ``config['fracwidth'] == 0`` or
+  ``WIDTH <= 30``, and opens with a ``# RTL-only:`` comment.
 
 The file resolves classes across both layers: for example, the operation-layer
 ``mul_gaines`` role maps to ``mul_gaines_bipolar`` / ``mul_gaines_unipolar``,
@@ -99,9 +108,9 @@ What this path does and does not do
 -----------------------------------
 
 It does resolve each node to a concrete RTL module file, a set of evaluated
-Verilog parameter values, and a port map, and it rejects configurations a
-variant cannot implement. It does not emit Verilog, elaborate a netlist, or
-connect nodes into a top-level module; the per-node bindings are the output.
+Verilog parameter values, and a port map, and it rejects configurations the
+simulation class rejects or the variant cannot implement. It does not emit
+Verilog, elaborate a netlist, or connect nodes into a top-level module; the per-node bindings are the output.
 The Verilog it binds to is the verified RTL under ``src/napl/imp/``, whose
 verification against the napl model is described in
 :doc:`../implementation/verification`.

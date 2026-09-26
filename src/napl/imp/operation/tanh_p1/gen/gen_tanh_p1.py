@@ -44,11 +44,7 @@ def main():
         )
         + "\n"
     )
-    PARAMS.write_text(
-        f"`define GEN_WIDTH {model.width}\n"
-        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
-    )
-
+    rows = 0
     with VEC.open("w") as output:
         for index, bit in enumerate(stream):
             reset_flag = int(index == 0 or index == reset_at)
@@ -57,6 +53,13 @@ def main():
             input_spike = torch.tensor([bit], dtype=model.stype)
             result = int(model(input_spike).item())
             output.write(f"{reset_flag} {bit} {result}\n")
+            rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {model.width}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
         f"wrote {VEC} ({len(stream)} vectors, reset@{reset_at}), "

@@ -38,8 +38,9 @@ sqrt_traceiscb has no config-derived sizing param: its only config key is
 'polarity'. The cordiv depth (2), the bi2uni width (3), and the shuffle buffer's
 depth (4) and period (256) are intrinsic algorithm constants fixed inside the
 op's __init__ ("the config is fixed to optimal directly"), not derived from the
-op's own config -- so no <op>_params.vh is emitted and the RTL carries no
-parameter. The shuffle buffer's position ROM is emitted here as
+op's own config -- so the RTL carries no parameter and the emitted
+vec/sqrt_traceiscb_params.vh holds only the generated vector count, which the
+testbench checks it compared in full. The shuffle buffer's position ROM is emitted here as
 vec/decorr_rom.hex, which the instantiated decorr copy reads relative to the
 unit directory.
 
@@ -47,6 +48,7 @@ Run inside the `napl` conda env (so `import napl` resolves):
     python gen/gen_sqrt_traceiscb.py
 """
 import math
+import re
 import subprocess
 import sys
 from itertools import product
@@ -60,6 +62,7 @@ from _gen_common import encode_value, rep_values
 
 UNIT = Path(__file__).resolve().parent.parent
 VEC = UNIT / "vec" / "sqrt_traceiscb.vec"
+PARAMS = UNIT / "vec" / "sqrt_traceiscb_params.vh"
 # decorr.v reads its position ROM from vec/decorr_rom.hex relative to the vvp
 # cwd, which is this unit's directory, so the instantiated copy needs its own
 # ROM here alongside the vectors.
@@ -163,6 +166,25 @@ def write_rom(model):
     return len(lines)
 
 
+# The three iverilog warning classes the Makefile's compile recipe rejects: an
+# undefined macro, an implicitly defined wire, and a port width mismatch. The
+# probe carries `default_nettype none, under which a typo'd net name is an
+# elaboration error that fails the compile on its own, so the implicit-wire
+# pattern only bites in a file lacking that directive.
+PROBE_WARNINGS = (("UNDEFINED MACRO", r"undefined \(and assumed null\)"),
+                  ("IMPLICIT WIRE", r"implicit definition of wire"),
+                  ("PORT WIDTH MISMATCH", r"expects [0-9]+ bits, got [0-9]+"))
+
+
+def assert_no_warnings(log):
+    """Fail on any of the three warning classes, naming the class and the source line."""
+    for name, pattern in PROBE_WARNINGS:
+        hits = [line for line in log.splitlines() if re.search(pattern, line)]
+        assert not hits, (
+            f'sqrt_traceiscb probe compile: {name} in tb/sqrt_traceiscb_probe.v or '
+            f'its instantiated rtl/:\n' + "\n".join(hits))
+
+
 def probe_cycles():
     """Per-cycle (unipolar state, bipolar state, input bit) read off the RTL.
 
@@ -178,10 +200,11 @@ def probe_cycles():
     sources = sorted(str(p) for p in (UNIT / "rtl").glob("*.v"))
     # The variants instantiate decorr, so its rtl/ joins the library search path
     # the Makefile builds for the unit testbench.
-    subprocess.run(["iverilog", "-g2001", "-Wall",
-                    "-y", str(UNIT.parent / "decorr" / "rtl"),
-                    "-o", str(exe), *sources, str(PROBE)],
-                   check=True)
+    compile_out = subprocess.run(["iverilog", "-g2001", "-Wall",
+                                  "-y", str(UNIT.parent / "decorr" / "rtl"),
+                                  "-o", str(exe), *sources, str(PROBE)],
+                                 check=True, capture_output=True, text=True)
+    assert_no_warnings(compile_out.stdout + compile_out.stderr)
     # decorr resolves its position ROM against the working directory, which is
     # the unit directory under both `make test` and this generator.
     out = subprocess.run(["vvp", str(exe)], check=True, cwd=str(UNIT),
@@ -192,8 +215,8 @@ def probe_cycles():
     cycles = []
     for line in lines:
         uni, bi, acc, uni_cells, bi_cells, seq, bit = line.split()
-        # acc_q is a signed 4-bit register printed as raw bits.
-        acc_val = int(acc, 2) - (16 if acc[0] == "1" else 0)
+        # acc_q is a signed register printed as raw bits.
+        acc_val = int(acc, 2) - ((1 << len(acc)) if acc[0] == "1" else 0)
         # store_q[DEPTH-2:0] prints most significant cell first.
         uni_tail = (tuple(int(c) for c in reversed(uni_cells)), int(seq))
         bi_tail = (tuple(int(c) for c in reversed(bi_cells)), int(seq))
@@ -246,6 +269,7 @@ def main():
     uni_cycles, bi_cycles = assert_model_matches_rtl(probe_cycles(), positions)
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
     with VEC.open("w") as f:
         for do_reset, bit in rows:
             if do_reset:
@@ -256,6 +280,8 @@ def main():
             out_uni = int(uni(inp_u).item())
             out_bi = int(bi(inp_b).item())
             f.write(f"{do_reset} {bit} {out_uni} {out_bi}\n")
+            written += 1
+    PARAMS.write_text(f"`define GEN_VECTORS {written}\n")
     print(f"wrote {VEC} ({len(rows)} vectors, mid-stream reset at cycle {reset_at}) "
           f"and {ROM} ({rom_words} ROM words); step() matched the RTL probe over "
           f"{uni_cycles} unipolar and {bi_cycles} bipolar cycles")

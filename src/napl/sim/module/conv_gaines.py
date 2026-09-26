@@ -53,7 +53,7 @@ class conv_gaines(napl_base):
     #: One threshold sequence per kernel position is held inside the layer, so the
     #: RTL counterpart generates the weight and bias streams itself from held
     #: numeric codes instead of taking them as spikes from a shared encoder.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
@@ -65,7 +65,7 @@ class conv_gaines(napl_base):
 
             **Parameters:**
 
-            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``, with ``out_channels`` of at least 1; other shapes raise ``AssertionError``.
             - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
             - **stride** – Convolution stride; the default is ``1``.
             - **padding** – Symmetric zero padding; the default is ``0``.
@@ -75,7 +75,7 @@ class conv_gaines(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: First weight sequence dimension, with one dimension per kernel position above it, the bias on ``dim + K``, the scaled adder's MUX select sequence on ``dim + K + 1`` and the bipolar pad stream on ``dim + K + 2``, where ``K`` is the kernel fan-in; the default is ``2``.
+              - **dim**: First weight sequence dimension, with one dimension per kernel position above it, the bias on ``dim + K``, the scaled adder's MUX select sequence on ``dim + K + 1`` and the bipolar pad stream on ``dim + K + 2``, where ``K`` is the kernel fan-in; the default is ``2``. A caller that encodes **input** with Sobol must keep its encoder dimension outside the weight span ``dim`` through ``dim + K - 1``.
               - **scaled**: Use MUX-select scaled addition, which picks one input per timestep by a Sobol-derived index, when ``True``; the default is ``True``.
               - **name**: Optional instance label.
 
@@ -95,6 +95,10 @@ class conv_gaines(napl_base):
 
         if weight.dim() != 4:
             message = f'conv_gaines weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
+        if weight.shape[0] < 1:
+            message = f'Invalid out_channels: <{weight.shape[0]}>; legal values: an integer of at least 1.'
             logger.error(message)
             raise AssertionError(message)
         #: Number of convolution output channels.

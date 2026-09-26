@@ -14,10 +14,10 @@
 // separate encoder on its own sequence dimension rather than from a
 // deterministic toggle that would correlate with the weight streams. The circuit
 // is that encoder: an encode cell comparing the constant probability 0.5 against
-// the pad sequence ROM, which is the model's own pad_encoder.num_seq.
+// the pad sequence, which is the model's own pad_encoder.num_seq.
 // Weight and bias arrive as held fixed-point codes, not spikes: the composed
 // layer holds one threshold sequence per patch tap and generates both streams
-// itself (Python internal_encode = True). Their packing is the linear_gaines
+// itself (its Python internal_encode is 'private'). Their packing is the linear_gaines
 // packing at IN_FEATURES = K, which is the (oc*K + tap) order used here.
 // Each position holds its own copy of the threshold index, the bias encoder
 // index and the Gaines select index. All three advance by one unconditionally
@@ -64,7 +64,7 @@ module conv_gaines_bipolar #(
 
     // Probability 0.5 on the encoder's fixed-point grid, the rate the model's
     // pad stream carries.
-    localparam [SEQ_WIDTH:0] PAD_HALF = {2'b01, {(SEQ_WIDTH-1){1'b0}}};
+    localparam [SEQ_WIDTH:0] PAD_HALF = {{SEQ_WIDTH{1'b0}}, 1'b1} << (SEQ_WIDTH - 1);
 
 
     // Elaboration-time guard: an unresolvable module reference makes iverilog
@@ -75,9 +75,9 @@ module conv_gaines_bipolar #(
         end
     endgenerate
 
-    // The decorrelated rate-0.5 pad stream. Its ROM is the pad encoder's own
-    // sequence, taken from a dimension no weight or bias stream uses, so the pad
-    // spike is uncorrelated with them.
+    // The decorrelated rate-0.5 pad stream. Its direction vectors are the pad
+    // encoder's own sequence, taken from a dimension no weight or bias stream
+    // uses, so the pad spike is uncorrelated with them.
     wire pad_bit;
 
     generate
@@ -85,7 +85,7 @@ module conv_gaines_bipolar #(
             encode #(
                 .WIDTH    (SEQ_WIDTH),
                 .FRAC     (SEQ_WIDTH),
-                .ROM_FILE ("vec/pad_rom.hex")
+                .DIRVEC_FILE ("vec/pad_dirvec.hex")
             ) u_pad (
                 .i_clk   (i_clk),
                 .i_rst_n (i_rst_n),

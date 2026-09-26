@@ -48,7 +48,7 @@ class linear_ugemm(napl_base):
     #: Encoding advances conditionally on data, so the RTL counterpart holds
     #: its own encoder for the weight and bias streams instead of sharing an
     #: external one.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(

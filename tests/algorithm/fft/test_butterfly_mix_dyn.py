@@ -114,7 +114,7 @@ def test_butterfly_mix_dyn_streaming():
         assert operation.compensation is None
         # The class encodes the constant twiddle itself, because an XNOR gate needs
         # both operands as streams.
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         assert operation.reference_encode.num_seq.shape == (TIMESTEP,)
         assert operation.streaming is True
         assert operation.lane == LANE
@@ -260,9 +260,21 @@ def test_butterfly_mix_dyn_scale_change():
 
 
 def test_butterfly_mix_dyn_rejects_invalid_config():
-    """Verify construction and runtime scales are rejected with their exact messages."""
+    """Verify invalid generators, construction values, and runtime scales are rejected."""
     codec_config, add_config = _configs()
     twiddle = torch.zeros(4, dtype=global_config.ntype)
+
+    invalid_generator = dict(codec_config, generator='lfsr')
+    try:
+        butterfly_mix_dyn(twiddle, twiddle, invalid_generator, add_config)
+    except AssertionError as error:
+        assert str(error) == (
+            'butterfly_mix_dyn decorrelates operands via distinct sobol dimensions, but '
+            'generator <lfsr> does not decorrelate by dim (identical sequences across '
+            "operands). Legal values: <['sobol', 'rc', 'rate']>."
+        ), error
+    else:
+        raise AssertionError('butterfly_mix_dyn accepted generator lfsr')
 
     missing = dict(add_config)
     missing.pop('scale_max')

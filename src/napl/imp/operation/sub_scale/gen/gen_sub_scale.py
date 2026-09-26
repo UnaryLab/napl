@@ -87,6 +87,7 @@ def main():
     # Resolve the elaborated mapping entry and require it to reproduce the params
     # these vectors were built with, so make test gates the mapping too.
     binding = translate_node({"class": "sub_scale", "config": {
+        "polarity": CONFIG["polarity"],
         "scale": CONFIG["scale"], "intwidth": CONFIG["intwidth"],
         "fracwidth": CONFIG["fracwidth"]}})
     expected = {"SCALE": CONFIG["scale"], "WIDTH": CONFIG["intwidth"]}
@@ -94,12 +95,7 @@ def main():
         f"mapping sub_scale resolves {binding.parameters}, not {expected}"
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_SCALE {CONFIG['scale']}\n"
-        f"`define GEN_WIDTH {CONFIG['intwidth']}\n"
-        f"`define GEN_PP_DELAY {pp_delay}\n"
-    )
-
+    vector_count = 0
     with VEC.open("w") as output:
         for segment_index, segment in enumerate(segments):
             for cycle, (a_bit, b_bit) in enumerate(segment):
@@ -108,8 +104,15 @@ def main():
                     f"{reset} {int(a_bit.item())} {int(b_bit.item())} "
                     f"{outputs[segment_index][cycle]}\n"
                 )
+                vector_count += 1
 
-    vector_count = sum(len(segment) for segment in segments)
+    PARAMS.write_text(
+        f"`define GEN_SCALE {CONFIG['scale']}\n"
+        f"`define GEN_WIDTH {CONFIG['intwidth']}\n"
+        f"`define GEN_PP_DELAY {pp_delay}\n"
+        f"`define GEN_VECTORS {vector_count}\n"
+    )
+
     print(
         f"wrote {VEC} ({vector_count} vectors, {len(segments)} reset segments) "
         f"and {PARAMS} (SCALE={CONFIG['scale']} WIDTH={CONFIG['intwidth']} "

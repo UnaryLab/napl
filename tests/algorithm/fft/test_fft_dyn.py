@@ -153,7 +153,7 @@ def test_fft_dyn_streaming():
             assert operation.scale_max == SCALE_MAX
             assert operation.compensation is None
             # Every stage multiplier turns its constant twiddle into a stream itself.
-            assert operation.internal_encode is True
+            assert operation.internal_encode == 'private'
             assert not hasattr(operation, 'scales')
             for stage in range(operation.stages):
                 child = getattr(operation, f'butterfly_stage_{stage}')
@@ -320,7 +320,7 @@ def test_fft_dyn_mix_kernel():
             for stage in range(operation.stages)
         ]
         assert all(isinstance(stage, butterfly_mix_dyn) for stage in stages)
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         assert operation.scale_max == SCALE_MAX
 
         # Stage index i encodes its constant twiddle on Sobol dimension 5 + i.

@@ -2,7 +2,7 @@ import torch
 import math
 
 from napl.sim.base import napl_base
-from napl.utils import pow2_lshift
+from napl.utils import grow_state_to, pow2_lshift
 from loguru import logger
 
 
@@ -59,6 +59,8 @@ class add_scale_dyn(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(
@@ -139,9 +141,9 @@ class add_scale_dyn(napl_base):
         #: Running centered input sum in raw units, used to decide when to emit a spike.
         self.accumulator: torch.Tensor
         self.register_buffer('accumulator', torch.zeros(1, dtype=self.ntype))
+
         #: Hardware latency and timing metadata for the combinational adder.
         self.hw.pp_delay = 0
-
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
         self.correlation_i = {}
@@ -183,7 +185,7 @@ class add_scale_dyn(napl_base):
 
         .. code-block:: python
 
-            output = adder(torch.tensor([1, 1], dtype=torch.int8), 1.5, dim=0)
+            output = adder(torch.tensor([[1, 1], [1, 0]], dtype=torch.int8), 1.5, dim=0)
         """
         # bool is a subclass of int, so isinstance would admit True/False here.
         if type(scale) not in (int, float):
@@ -229,14 +231,10 @@ class add_scale_dyn(napl_base):
         else:
             acc_delta = pow2_lshift(torch.sum(input, dim, dtype=self.ntype), self.fracwidth)
         acc_delta.sub_(offset)
+        grow_state_to(self.accumulator, acc_delta)
         # The accumulator drains by at most scale per timestep while the inflow can exceed that,
         # so the clamp below is the only guard against a diverging accumulator.
-        # The scalar initial state broadcasts out of place; matching shapes update in place.
-        if self.accumulator.shape == acc_delta.shape:
-            self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)
-        else:
-            updated = self.accumulator.add(acc_delta).clamp(self.acc_min, self.acc_max)
-            self.accumulator.resize_as_(updated).copy_(updated.detach())
+        self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)
         output = torch.ge(self.accumulator, scale_raw).type(self.ntype)
         # With scale > 0, emitting a carry preserves the accumulator bounds.
         self.accumulator.sub_(output, alpha=scale_raw)

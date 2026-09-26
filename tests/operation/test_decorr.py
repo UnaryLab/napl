@@ -208,7 +208,7 @@ def test_decorr_correlation():
 def test_decorr():
     """Verify decorr preserves the first stream value across the full unipolar and bipolar ranges."""
     # The kernel holds its own buffer-position-sequence encoder.
-    assert make_operation('unipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('unipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
 
 

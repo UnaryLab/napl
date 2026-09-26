@@ -20,6 +20,7 @@ import torch
 from napl.sim.operation import max_tc
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "max_tc.vec"
+PARAMS = Path(__file__).resolve().parent.parent / "vec" / "max_tc_params.vh"
 
 
 def main():
@@ -34,7 +35,8 @@ def main():
             out = int(model(in_0, in_1).item())
             f.write(f"{a} {b} {out}\n")
             rows += 1
-    print(f"wrote {VEC} ({rows} vectors)")
+    PARAMS.write_text(f"`define GEN_VECTORS {rows}\n")
+    print(f"wrote {VEC} ({rows} vectors) and {PARAMS}")
 
 
 if __name__ == "__main__":

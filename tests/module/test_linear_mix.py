@@ -73,7 +73,7 @@ def _kernel_specific_checks():
         assert inst.linear.timestep_cur == 0
         assert inst.accuracy.timestep_cur == 0
         # The layer holds its own weight and bias encoders.
-        assert inst.linear.internal_encode is True
+        assert inst.linear.internal_encode == 'private'
 
     print('Test passed.')
 

@@ -475,6 +475,18 @@ def gen_arange_tensor(polarity: str = 'unipolar', width: int = 8):
         return (data * (2 ** (width - 1))).floor() / (2 ** (width - 1))
 
 
+def grow_state_to(state, template):
+    """Resize a one-element state buffer in place to ``template``'s shape, filling every lane with its value.
+
+    A caller registers the buffer at rank 1 and lets the first call after
+    construction or reset set the run shape.
+    """
+    # A shape change raises once the state has grown past one element.
+    if state.shape != template.shape:
+        grown = state.reshape(()).expand_as(template).clone()
+        state.resize_as_(grown).copy_(grown)
+
+
 def pow2_lshift(input, shift):
     """
     Power-of-two left shift for float tensors: input * 2**shift.

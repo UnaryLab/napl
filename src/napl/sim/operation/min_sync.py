@@ -49,6 +49,8 @@ class min_sync(napl_base):
 
         *Correlation Manipulating Circuits for Stochastic Computing*, DATE, 2018.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(
@@ -68,7 +70,7 @@ class min_sync(napl_base):
             - **config** – Configuration mapping.
 
               - **polarity**: Input encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"unipolar"``.
-              - **depth**: Number of unpaired bits the synchronizer can save, an integer of at least ``1``; the default is ``1``. A larger depth raises the accuracy of the minimum.
+              - **depth**: Number of unpaired bits the synchronizer can save, an integer of at least ``1``; the default is ``1``. The depth changes the accuracy of the minimum, and the focused test prints the accuracy per depth.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity', 'depth'], optional_key_list=[], polarity_required=True)

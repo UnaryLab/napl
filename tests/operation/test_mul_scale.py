@@ -60,10 +60,8 @@ CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
     'timesteps': 256,
     'apply_operation': lambda operation, spikes: operation(spikes[0]),
-    # Gate 17 does not apply: mul_scale emits a single read output whose value is
-    # exactly what the suite decodes, so a defect that changes the product is
-    # already visible in the printed fidelity error; there is no identity-wire or
-    # unread-output failure mode to pin.
+    # Gate 17 does not apply: mul_scale returns a single output, which
+    # apply_operation reads, so there is no unread output to pin.
     'extra_checks': None,
 }
 

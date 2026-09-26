@@ -1,5 +1,3 @@
-import math
-
 import torch
 
 from napl.sim.base import global_config
@@ -44,8 +42,8 @@ def known_answer_case(_polarity):
 
 def _kernel_specific_checks():
     """
-    Gate 17: log(1 + x) strictly compresses a high input, so a kernel that
-    returned its input unchanged (an identity wire) would fail this band.
+    log(1 + x) strictly compresses a high input, so the decoded output must sit
+    inside a band well below the input rate.
 
     Also verifies timestep advance, reset, and internal_encode across devices.
     """
@@ -63,16 +61,35 @@ def _kernel_specific_checks():
             decoder(operation(encoder(value)))
 
         decoded = decoder.spike_value.mean().item()
-        # Identity would decode to 1.0; log(1 + 1) truncates to 0.7833.
+        # log(1 + 1) truncates to 0.7833, well below the 1.0 input rate.
         assert 0.60 < decoded < 0.95, f'[{device}] high-input decode {decoded:.4f} not compressed'
 
         assert operation.timestep_cur == 256
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         operation.reset()
         assert operation.timestep_cur == 0
-        print(f'[{device}] high-input decode={decoded:.4f} (identity would be 1.0)')
+        print(f'[{device}] high-input decode={decoded:.4f} (input rate 1.0)')
 
     print('Test passed.')
+
+
+def _validation_checks():
+    """Reject a config that omits any required key."""
+    required = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol'}
+    for missing in ('polarity', 'timestep', 'generator'):
+        config = dict(required)
+        del config[missing]
+        try:
+            log_n1(config)
+        except AssertionError as error:
+            assert str(error) == f'Missing key <{missing}> in the input configuration.'
+            continue
+        raise AssertionError(f'log_n1 must require {missing}')
+
+
+def _extra_checks():
+    _validation_checks()
+    _kernel_specific_checks()
 
 
 CONFIG = {
@@ -84,14 +101,14 @@ CONFIG = {
     'known_answer_case': known_answer_case,
     'encoder_dims': [5],  # Distinct from the operation's internal dimensions 1..4.
     'timesteps': 256,
-    'extra_checks': _kernel_specific_checks,
+    'extra_checks': _extra_checks,
 }
 
 
 def test_log_n1():
-    """Verify log_n1 against the truncated-log1p analytic and known-answer streams, with reset, timing, and the gate-17 compression check."""
+    """Verify unipolar log_n1 against the truncated-log1p analytic and known-answer streams, with reset, timing, and the compression check; log(1+x) stays defined only for unipolar x in [0, 1]."""
     # The kernel holds its own coefficient-stream encoder.
-    assert make_operation('unipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('unipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
 
 

@@ -49,7 +49,6 @@ def main():
     reset_at = len(STREAM) // 2
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_PP_DELAY {model.hw.pp_delay}\n")
     rows = 0
     with VEC.open("w") as f:
         for idx, (j, k) in enumerate(STREAM):
@@ -60,6 +59,10 @@ def main():
             out_q = int(model(in_j, in_k).item())
             f.write(f"{j} {k} {out_q}\n")
             rows += 1
+    PARAMS.write_text(
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(
         f"wrote {VEC} ({rows} vectors, reset@{reset_at}) and {PARAMS} "
         f"(GEN_PP_DELAY={model.hw.pp_delay})"

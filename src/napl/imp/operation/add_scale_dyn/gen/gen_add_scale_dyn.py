@@ -165,13 +165,8 @@ def main():
                 f"integer; segment {segment_index} requested {scale}"
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_SCALE_W {SCALE_W}\n"
-        f"`define GEN_WIDTH {ADD_SCALE_DYN['intwidth']}\n"
-        f"`define GEN_ENTRY {ENTRY}\n"
-        f"`define GEN_PP_DELAY {pp_delay_uni}\n"
-    )
 
+    vector_count = 0
     with VEC.open("w") as output:
         for segment_index, (segment_uni, segment_bi) in enumerate(
             zip(segments_uni, segments_bi)
@@ -187,8 +182,16 @@ def main():
                     f"{bus(spikes_uni)} {out_uni[segment_index][cycle]} "
                     f"{bus(spikes_bi)} {out_bi[segment_index][cycle]}\n"
                 )
+                vector_count += 1
 
-    vector_count = sum(len(segment) for segment in segments_uni)
+    PARAMS.write_text(
+        f"`define GEN_SCALE_W {SCALE_W}\n"
+        f"`define GEN_WIDTH {ADD_SCALE_DYN['intwidth']}\n"
+        f"`define GEN_ENTRY {ENTRY}\n"
+        f"`define GEN_PP_DELAY {pp_delay_uni}\n"
+        f"`define GEN_VECTORS {vector_count}\n"
+    )
+
     print(
         f"wrote {VEC} ({vector_count} vectors, {len(segments_uni)} reset segments) "
         f"and {PARAMS} (SCALE_W={SCALE_W} WIDTH={ADD_SCALE_DYN['intwidth']} "

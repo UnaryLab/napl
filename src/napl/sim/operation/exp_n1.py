@@ -34,6 +34,11 @@ class exp_n1(napl_base):
     length ``T``. With the default ``T = 256`` they are
     ``(c_1, c_2, c_3, c_4) = (51/256, 1/4, 85/256, 1/2)``.
 
+    DFF taps decorrelate the operands. The Sobol, or configured, coefficient
+    sequences remain; there is no generator-free variant unlike
+    :class:`pow_delay`. The first four outputs are 1 regardless of input,
+    because ``d4`` is a zero-filled tap. This kernel always has four taps.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -50,9 +55,12 @@ class exp_n1(napl_base):
 
         *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
-    #: The coefficient streams are encoded from held coefficient codes, so the
-    #: RTL counterpart holds its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The coefficient streams come
+    #: from held coefficient codes, replayed in RTL from a baked coefficient
+    #: ROM, so no external stream supplies them and the ROM cannot be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'delay'
 
 
     def __init__(

@@ -79,7 +79,7 @@ class butterfly_mix(napl_base):
     #: The twiddle encoder is held inside the class, so the RTL counterpart
     #: encodes that operand itself from a held numeric code instead of taking it
     #: as a spike from a shared encoder.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(
@@ -112,10 +112,7 @@ class butterfly_mix(napl_base):
               - **generator**: Required number-sequence generator. Only the
                 sobol-family values ``"sobol"``, ``"rc"``, and ``"rate"`` honor
                 ``dim`` and so decorrelate the twiddle stream from the input
-                streams. The values ``"lfsr"``, ``"sys"``, ``"tc"``, and
-                ``"temporal"`` are accepted, but they give the twiddle encoder
-                the same sequence as the input encoders, which correlates the
-                multiplier operands and logs a warning.
+                streams; every other generator is rejected.
               - **dim**: Optional one-based Sobol dimension of the twiddle
                 encoder; the default is ``5``, which clears the dimensions
                 ``1`` through ``4`` conventionally used by the four input ports.
@@ -186,11 +183,13 @@ class butterfly_mix(napl_base):
         # generator decorrelates it from x1 by dimension, so the default dimension 5 sits
         # above the dimensions 1 to 4 the four input ports conventionally use.
         if mul_config['generator'].lower() not in ['sobol', 'rc', 'rate']:
-            logger.warning(
+            message = (
                 f'butterfly_mix decorrelates operands via distinct sobol dimensions, but '
                 f'generator <{mul_config["generator"]}> does not decorrelate by dim (identical '
-                f'sequences across operands). Use a sobol-family generator, or decorrelate the '
-                f'input and twiddle streams by distinct seeds.')
+                f'sequences across operands). Legal values: <[\'sobol\', \'rc\', \'rate\']>.'
+            )
+            logger.error(message)
+            raise AssertionError(message)
         #: Encoder turning the stacked twiddle constants into a spike stream.
         self.reference_encode = encode({
             'polarity': self.polarity,

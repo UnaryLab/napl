@@ -13,10 +13,16 @@ PARAMS = ROOT / "vec" / "add_ugemm_params.vh"
 TIMESTEP = 256
 ENTRY = 8
 COUNT_WIDTH = math.ceil(math.log2(ENTRY + 1))
-ACC_WIDTH = math.ceil(math.log2(2 * ENTRY * TIMESTEP + 1)) + 1
-# The RTL accumulator holds twice the Python one, so that ACC_WIDTH-bit signed
-# register spans the same range as a Python accumulator one bit narrower.
-WIDTH = ACC_WIDTH - 1
+# Non-scaled, the RTL register holds twice the gap between the accumulator and
+# the emitted count: [0, 2*((ENTRY-1)*TIMESTEP + 1)] unipolar and
+# [-(ENTRY-1)*TIMESTEP, (ENTRY-1)*TIMESTEP + 2] bipolar, each with a sign bit.
+ACC_WIDTH = {
+    "unipolar": math.ceil(math.log2(2 * ((ENTRY - 1) * TIMESTEP + 1) + 1)) + 1,
+    "bipolar": math.ceil(math.log2((ENTRY - 1) * TIMESTEP + 3)) + 1,
+}
+# The smallest Python width whose clamp this run never reaches, which is what
+# mapping.yaml's requires admits: the unipolar gap peaks at (ENTRY-1)*TIMESTEP + 1.
+WIDTH = math.ceil(math.log2((ENTRY - 1) * TIMESTEP + 2)) + 1
 PROBE_CYCLES = 8
 CONFIGS = (
     {"polarity": "unipolar", "scaled": True, "width": WIDTH},
@@ -73,18 +79,22 @@ def check_mapping():
 
     COUNT_WIDTH and ACC_WIDTH live both here and in mapping.yaml. Resolving the
     mapping entry and requiring it to reproduce the gen's values ties the two
-    copies together, so editing one formula without the other trips this assert.
+    copies together, so editing one formula without the other trips this assert,
+    and a WIDTH the mapping requires rejects fails the translation.
     """
-    expected = {"SCALED": True, "ENTRY": ENTRY,
-                "COUNT_WIDTH": COUNT_WIDTH, "ACC_WIDTH": ACC_WIDTH}
-    for rtl_module in ("add_ugemm_unipolar", "add_ugemm_bipolar"):
+    for config in CONFIGS:
+        expected = {"SCALED": config["scaled"], "ENTRY": ENTRY,
+                    "COUNT_WIDTH": COUNT_WIDTH,
+                    "ACC_WIDTH": ACC_WIDTH[config["polarity"]]}
+        rtl_module = f"add_ugemm_{config['polarity']}"
         binding = translate_node({
             "class": "add_ugemm",
             "rtl_module": rtl_module,
-            "config": {"scaled": True, "timestep": TIMESTEP},
+            "config": dict(config),
             "inputs": {"input": [ENTRY]},
             "dim": -1,
-        })
+            "segment": TIMESTEP,
+        }, mapping_path=ROOT.parents[1] / "mapping.yaml")
         assert binding.parameters == expected, \
             f"mapping.yaml {rtl_module} resolves {binding.parameters}, not {expected}"
 
@@ -96,15 +106,8 @@ def main():
     segment_count = len(segments[0])
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_SCALED {int(CONFIGS[0]['scaled'])}\n"
-        f"`define GEN_UNSCALED {int(CONFIGS[2]['scaled'])}\n"
-        f"`define GEN_ENTRY {ENTRY}\n"
-        f"`define GEN_COUNT_WIDTH {COUNT_WIDTH}\n"
-        f"`define GEN_ACC_WIDTH {ACC_WIDTH}\n"
-        f"`define GEN_PP_DELAY {models[0].hw.pp_delay}\n"
-    )
 
+    vector_count = 0
     with VEC.open("w") as output:
         for model in models:
             model.reset()
@@ -121,6 +124,7 @@ def main():
                 )
                 + "\n"
             )
+            vector_count += 1
 
         assert all(model.accumulator.ne(0).any().item() for model in models)
 
@@ -143,12 +147,23 @@ def main():
                     )
                     + "\n"
                 )
+                vector_count += 1
 
-    vector_count = PROBE_CYCLES + segment_count * TIMESTEP
+    PARAMS.write_text(
+        f"`define GEN_SCALED {int(CONFIGS[0]['scaled'])}\n"
+        f"`define GEN_UNSCALED {int(CONFIGS[2]['scaled'])}\n"
+        f"`define GEN_ENTRY {ENTRY}\n"
+        f"`define GEN_COUNT_WIDTH {COUNT_WIDTH}\n"
+        f"`define GEN_ACC_WIDTH_UNI {ACC_WIDTH['unipolar']}\n"
+        f"`define GEN_ACC_WIDTH_BI {ACC_WIDTH['bipolar']}\n"
+        f"`define GEN_PP_DELAY {models[0].hw.pp_delay}\n"
+        f"`define GEN_VECTORS {vector_count}\n"
+    )
+
     print(
         f"wrote {VEC} ({vector_count} vectors, "
         f"{segment_count + 1} reset segments) and {PARAMS} "
-        f"(ENTRY={ENTRY}, ACC_WIDTH={ACC_WIDTH})"
+        f"(ENTRY={ENTRY}, ACC_WIDTH={ACC_WIDTH}, WIDTH={WIDTH})"
     )
 
 

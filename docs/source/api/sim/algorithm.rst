@@ -7,6 +7,7 @@ Algorithm
    :toctree: algorithm
    :nosignatures:
 
+   bandpass_ugemm
    butterfly_fp
    butterfly_mix
    butterfly_mix_dyn
@@ -16,3 +17,6 @@ Algorithm
    fft_dyn
    fft_dyn_hub
    fft_hub
+   ica_ugemm
+   svm_rbf_ugemm
+   svm_ugemm

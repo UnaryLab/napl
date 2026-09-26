@@ -36,7 +36,6 @@ def main():
     bipolar.reset()
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_PP_DELAY {unipolar.hw.pp_delay}\n")
 
     rows = 0
     with VEC.open("w") as output:
@@ -50,6 +49,11 @@ def main():
             assert out_uni == out_bi, (select, input_a, input_b, out_uni, out_bi)
             output.write(f"{select} {input_a} {input_b} {out_uni}\n")
             rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_PP_DELAY {unipolar.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} "
           f"(GEN_PP_DELAY={unipolar.hw.pp_delay})")

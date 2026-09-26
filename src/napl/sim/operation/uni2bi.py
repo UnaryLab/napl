@@ -35,6 +35,8 @@ class uni2bi(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(

@@ -73,11 +73,9 @@ def _kernel_specific_checks():
         rmse = error.pow(2).mean().sqrt().item()
 
         assert div_iscb_inst.div_iscb.timestep_cur == codec_config1['timestep']
-        # The divider derives internal_encode over its registered parts. Only the
-        # div_cordiv kernel is True; the sync_skewed, signabs, bi2uni, and uni2bi
-        # parts are all False, so the kernel alone carries the derived value.
-        assert div_iscb_inst.div_iscb.internal_encode is True
-        assert div_iscb_inst.div_iscb.cordiv_kernel.internal_encode is True
+        # The divider derives internal_encode from its parts; only div_cordiv is 'private'.
+        assert div_iscb_inst.div_iscb.internal_encode == 'private'
+        assert div_iscb_inst.div_iscb.cordiv_kernel.internal_encode == 'private'
         div_iscb_inst.reset()
         assert div_iscb_inst.div_iscb.timestep_cur == 0
         print(f'[{device}] rmse={rmse:.4f}, time={elapsed.seconds:.3f}s')

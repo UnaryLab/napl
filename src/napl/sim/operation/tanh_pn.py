@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 
 
@@ -33,6 +34,8 @@ class tanh_pn(napl_base):
 
         *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -50,13 +53,17 @@ class tanh_pn(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **depth**: Counter bit width, giving ``2**depth`` states; the default is ``5``.
+              - **depth**: Counter bit width, an integer of at least 1, giving ``2**depth`` states; the default is ``5``. Other values raise ``AssertionError``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the saturating tanh state counter in bits.
         self.depth = config['depth']
+        if type(self.depth) is not int or self.depth < 1:
+            message = f'Invalid depth: <{self.depth}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Largest value retained by the tanh state counter.
         self.cnt_max = 2**self.depth - 1

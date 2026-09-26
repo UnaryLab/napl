@@ -15,9 +15,9 @@ module div_gaines_bipolar #(
     output wire o_output
 );
     localparam [WIDTH-1:0] CNT_MAX = {WIDTH{1'b1}};
-    localparam [WIDTH-1:0] CNT_INIT = {
-        1'b1, {(WIDTH-1){1'b0}}
-    };
+    // Only the top bit set.
+    localparam [WIDTH-1:0] CNT_INIT = CNT_MAX ^ (CNT_MAX >> 1);
+    localparam [WIDTH-1:0] ONE = 1;
 
     reg [WIDTH-1:0] cnt;
     reg [WIDTH-1:0] rng_idx;
@@ -40,12 +40,12 @@ module div_gaines_bipolar #(
             rng_idx <= {WIDTH{1'b0}};
             divisor_d <= 1'b0;
         end else begin
-            rng_idx <= rng_idx + {{(WIDTH-1){1'b0}}, 1'b1};
+            rng_idx <= rng_idx + ONE;
             divisor_d <= i_divisor;
             if (increment && !decrement && cnt < CNT_MAX)
-                cnt <= cnt + {{(WIDTH-1){1'b0}}, 1'b1};
+                cnt <= cnt + ONE;
             else if (!increment && decrement && cnt > {WIDTH{1'b0}})
-                cnt <= cnt - {{(WIDTH-1){1'b0}}, 1'b1};
+                cnt <= cnt - ONE;
         end
     end
 endmodule

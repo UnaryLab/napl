@@ -43,10 +43,13 @@ class div_cordiv(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
-    #: The buffer-row index sequence is encoded from a held number sequence, so
-    #: the RTL counterpart holds its own encoder instead of sharing an external
-    #: one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The buffer-row index sequence
+    #: is produced inside the operation, in RTL from a cycle counter rewritten
+    #: as a bit-reversed Gray code, so no external stream feeds it and nothing
+    #: here can be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(

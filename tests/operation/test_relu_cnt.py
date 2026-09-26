@@ -106,5 +106,18 @@ def test_relu_cnt():
     streaming_suite(CONFIG)
 
 
+def test_relu_cnt_rejects_invalid_width():
+    """Verify the width guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for value in (0, -1, 0.5, True):
+        try:
+            relu_cnt({'width': value})
+        except AssertionError as error:
+            assert 'Invalid width' in str(error), str(error)
+        else:
+            raise AssertionError(f'relu_cnt accepted invalid width <{value}>')
+    assert relu_cnt({'width': 1}).width == 1
+
+
 if __name__ == '__main__':
     test_relu_cnt()
+    test_relu_cnt_rejects_invalid_width()

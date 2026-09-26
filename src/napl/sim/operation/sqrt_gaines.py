@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 from .encode import encode
 
@@ -20,7 +21,9 @@ class sqrt_gaines(napl_base):
     A saturating counter of **width** bits drives the output stream, and the
     squared output is fed back so the counter settles where the output rate
     squares to the input rate. The accuracy improves with **width** and with
-    the stream length.
+    the stream length. Its one-timestep feedback delay decorrelates streams from
+    the framework's shipped encoders; an autocorrelated upstream operation
+    output is outside this contract.
 
     .. rubric:: Example
 
@@ -38,10 +41,13 @@ class sqrt_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
-    #: The counter-comparison reference is encoded from a held number sequence,
-    #: so the RTL counterpart holds its own encoder instead of sharing an
-    #: external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The counter-comparison
+    #: reference is produced inside the operation from a held number sequence,
+    #: replayed in RTL from a baked RNG ROM addressed by its own index counter,
+    #: so no external stream feeds it and nothing here can be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -62,7 +68,7 @@ class sqrt_gaines(napl_base):
             - **config** – Configuration mapping.
 
               - **polarity**: Stream encoding, either ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
-              - **width**: Counter and number-sequence bit width; the default is ``5``.
+              - **width**: Counter and number-sequence bit width, an integer of at least 1; the default is ``5``. Other values raise ``AssertionError``.
               - **generator**: Number-sequence generator accepted by ``gen_num_seq``; the default is ``"Sobol"``.
               - **dim**: Optional Sobol dimension; the sequence generator defaults to ``1``.
               - **name**: Optional module name.
@@ -71,6 +77,10 @@ class sqrt_gaines(napl_base):
 
         #: Counter and threshold-sequence width in bits.
         self.width = config['width']
+        if type(self.width) is not int or self.width < 1:
+            message = f'Invalid width: <{self.width}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Largest value retained by the square-root counter.
         self.cnt_max = 2**self.width - 1
         #: Half-scale counter value restored by ``_reset``.

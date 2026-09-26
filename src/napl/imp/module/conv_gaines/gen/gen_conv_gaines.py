@@ -18,26 +18,27 @@ unconditionally on every timestep, so the copies stay equal to the model's and
 the outputs are bit-exact with the shared-core model.
 
 Weight and bias are held fixed-point codes rather than spike streams (the model
-sets internal_encode = True: it generates both streams itself), so they go to
+has a 'private' internal_encode: it generates both streams itself), so they go to
 ../vec/conv_gaines_operand.hex instead of vector columns. One file serves both
 polarity DUTs: an operand code is the probability code either polarity compares
 against.
 
 Bipolar zero padding is the model's decorrelated rate-0.5 stream, not a
-deterministic toggle: sim/module/conv_gaines.py:150-159 builds a separate
+deterministic toggle: sim/module/conv_gaines.py:154-163 builds a separate
 pad_encoder on sequence dimension dim + K + 2 and thresholds it at 0.5, and
-line 213 reads it at (timestep_cur - 1) % pad_len. The RTL pad cell is that
-encoder -- an `encode` cell comparing the constant 0.5 against ../vec/pad_rom.hex
--- and this file writes that ROM from the model's own pad_encoder.num_seq and
-asserts it differs from every weight and bias sequence, which is the
-decorrelation the model relies on. Unipolar padding is a zero spike, because the
-unipolar path pads the input tensor with 0.
+line 216 reads it at (timestep_cur - 1) % pad_len. The RTL pad cell is that
+encoder -- an `encode` cell comparing the constant 0.5 against the sequence its
+online Sobol generator runs from ../vec/pad_dirvec.hex -- and this file writes
+those direction vectors from the model's own pad_encoder.num_seq and asserts the
+sequence differs from every weight and bias sequence, which is the decorrelation
+the model relies on. Unipolar padding is a zero spike, because the unipolar path
+pads the input tensor with 0.
 
 The composed linear_gaines cells $readmemb their tables from paths relative to
 the simulation cwd (module/conv_gaines/), so this file also writes
-vec/linear_gaines_w.hex (the per-tap weight thresholds), vec/encode_rom.hex (the
-bias sequence) and vec/gaines_rom.hex (the Gaines select sequence) from the built
-model.
+vec/lg_w<tap>_dv.hex (one direction-vector table per weight tap),
+vec/lg_bias_dv.hex (the bias sequence) and vec/gaines_rom.hex (the Gaines select
+sequence) from the built model.
 
 Six DUT configurations share each row, one column of expected output each. Every
 sequence dimension assignment above is fixed by the fan-in K, so the geometries
@@ -306,6 +307,39 @@ def run_sequence(rows, index, dirty=0):
     return arms
 
 
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
+
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
+    """
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
+        code = round(scaled)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
+
+
 def write_roms(arms):
     """Emit the weight, bias, select and pad tables from model-owned state."""
     reference = arms[0].layers[0].core
@@ -323,17 +357,15 @@ def write_roms(arms):
 
     thresholds = reference.w_num_seq.detach().float()
     assert tuple(thresholds.shape) == (LEN, K), thresholds.shape
-    weight_rows = []
-    for timestep in range(LEN):
-        codes = codes_of(thresholds[timestep], f"weight sequence [{timestep}]")
-        weight_rows.append("".join(f"{code:0{SEQ_WIDTH}b}" for code in reversed(codes)))
-    (VEC_DIR / "linear_gaines_w.hex").write_text(
-        "\n".join(weight_rows) + "\n", encoding="utf-8"
-    )
+    for tap in range(K):
+        rows = dirvec_rows(thresholds[:, tap], SEQ_WIDTH, f"weight sequence of tap {tap}")
+        (VEC_DIR / f"lg_w{tap:02d}_dv.hex").write_text(
+            "\n".join(rows) + "\n", encoding="utf-8"
+        )
 
     bias_codes = codes_of(reference.b_encoder.num_seq, "bias sequence")
-    (VEC_DIR / "encode_rom.hex").write_text(
-        "\n".join(f"{code:0{SEQ_WIDTH}b}" for code in bias_codes) + "\n",
+    (VEC_DIR / "lg_bias_dv.hex").write_text(
+        "\n".join(dirvec_rows(reference.b_encoder.num_seq, SEQ_WIDTH, "bias sequence")) + "\n",
         encoding="utf-8",
     )
     (VEC_DIR / "gaines_rom.hex").write_text(
@@ -350,15 +382,15 @@ def write_roms(arms):
     for feature in range(K):
         assert pad_codes != codes_of(thresholds[:, feature], f"weight column {feature}"), \
             f"the pad stream shares the weight sequence of tap {feature}"
-    (VEC_DIR / "pad_rom.hex").write_text(
-        "\n".join(f"{code:0{SEQ_WIDTH}b}" for code in pad_codes) + "\n",
+    (VEC_DIR / "pad_dirvec.hex").write_text(
+        "\n".join(dirvec_rows(pad_layer.pad_encoder.num_seq, SEQ_WIDTH, "pad sequence")) + "\n",
         encoding="utf-8",
     )
-    # The RTL pad cell compares the constant 0.5 against that ROM, which is the
-    # model's own pad bit at every timestep.
+    # The RTL pad cell compares the constant 0.5 against that sequence, which is
+    # the model's own pad bit at every timestep.
     half = LEN // 2
     expected = [float(code < half) for code in pad_codes]
-    assert pad_layer.pad_bits == expected, "the pad ROM does not reproduce pad_bits"
+    assert pad_layer.pad_bits == expected, "the pad sequence does not reproduce pad_bits"
 
 
 def write_operands():

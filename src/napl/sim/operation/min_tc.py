@@ -36,6 +36,8 @@ class min_tc(napl_base):
 
         *Space-Time Computing with Temporal Neural Networks*, Synthesis Lectures on Computer Architecture, 2017.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

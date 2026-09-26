@@ -53,12 +53,10 @@ def _kernel_specific_checks():
         _, result = sqrt_traceiscb_inst.accuracy.analyze(r_value, verbose=True)
         print(f'[{device}] max_error={result.absolute_max.item():.6f}')
         assert sqrt_traceiscb_inst.sqrt_traceiscb.timestep_cur == codec_config['timestep']
-        # The kernel derives internal_encode over its registered parts. The
-        # div_cordiv trace kernel and the decorr shuffle buffer are both True;
-        # the bipolar bi2uni part is False.
-        assert sqrt_traceiscb_inst.sqrt_traceiscb.internal_encode is True
-        assert sqrt_traceiscb_inst.sqrt_traceiscb.cordiv_kernel.internal_encode is True
-        assert sqrt_traceiscb_inst.sqrt_traceiscb.decorr.internal_encode is True
+        # The kernel derives internal_encode from its parts; only bi2uni is 'none'.
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.internal_encode == 'private'
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.cordiv_kernel.internal_encode == 'private'
+        assert sqrt_traceiscb_inst.sqrt_traceiscb.decorr.internal_encode == 'private'
         sqrt_traceiscb_inst.reset()
         assert sqrt_traceiscb_inst.sqrt_traceiscb.timestep_cur == 0
         print(f'[{device}] time: {elapsed.seconds * 1000:.1f} ms')

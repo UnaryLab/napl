@@ -7,62 +7,77 @@ Operation
    :toctree: operation
    :nosignatures:
 
-   add_desync
    add_gaines
    add_scale
    add_scale_dyn
    add_ugemm
+   argmax
+   argmin
    bi2uni
+   clamp_comp
+   clamp_comp_dyn
+   clamp_sat
+   clamp_sat_dyn
    decode
    decorr
+   delay
    desync
-   dff
    div_cordiv
    div_gaines
    div_iscb
    div_scale
    div_scale_dyn
    encode
+   encode_cond
+   encode_hold
+   encode_regen
+   eq
+   exp_m1_delay
+   exp_m1_regen
    exp_n1
    exp_n2g
-   gt_rc
-   inhibit
+   gt
+   inhibit_tc
    jkff
-   lt_rc
-   max_rc
+   log_n1
+   lt
+   max
    max_sync
    max_tc
-   min_rc
+   min
    min_sync
    min_tc
    mul_gaines
+   mul_scale
    mul_ugemm
-   mul_ugemm_dyn
+   mul_ugemm_regen
    mul_unibi
    mul_unibi_mux
+   mux_select
    negate
+   pow_delay
+   pow_regen
    relu_cnt
+   relu_delay
    relu_fxp
    relu_sat
-   relu_shiftreg
    relu_tc
-   shiftreg
-   sigmoid_fxp
    sigmoid_hard
+   sigmoid_hard_fxp
    signabs
+   signabs_delay
    signabs_interleave
-   signabs_shiftreg
    sqrt_emit
    sqrt_gaines
    sqrt_traceiscb
    sqrt_tracejkff
-   square_dff
+   sub_scale
    subabs
    sync
    sync_skewed
-   tanh_fxp
    tanh_hard
+   tanh_hard_fxp
    tanh_p1
    tanh_pn
    uni2bi
-   wta
+   wta_tc

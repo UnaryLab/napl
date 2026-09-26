@@ -12,9 +12,9 @@ Three mechanisms live here, each independently gated:
    stimulus happens to reach, so a divergence reachable only on a rare state
    sequence can pass this check. It bounds nothing and proves nothing about
    states the walk never entered.
-2. Depth escalation (SIZING). A pair whose inline copy carries a sizing
-   parameter also runs at depths GREATER than the depth its generator commits,
-   because a shift path that only exists above the committed depth is elaborated
+2. Size escalation (SIZING). A pair whose inline copy carries a sizing
+   parameter also runs at values GREATER than the value its generator commits,
+   because a shift path that only exists above the committed size is elaborated
    nowhere else in the flow. This always runs; it is not a flag.
 3. Reachability probe (PROBES). A copy that drops a clamp arm its Python
    reference model applies is driven over EVERY input sequence of length
@@ -23,7 +23,7 @@ Three mechanisms live here, each independently gated:
    of that length, not over longer ones.
 
 Coverage dropped on purpose, printed by every run:
-  - Only square_dff carries a sizing parameter on the inline copy. Every other
+  - Only pow_delay carries a sizing parameter on the inline copy. Every other
     pair inlines a fixed size, so mechanism 2 has nothing to escalate there.
   - PAIRS is hand-maintained and has no floor against mapping.yaml, so a pair
     deleted from the table leaves no trace. Each pair does state how many nets it
@@ -52,38 +52,38 @@ PROBE_SEQ_LEN = 16
 # reference module, its layer/unit folder, reference port -> host-side expression,
 # and the reference outputs checked against host internal nets.
 PAIRS = [
-    dict(name="square_dff_unipolar inline dff", host="square_dff_unipolar",
-         host_unit=("operation", "square_dff"), inputs=["i_input"], outputs=["o_output"],
-         ref="dff", ref_unit=("operation", "dff"),
+    dict(name="pow_delay_unipolar inline delay", host="pow_delay_unipolar",
+         host_unit=("operation", "pow_delay"), inputs=["i_input"], outputs=["o_output"],
+         ref="delay", ref_unit=("operation", "delay"),
          ref_inputs={"i_input": "r_i_input"},
-         checks=[("o_output", "host.in_d[0]")],
-         sizing=dict(param="DEPTH", committed=1, deeper=[2, 3, 5],
-                     generator="operation/square_dff/gen/gen_square_dff.py",
-                     literal='"depth": 1')),
-    dict(name="square_dff_bipolar inline dff", host="square_dff_bipolar",
-         host_unit=("operation", "square_dff"), inputs=["i_input"], outputs=["o_output"],
-         ref="dff", ref_unit=("operation", "dff"),
+         checks=[("o_output", "host.delay_line[0]")],
+         sizing=dict(param="N", committed=3, deeper=[4, 5, 7],
+                     generator="operation/pow_delay/gen/gen_pow_delay.py",
+                     literal="N = 3")),
+    dict(name="pow_delay_bipolar inline delay", host="pow_delay_bipolar",
+         host_unit=("operation", "pow_delay"), inputs=["i_input"], outputs=["o_output"],
+         ref="delay", ref_unit=("operation", "delay"),
          ref_inputs={"i_input": "r_i_input"},
-         checks=[("o_output", "host.in_d[0]")],
-         sizing=dict(param="DEPTH", committed=1, deeper=[2, 3, 5],
-                     generator="operation/square_dff/gen/gen_square_dff.py",
-                     literal='"depth": 1')),
-    dict(name="lt_rc inline sync_skewed", host="lt_rc", host_unit=("operation", "lt_rc"),
+         checks=[("o_output", "host.delay_line[0]")],
+         sizing=dict(param="N", committed=3, deeper=[4, 5, 7],
+                     generator="operation/pow_delay/gen/gen_pow_delay.py",
+                     literal="N = 3")),
+    dict(name="lt inline sync_skewed", host="lt", host_unit=("operation", "lt"),
          inputs=["i_input_0", "i_input_1"], outputs=["o_output"],
          ref="sync_skewed", ref_unit=("operation", "sync_skewed"), ref_params={"WIDTH": 2},
          ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
          checks=[("o_output_0", "host.sync_0"), ("o_output_1", "host.sync_1")]),
-    dict(name="gt_rc inline sync_skewed", host="gt_rc", host_unit=("operation", "gt_rc"),
+    dict(name="gt inline sync_skewed", host="gt", host_unit=("operation", "gt"),
          inputs=["i_input_0", "i_input_1"], outputs=["o_output"],
          ref="sync_skewed", ref_unit=("operation", "sync_skewed"), ref_params={"WIDTH": 2},
          ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
          checks=[("o_output_0", "host.sync_0"), ("o_output_1", "host.sync_1")]),
-    dict(name="min_rc inline sync_skewed", host="min_rc", host_unit=("operation", "min_rc"),
+    dict(name="min inline sync_skewed", host="min", host_unit=("operation", "min"),
          inputs=["i_input_0", "i_input_1"], outputs=["o_output", "o_index"],
          ref="sync_skewed", ref_unit=("operation", "sync_skewed"), ref_params={"WIDTH": 2},
          ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
          checks=[("o_output_0", "host.sync_0"), ("o_output_1", "host.sync_1")]),
-    dict(name="max_rc inline sync_skewed", host="max_rc", host_unit=("operation", "max_rc"),
+    dict(name="max inline sync_skewed", host="max", host_unit=("operation", "max"),
          inputs=["i_input_0", "i_input_1"], outputs=["o_output", "o_index"],
          ref="sync_skewed", ref_unit=("operation", "sync_skewed"), ref_params={"WIDTH": 2},
          ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
@@ -98,12 +98,6 @@ PAIRS = [
          ref="sync", ref_unit=("operation", "sync"), ref_params={"DEPTH": 1},
          ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
          checks=[("o_output_0", "host.sync_0"), ("o_output_1", "host.sync_1")]),
-    dict(name="add_desync inline desync", host="add_desync",
-         host_unit=("operation", "add_desync"),
-         inputs=["i_input_0", "i_input_1"], outputs=["o_output"],
-         ref="desync", ref_unit=("operation", "desync"), ref_params={"DEPTH": 1},
-         ref_inputs={"i_input_0": "r_i_input_0", "i_input_1": "r_i_input_1"},
-         checks=[("o_output_0", "host.desync_0"), ("o_output_1", "host.desync_1")]),
     dict(name="sqrt_tracejkff_unipolar inline jkff", host="sqrt_tracejkff_unipolar",
          host_unit=("operation", "sqrt_tracejkff"), inputs=["i_input"], outputs=["o_output"],
          ref="jkff", ref_unit=("operation", "jkff"),
@@ -147,6 +141,11 @@ PAIRS = [
          ref="bi2uni", ref_unit=("operation", "bi2uni"), ref_params={"WIDTH": 2},
          ref_inputs={"i_input": "host.o_output"},
          checks=[("o_output", "host.out_uni")]),
+    dict(name="sqrt_emit_bipolar inline bi2uni", host="sqrt_emit_bipolar",
+         host_unit=("operation", "sqrt_emit"), inputs=["i_input"], outputs=["o_output"],
+         ref="bi2uni", ref_unit=("operation", "bi2uni"), ref_params={"WIDTH": 2},
+         ref_inputs={"i_input": "host.o_output"},
+         checks=[("o_output", "host.out_uni")]),
     # div_iscb_bipolar needs no pair here: it instantiates the standalone bi2uni,
     # uni2bi, and signabs at WIDTH 3 rather than carrying copies of them.
     dict(name="sigmoid_hard copy of uni2bi", host="sigmoid_hard",
@@ -172,6 +171,12 @@ PROBES = [
     dict(name="relu_sat add stage drops both clamp arms", module="relu_sat",
          unit=("operation", "relu_sat"), params={},
          sum_net="dut.sum_add", lo=0, hi=4),
+    dict(name="sqrt_emit_bipolar drops the upper clamp arm", module="sqrt_emit_bipolar",
+         unit=("operation", "sqrt_emit"), params={},
+         sum_net="dut.acc_pre", lo=None, hi=2),
+    dict(name="sqrt_emit_unipolar drops the upper clamp arm", module="sqrt_emit_unipolar",
+         unit=("operation", "sqrt_emit"), params={},
+         sum_net="dut.acc_pre", lo=None, hi=3),
 ]
 
 
@@ -353,7 +358,7 @@ def sources_for(*units):
 
 
 def param_sets(pair):
-    """Yield (label, host params, reference params) including depths above committed."""
+    """Yield (label, host params, reference params) including sizes above committed."""
     sizing = pair.get("sizing")
     if not sizing:
         yield "fixed", {}, pair.get("ref_params", {})
@@ -363,7 +368,7 @@ def param_sets(pair):
     assert sizing["literal"] in source, (
         f"{sizing['generator']} no longer commits {sizing['literal']}; "
         f"{pair['name']} would stop running deeper than committed")
-    assert min(sizing["deeper"]) > sizing["committed"], "deeper depths must exceed committed"
+    assert min(sizing["deeper"]) > sizing["committed"], "larger sizes must exceed committed"
     for value in [sizing["committed"]] + sizing["deeper"]:
         tag = "committed" if value == sizing["committed"] else "DEEPER"
         yield f"{name}={value} ({tag})", {name: value}, {name: value}
@@ -434,7 +439,7 @@ if __name__ == "__main__":
     print("NOT A PROOF: a random walk can miss a divergence reachable only on a "
           "rare state sequence.")
     print("Dropped coverage: PAIRS has no floor against mapping.yaml; only "
-          "square_dff escalates depth.")
+          "pow_delay escalates its inline-delay size.")
     # Both mechanisms run whatever the other reports, so a divergence in one does
     # not hide the state of the other.
     reports = []

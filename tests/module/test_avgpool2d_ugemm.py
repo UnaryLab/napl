@@ -134,6 +134,20 @@ def test_avgpool2d_ugemm():
     streaming_suite(CONFIG)
 
 
+def test_avgpool2d_ugemm_rejects_invalid_kernel_size():
+    """Verify kernel sizes other than a positive integer or pair are rejected and a 1x1 window builds."""
+    for kernel_size in (-1, (2, -1), 0, (2, 0), 2.0, True, (2, 2, 2), '2'):
+        try:
+            avgpool2d_ugemm(kernel_size, config={'polarity': 'unipolar'})
+        except AssertionError as error:
+            assert 'Invalid kernel_size' in str(error), str(error)
+        else:
+            raise AssertionError(f'avgpool2d_ugemm accepted invalid kernel_size <{kernel_size}>')
+    for kernel_size, area in ((1, 1), ((1, 1), 1), ([1, 2], 2)):
+        assert avgpool2d_ugemm(kernel_size, config={'polarity': 'unipolar'}).kernel_area == area
+
+
 if __name__ == '__main__':
     test_avgpool2d_ugemm()
+    test_avgpool2d_ugemm_rejects_invalid_kernel_size()
     print('Test passed.')

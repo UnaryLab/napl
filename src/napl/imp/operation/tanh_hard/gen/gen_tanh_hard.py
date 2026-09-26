@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "tanh_hard.vec"
+PARAMS = VEC.parent / "tanh_hard_params.vh"
 
 # Encoder settings mirror test_tanh_hard.py.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
@@ -51,6 +52,7 @@ def main():
             out = int(model(torch.tensor(b)).item())
             f.write(f"{b} {out}\n")
             rows += 1
+    PARAMS.write_text(f"`define GEN_VECTORS {rows}\n")
     print(f"wrote {VEC} ({rows} vectors)")
 
 

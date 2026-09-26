@@ -60,7 +60,7 @@ def _kernel_specific_checks():
                     assert inst.decoder.spike_value.shape == ref.shape, (device, polarity, has_bias, pad)
                     assert inst.conv.timestep_cur == timestep
                     # The layer holds its own weight and bias encoders.
-                    assert inst.conv.internal_encode is True
+                    assert inst.conv.internal_encode == 'private'
                     print(f'[{device}] {polarity} bias={has_bias} pad={pad}: rmse={rmse:.4f} '
                           f'max_err={err.max().item():.4f}')
                     inst.reset()
@@ -239,5 +239,20 @@ def test_conv_ugemm():
     streaming_suite(CONFIG)
 
 
+def test_conv_ugemm_rejects_empty_out_channels():
+    """Verify zero output channels are rejected and one output channel builds, per polarity."""
+    for polarity in ('unipolar', 'bipolar'):
+        config = {'polarity': polarity, 'timestep': 256, 'generator': 'sobol', 'width': 12}
+        for bias in (None, torch.zeros(0)):
+            try:
+                conv_ugemm(torch.zeros(0, 1, 1, 1), bias, config=dict(config))
+            except AssertionError as error:
+                assert 'Invalid out_channels' in str(error), str(error)
+            else:
+                raise AssertionError(f'conv_ugemm accepted invalid out_channels <0> for {polarity}')
+        assert conv_ugemm(torch.zeros(1, 1, 1, 1), None, config=dict(config)).out_channels == 1
+
+
 if __name__ == '__main__':
     test_conv_ugemm()
+    test_conv_ugemm_rejects_empty_out_channels()

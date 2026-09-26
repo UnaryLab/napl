@@ -14,11 +14,11 @@ module sqrt_traceiscb_bipolar (
     input  wire i_input,     // input spike stream
     output wire o_output  // output spike stream (combinational, 0-cycle latency)
 );
-    // Registered state. acc is signed over the width-3 bi2uni clamp [-4, 3];
-    // 4 signed bits also hold the reachable pre-clamp range [-5, 1].
+    // Registered state. acc is stored in [-4, 0], so 3 signed bits hold it;
+    // the 4-bit step bus holds the reachable pre-clamp range [-5, 1].
     reg trace_q;          // self.trace
     reg dff_q;            // _unipolar_trace dff
-    reg signed [3:0] acc_q;  // bi2uni accumulator
+    reg signed [2:0] acc_q;  // bi2uni accumulator
     reg buf0_q;           // cordiv buffer_q[0]
     reg buf1_q;           // cordiv buffer_q[1]
     reg idx_q;            // cordiv idx (rand_seq [0,1] -> buf0/buf1)
@@ -29,13 +29,14 @@ module sqrt_traceiscb_bipolar (
     // ever entered: the reachable pre-clamp range is [-5, 1], whose upper end
     // sits below 4'sd3. The upper arm is dead logic kept because it mirrors the
     // two-sided clamp_ the Python model applies.
-    wire signed [3:0] acc_step = output_bit ? (acc_q + 4'sd1) : (acc_q - 4'sd1);
+    wire signed [3:0] acc_ext  = {acc_q[2], acc_q};
+    wire signed [3:0] acc_step = output_bit ? (acc_ext + 4'sd1) : (acc_ext - 4'sd1);
     wire signed [3:0] acc_clamped =
         (acc_step > 4'sd3)  ? 4'sd3  :
         (acc_step < -4'sd4) ? -4'sd4 : acc_step;
     wire out_bit = (acc_clamped >= 4'sd1) ? 1'b1 : 1'b0;
     // The emitted spike is subtracted, so the stored value stays in [-4, 0].
-    wire signed [3:0] acc_next = acc_clamped - {3'b000, out_bit};
+    wire signed [2:0] acc_next = acc_clamped[2:0] - {2'b00, out_bit};
 
     wire shuffled;
 
@@ -69,7 +70,7 @@ module sqrt_traceiscb_bipolar (
         if (!i_rst_n) begin
             trace_q <= 1'b0;
             dff_q   <= 1'b0;
-            acc_q   <= 4'sd0;
+            acc_q   <= 3'sd0;
             buf0_q  <= 1'b0;
             buf1_q  <= 1'b1;
             idx_q   <= 1'b0;

@@ -53,7 +53,7 @@ class linear_gaines(napl_base):
     #: One threshold sequence per input feature is held inside the layer, so the
     #: RTL counterpart generates the weight and bias streams itself from held
     #: numeric codes instead of taking them as spikes from a shared encoder.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(
@@ -74,14 +74,14 @@ class linear_gaines(napl_base):
 
             **Parameters:**
 
-            - **weight** – Numeric tensor shaped ``(out_features, in_features)``.
+            - **weight** – Numeric tensor shaped ``(out_features, in_features)``, with ``in_features`` of at least 1; other shapes raise ``AssertionError``.
             - **bias** – Optional numeric tensor shaped ``(out_features,)``; the default is ``None``.
             - **config** – Configuration mapping.
 
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: First weight sequence dimension, with one dimension per input feature above it, the bias on ``dim + in_features`` and the scaled adder's MUX select sequence on ``dim + in_features + 1``; the default is ``2``.
+              - **dim**: First weight sequence dimension, with one dimension per input feature above it, the bias on ``dim + in_features`` and the scaled adder's MUX select sequence on ``dim + in_features + 1``; the default is ``2``. A caller that encodes **input** with Sobol must keep its encoder dimension outside the weight span ``dim`` through ``dim + in_features - 1``.
               - **scaled**: Use MUX-select scaled addition, which picks one input per timestep by a Sobol-derived index, when ``True``; the default is ``True``.
               - **name**: Optional instance label.
 
@@ -99,6 +99,10 @@ class linear_gaines(napl_base):
 
         if weight.dim() != 2:
             message = f'linear_gaines weight must be 2D (out_features, in_features), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
+        if weight.shape[1] < 1:
+            message = f'Invalid in_features: <{weight.shape[1]}>; legal values: an integer of at least 1.'
             logger.error(message)
             raise AssertionError(message)
         #: Trainable numeric weight matrix encoded into a spike stream.

@@ -1,7 +1,5 @@
 import torch
 
-from torch.nn.modules.utils import _pair
-
 from napl.sim.base import napl_base
 from napl.sim.operation import add_scale
 from loguru import logger
@@ -41,7 +39,7 @@ class avgpool2d_ugemm(napl_base):
 
             **Parameters:**
 
-            - **kernel_size** – Pooling window size accepted by ``torch.nn.AvgPool2d``.
+            - **kernel_size** – Pooling window size, a positive integer or a pair of positive integers; other values raise ``AssertionError``.
             - **stride** – Pooling stride, where ``None`` uses ``kernel_size``; the default is ``None``.
             - **config** – Configuration mapping.
 
@@ -50,9 +48,16 @@ class avgpool2d_ugemm(napl_base):
               - **name**: Optional instance label.
         """
         super().__init__(config, ['polarity'], optional_key_list=['width'], polarity_required=True)
+        sizes = (kernel_size, kernel_size) if type(kernel_size) is int else kernel_size
+        if (not isinstance(sizes, (tuple, list)) or len(sizes) != 2
+                or any(type(size) is not int or size < 1 for size in sizes)):
+            message = (f'Invalid kernel_size: <{kernel_size}>; legal values: a positive integer '
+                       f'or a pair of positive integers.')
+            logger.error(message)
+            raise AssertionError(message)
         #: PyTorch pooling operator that counts the spikes in each window.
         self.avgpool2d = torch.nn.AvgPool2d(kernel_size, stride=stride, divisor_override=1)
-        kh, kw = _pair(kernel_size)
+        kh, kw = sizes
         #: Number of spikes covered by one pooling window.
         self.kernel_area = kh * kw
 

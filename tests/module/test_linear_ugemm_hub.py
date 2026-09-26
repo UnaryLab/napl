@@ -97,7 +97,7 @@ def test_linear_ugemm_hub_fidelity():
             assert layer.core.timestep_cur == TIMESTEP
             assert layer.decoder.timestep_cur == TIMESTEP
             # The core multiplier turns the weights into streams itself.
-            assert layer.internal_encode is True
+            assert layer.internal_encode == 'private'
             print(f'[{device}][{polarity}] N={TIMESTEP}, rmse={rmse:.6f}')
 
 
@@ -207,8 +207,8 @@ def test_linear_ugemm_hub_rejects_invalid_config():
          'Invalid key <polarity> in the linear_ugemm_hub core configuration; the codec '
          'configuration supplies <polarity>, <timestep>, and <generator>.'),
         (_codec_config('bipolar', dim=1), _core_config(),
-         'Invalid dim: <1>; legal values: any dimension other than the core dim <1>, so the '
-         'input stream decorrelates from the weight stream.'),
+         'Invalid dim: <1>; legal values: any dimension other than the core dim <1>, so '
+         'each encoder has its own dimension.'),
         ({'polarity': 'bipolar', 'timestep': TIMESTEP}, _core_config(),
          'Missing key <generator> in the input configuration.'),
         ({'timestep': TIMESTEP, 'generator': 'sobol'}, _core_config(),

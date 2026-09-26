@@ -105,8 +105,8 @@ class fft_dyn_hub(napl_base):
         # Encoding, the core, and decoding are combinational within one timestep.
         #: Hardware latency and timing metadata for the wrapped transform.
         self.hw.pp_delay = self.core.hw.pp_delay
-        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
-        self.internal_encode = any(part.internal_encode for part in self.children())
+        #: Encoder the hardware counterpart carries, private when any part carries one.
+        self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'
 
         #: Empty, since the numeric ports carry no stream encoding.
         self.encoding_io = {}

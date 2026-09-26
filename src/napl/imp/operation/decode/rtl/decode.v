@@ -17,7 +17,12 @@ module decode #(
     // WIDTH+1 bits: the count reaches 2**WIDTH after a full timestep run.
     reg [WIDTH:0] count;
 
-    assign o_spike_count = count + {{WIDTH{1'b0}}, i_input};
+    // Padded by a full WIDTH+1 zeros and sliced so no replication is empty.
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [WIDTH+1:0] in_pad = {{(WIDTH+1){1'b0}}, i_input};
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    assign o_spike_count = count + in_pad[WIDTH:0];
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)

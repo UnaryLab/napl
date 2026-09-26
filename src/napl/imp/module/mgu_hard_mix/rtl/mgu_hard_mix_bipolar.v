@@ -7,7 +7,7 @@
 //   fg    = fg_sigmoid(fg_in)                        sigmoid_hard
 //   fg_hx = fg_hx_mul(fg, hx_value)                  mul_ugemm  (held operand)
 //   ng    = ng_ug_tanh(cat(fg_hx, input_spike))      linear, scale 1
-//   fg_ng = fg_ng_mul(fg, ng)                        mul_ugemm_dyn
+//   fg_ng = fg_ng_mul(fg, ng)                        mul_ugemm_regen
 //   out   = hy_add(ng + (1-fg_ng) + fg_hx, entry=3)  add_scale, scale 1
 // Every term is an existing operation- or module-layer circuit, so this file
 // instantiates them and adds no scalar logic of its own. The one gate written
@@ -23,17 +23,18 @@
 // i_weight_f, i_bias_f, i_weight_n, and i_bias_n carry held fixed-point codes and
 // the composed linear_mix_bipolar gates re-encode them every timestep. The forget
 // and new gate sit on distinct Sobol dimensions, so each gate reads its own weight
-// and bias number-sequence ROMs, passed down as W_ROM/B_ROM. i_hx_value is the
+// and bias direction-vector tables, passed down as W_DIRVEC/B_DIRVEC and run
+// online by the encoders' Sobol generators. i_hx_value is the
 // fixed-point code of the model's hx_value buffer, held for the whole run, because
 // mul_ugemm reads a numeric operand rather than a stream.
 //
-// Shared model state that this file replicates per lane: mul_ugemm_dyn's `head`
+// Shared model state that this file replicates per lane: mul_ugemm_regen's `head`
 // and mul_ugemm's sequence indices are single tensors in Python that broadcast
 // over the lanes. Every lane advances the head unconditionally, once per clock,
 // and its sequence indices from its own fg spike, so the per-lane copies track
 // the model exactly.
 //
-// Cost: each lane holds one mul_ugemm_dyn_bipolar, whose shift register is
+// Cost: each lane holds one mul_ugemm_regen_bipolar, whose shift register is
 // 2**SR_WIDTH flops (64 at the default depth_ismul of 6), so the cell carries
 // LANES * 2**SR_WIDTH decorrelation flops before anything else.
 //
@@ -117,8 +118,8 @@ module mgu_hard_mix_bipolar #(
         .WIDTH       (WIDTH),
         .SCALE       (GATE_SCALE),
         .HAS_BIAS    (HAS_BIAS_F),
-        .W_ROM       ("vec/mgu_fgw.hex"),
-        .B_ROM       ("vec/mgu_fgb.hex")
+        .W_DIRVEC    ("vec/mg_fw.hex"),
+        .B_DIRVEC    ("vec/mg_fb.hex")
     ) u_fg_lin (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
@@ -135,8 +136,8 @@ module mgu_hard_mix_bipolar #(
         .WIDTH       (WIDTH),
         .SCALE       (GATE_SCALE),
         .HAS_BIAS    (HAS_BIAS_N),
-        .W_ROM       ("vec/mgu_ngw.hex"),
-        .B_ROM       ("vec/mgu_ngb.hex")
+        .W_DIRVEC    ("vec/mg_nw.hex"),
+        .B_DIRVEC    ("vec/mg_nb.hex")
     ) u_ng_lin (
         .i_clk         (i_clk),
         .i_rst_n       (i_rst_n),
@@ -169,7 +170,7 @@ module mgu_hard_mix_bipolar #(
                 .o_output  (fg_hx[lane])
             );
 
-            mul_ugemm_dyn_bipolar #(
+            mul_ugemm_regen_bipolar #(
                 .WIDTH (SR_WIDTH)
             ) u_fg_ng_mul (
                 .i_clk     (i_clk),

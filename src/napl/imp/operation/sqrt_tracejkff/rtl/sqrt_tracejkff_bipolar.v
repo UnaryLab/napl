@@ -13,20 +13,20 @@ module sqrt_tracejkff_bipolar (
     output wire o_output  // square-root spike stream
 );
     reg               trace;
-    reg  signed [2:0] acc;     // bi2uni accumulator, range [-2, 1]
+    reg  signed [1:0] acc;     // bi2uni accumulator, stored in [-2, 0]
 
     // trace is the JK-FF output from cycle t-1.
     assign o_output = trace | i_input;
 
     // acc_sum = acc + 2*output - 1, then clamp to [-2, 1].
-    wire signed [3:0] acc_sum = $signed({acc[2], acc}) + (o_output ? 4'sd1 : -4'sd1);
+    wire signed [3:0] acc_sum = $signed({{2{acc[1]}}, acc}) + (o_output ? 4'sd1 : -4'sd1);
     wire signed [3:0] acc_clamped =
         (acc_sum > 4'sd1)  ? 4'sd1  :
         (acc_sum < -4'sd2) ? -4'sd2 :
                              acc_sum;
     wire out_uni = (acc_clamped >= 4'sd1);
-    // acc' remains in [-2, 1] and fits a 3-bit signed value.
-    wire signed [2:0] acc_next = acc_clamped[2:0] - (out_uni ? 3'sd1 : 3'sd0);
+    // acc' stays in [-2, 0] and fits a 2-bit signed value.
+    wire signed [1:0] acc_next = acc_clamped[1:0] - (out_uni ? 2'sd1 : 2'sd0);
 
     // The JK-FF holds p_trace = u / (u + 1) only while its J stream is
     // independent of its own stored state; the shuffle buffer reorders the
@@ -50,7 +50,7 @@ module sqrt_tracejkff_bipolar (
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
             trace <= 1'b0;
-            acc   <= 3'sd0;
+            acc   <= 2'sd0;
         end else begin
             trace <= (~trace) & shuffled;
             acc   <= acc_next;

@@ -82,11 +82,6 @@ def main():
     seg_a, seg_b = pairs[:half], pairs[half:]
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_DEPTH {model.depth}\n"
-        f"`define GEN_WIDTH {model.width}\n"
-        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
-    )
 
     rows = 0
     with VEC.open("w") as f:
@@ -96,6 +91,13 @@ def main():
         f.write("R\n")
         model.reset()
         rows += run_segment(model, f, seg_b)
+
+    PARAMS.write_text(
+        f"`define GEN_DEPTH {model.depth}\n"
+        f"`define GEN_WIDTH {model.width}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
         f"wrote {VEC} ({rows} vectors, DEPTH={model.depth}, WIDTH={model.width}) "

@@ -10,7 +10,7 @@ term gives the decomposition the RTL instantiates, all of it existing circuits:
     fg    = fg_sigmoid(fg_in)                       sigmoid_hard
     fg_hx = fg_hx_mul(fg, hx_value)                 mul_ugemm_bipolar
     ng    = ng_ug_tanh(cat(fg_hx, input_spike))     linear_mix_bipolar,   scale 1
-    fg_ng = fg_ng_mul(fg, ng)                       mul_ugemm_dyn_bipolar
+    fg_ng = fg_ng_mul(fg, ng)                       mul_ugemm_regen_bipolar
     out   = hy_add(ng + (1 - fg_ng) + fg_hx, 3)     add_scale_bipolar,  scale 1
 
 The output adder is a three-addend add_scale over ng, 1 - fg_ng, and fg_hx, not a
@@ -24,8 +24,9 @@ Held operands: each gate holds its own weight and bias encoders, so the gate
 weights and biases are held fixed-point codes on the RTL ports and the composed
 linear_mix_bipolar gates re-encode them every timestep. The forget gate and the
 new gate sit on distinct Sobol dimensions (weight then bias, per gate), so this
-file writes four gate ROMs -- vec/mgu_fgw.hex, vec/mgu_fgb.hex, vec/mgu_ngw.hex,
-vec/mgu_ngb.hex -- from the model's own gate encoders. hx_value is a registered
+file writes four direction-vector tables -- vec/mg_fw.hex, vec/mg_fb.hex,
+vec/mg_nw.hex, vec/mg_nb.hex -- recovered from the model's own gate encoders and
+run online by the RTL encoders' Sobol generators. hx_value is a registered
 buffer that mul_ugemm reads as a number, so it too is a held code column, read
 straight from cell.hx_value. The codes are drawn on the 1/LEN grid so the model's
 float compare and the RTL's integer compare agree exactly.
@@ -34,15 +35,15 @@ Two DUT configurations share each row, one column of expected output each:
   out     -- both gate biases present
   out_nb  -- neither gate bias present
 
-Both `mul_ugemm_bipolar` and `mul_ugemm_dyn_bipolar` $readmemb their sequence ROM
-from a path relative to the simulation cwd, which is module/mgu_hard_mix/, so this file
-writes vec/mul_ugemm_rom.hex and vec/mul_ugemm_dyn_rom.hex from the model's own
-tables.
+Both `mul_ugemm_bipolar` and `mul_ugemm_regen_bipolar` $readmemb the Sobol
+direction vectors their online sequence generators run, from a path relative to
+the simulation cwd, which is module/mgu_hard_mix/, so this file writes
+vec/mul_ugemm_dv.hex and vec/mul_ugemm_regen_dv.hex from the model's own tables.
 
 Three sequences follow each other: one over the first input pair, one over the
 second, then the first replayed after the second has dirtied the state and
 reset() has cleared it. The replay is the state check that matters here, since
-the cell is stateful and mul_ugemm_dyn's shift register is its stateful heart:
+the cell is stateful and mul_ugemm_regen's shift register is its stateful heart:
 DIRTY_STEPS is odd and coprime with the 2**SR_WIDTH register depth, so the
 register head lands on an odd offset and the stored contents cannot alias back
 to the alternating reset pattern by accident. A reset that restored only the
@@ -279,38 +280,76 @@ class arm:
                 as_binary(bits_of(out)), as_binary(bits_of(out_nb)))
 
 
-def write_rom(cell):
-    """Emit every sequence ROM the composed circuits read at simulation time.
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
 
-    The two gate multipliers read vec/mul_ugemm_rom.hex and
-    vec/mul_ugemm_dyn_rom.hex, and each gate's weight and bias encoders read their
-    own dimension's ROM (vec/mgu_fgw.hex, vec/mgu_fgb.hex, vec/mgu_ngw.hex,
-    vec/mgu_ngb.hex). All are relative to the simulation cwd and taken from the
-    model's own tables, so a ROM that drifted would change the compared outputs.
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
     """
-    def write_seq(num_seq, name):
-        num_seq = num_seq.detach().float().reshape(-1)
-        assert num_seq.numel() == LEN, f'{name} length {num_seq.numel()} != LEN {LEN}'
-        lines = []
-        for index in range(LEN):
-            scaled = num_seq[index].item() * LEN
-            code = round(scaled)
-            assert abs(scaled - code) < 1e-9, f'{name} num_seq[{index}] off the 1/{LEN} grid'
-            lines.append(f"{code:0{SEQ_WIDTH}b}")
-        (VEC_DIR / name).write_text("\n".join(lines) + "\n")
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
+        code = round(scaled)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
 
-    write_seq(cell.fg_hx_mul.num_seq, "mul_ugemm_rom.hex")
-    write_seq(cell.fg_ug_tanh.w_encoder.num_seq, "mgu_fgw.hex")
-    write_seq(cell.fg_ug_tanh.b_encoder.num_seq, "mgu_fgb.hex")
-    write_seq(cell.ng_ug_tanh.w_encoder.num_seq, "mgu_ngw.hex")
-    write_seq(cell.ng_ug_tanh.b_encoder.num_seq, "mgu_ngb.hex")
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
 
-    rng_seq = cell.fg_ng_mul.rng_seq.detach().reshape(-1)
-    depth = 2 ** SR_WIDTH
-    assert rng_seq.numel() == depth, f'rng_seq length {rng_seq.numel()} != depth {depth}'
-    (VEC_DIR / "mul_ugemm_dyn_rom.hex").write_text(
-        "".join(f"{int(value.item()):0{SR_WIDTH}b}\n" for value in rng_seq)
-    )
+
+def write_dirvec(cell):
+    """Emit every sequence table the composed circuits read at simulation time.
+
+    Each gate's weight and bias encoders run their Sobol sequence online from a
+    direction-vector table of their own dimension (vec/mg_fw.hex, vec/mg_fb.hex,
+    vec/mg_nw.hex, vec/mg_nb.hex), and so do the two gate multipliers, from
+    vec/mul_ugemm_dv.hex and vec/mul_ugemm_regen_dv.hex. All are relative to the
+    simulation cwd and taken from the model's own tables, so a table that drifted
+    would change the compared outputs.
+
+    Every table is asserted to differ from every other. Two encoders sharing one
+    Sobol dimension would put the model and the RTL on the same table, so the
+    co-simulation stays green by construction and this assertion is the only
+    check on the dimensions being distinct.
+    """
+    written = {}
+    tables = []
+    for source, name, label in [
+            (cell.fg_hx_mul, "mul_ugemm_dv.hex", 'forget-gate multiplier sequence'),
+            (cell.fg_ug_tanh.w_encoder, "mg_fw.hex", 'forget-gate weight sequence'),
+            (cell.fg_ug_tanh.b_encoder, "mg_fb.hex", 'forget-gate bias sequence'),
+            (cell.ng_ug_tanh.w_encoder, "mg_nw.hex", 'new-gate weight sequence'),
+            (cell.ng_ug_tanh.b_encoder, "mg_nb.hex", 'new-gate bias sequence')]:
+        rows = dirvec_rows(source.num_seq, SEQ_WIDTH, label)
+        for other, other_rows in written.items():
+            assert rows != other_rows, f'the {label} shares the {other}'
+        written[label] = rows
+        tables.append((name, rows))
+
+    rng_rows = dirvec_rows(cell.fg_ng_mul.rng_seq.div(2 ** SR_WIDTH), SR_WIDTH,
+                           'gate multiplier rng_seq')
+    for other, other_rows in written.items():
+        assert rng_rows != other_rows, f'the gate multiplier rng_seq shares the {other}'
+    tables.append(("mul_ugemm_regen_dv.hex", rng_rows))
+
+    for name, rows in tables:
+        (VEC_DIR / name).write_text("\n".join(rows) + "\n")
 
 
 def run_sequence(rows, index, dirty=0):
@@ -432,7 +471,7 @@ def main():
     # compare a sequence against a copy of itself.
     assert rows[1:1 + TIMESTEPS] != rows[1 + TIMESTEPS:1 + 2 * TIMESTEPS], \
         'the two input pairs produce identical vectors'
-    write_rom(cell)
+    write_dirvec(cell)
 
     pp_delay = cell.hw.pp_delay
     defines = [("LANES", LANES), ("IN_SIZE", IN_SIZE), ("WIDTH", ACC_WIDTH),

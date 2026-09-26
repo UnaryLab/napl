@@ -35,11 +35,18 @@ class _Shape:
         if not isinstance(dim, int):
             raise TypeError(f"dimension must be an integer, got {dim!r}")
         try:
-            return self.shape[dim]
+            size = self.shape[dim]
         except IndexError as exc:
             raise IndexError(
                 f"dimension {dim} is out of range for input shape {self.shape}"
             ) from exc
+        # A mapped size is a hardware lane or port count, which has no empty form.
+        if size < 1:
+            raise ValueError(
+                f"dimension {dim} of input shape {self.shape} is empty; "
+                f"RTL needs at least one element"
+            )
+        return size
 
 
 class _Count:
@@ -356,6 +363,13 @@ def _safe_get(container, key, default=None):
     return container.get(key, default)
 
 
+def _safe_lower(value):
+    """Return the lowercase form of a string value."""
+    if not isinstance(value, str):
+        raise TypeError(f"lower() expects a string, got {type(value).__name__}")
+    return value.lower()
+
+
 def _safe_shape(value):
     """Return the shape tuple of a tensor, sequence, or shape-like value."""
     shape = _shape_from_value(value)
@@ -371,6 +385,88 @@ def _safe_area(value):
     if isinstance(value, int):
         return value * value
     return math.prod(int(item) for item in value)
+
+
+#: Simulation classes whose sequence a mapping clause reads, each with the
+#: config keys that class accepts and the attribute holding its index sequence.
+_SEQUENCE_MODELS = {
+    "add_gaines": (("polarity", "scaled", "entry", "generator", "dim", "seed", "taps"),
+                   "sel_seq"),
+    "div_cordiv": (("depth", "generator", "dim", "seed", "taps"), "rand_seq_idx"),
+}
+
+
+def _sim_class(class_name, layer="operation"):
+    """The simulation class of that name in the `sim` subpackage for `layer`."""
+    # Local import: torch loads only when a translation builds a model.
+    if layer == "module":
+        import napl.sim.module as package
+    else:
+        import napl.sim.operation as package
+    return getattr(package, class_name)
+
+
+def _construct_model(entry, config):
+    """Build the simulation class from the node config, rejecting what it rejects.
+
+    An operation takes the config mapping itself. A module takes its
+    constructor arguments by name, and `lanes` is the caller's elaboration
+    count, which no constructor reads.
+    """
+    layer = entry.get("layer") or "operation"
+    cls = _sim_class(_name_from_sim_module(entry.get("sim_module", "")), layer)
+    try:
+        if layer == "module":
+            cls(**{key: value for key, value in config.items() if key != "lanes"})
+        else:
+            cls(dict(config))
+    # A TypeError is a config value of the wrong type reaching torch, as a
+    # fractional depth does in div_cordiv's Sobol draw.
+    except (AssertionError, ValueError, TypeError) as exc:
+        raise TranslationError(
+            f"Simulation class {cls.__name__!r} rejects this configuration: {exc}"
+        ) from exc
+
+
+def _safe_model_seq(class_name, config):
+    """Index sequence the named simulation class draws for this configuration.
+
+    The result is ``None`` when the class draws no sequence for the
+    configuration or cannot be built from it, so a clause reading it rejects
+    the configuration instead of raising.
+    """
+    if class_name not in _SEQUENCE_MODELS:
+        raise ValueError(f"model_seq() has no simulation class {class_name!r}")
+    keys, attribute = _SEQUENCE_MODELS[class_name]
+    if not isinstance(config, Mapping):
+        raise TypeError(f"model_seq() expects a mapping, got {type(config).__name__}")
+    settings = {key: config[key] for key in keys if key in config}
+    # The kernels require generator and raise without it, so this default can accept a node that cannot be built, never reject a legal one.
+    settings.setdefault("generator", "sobol")
+    settings.setdefault("dim", 1)
+    try:
+        model = _sim_class(class_name)(settings)
+    except Exception:
+        return None
+    return getattr(model, attribute, None)
+
+
+def _safe_gray_index(depth):
+    """Buffer rows div_cordiv.v's index gates address, in counter order.
+
+    Each counter value maps to the bit-reversed Gray code div_cordiv.v builds
+    in ``g_sobol``: bit 0 of the index is the counter's top bit, and bit
+    ``width - 1 - b`` is the exclusive-or of counter bits ``b`` and ``b + 1``.
+    """
+    width = int(math.log2(depth))
+    sequence = []
+    for count in range(depth):
+        bits = [0] * width
+        bits[0] = (count >> (width - 1)) & 1
+        for position in range(width - 1):
+            bits[width - 1 - position] = ((count >> position) & 1) ^ ((count >> (position + 1)) & 1)
+        sequence.append(sum(bit << index for index, bit in enumerate(bits)))
+    return sequence
 
 
 class _RestrictedEvaluator:
@@ -405,8 +501,11 @@ class _RestrictedEvaluator:
         "len": _safe_len,
         "int": int,
         "get": _safe_get,
+        "lower": _safe_lower,
         "shape": _safe_shape,
         "area": _safe_area,
+        "model_seq": _safe_model_seq,
+        "gray_index": _safe_gray_index,
     }
 
     def __init__(self, names):
@@ -522,7 +621,14 @@ def _check_requires(entry, evaluator):
     if isinstance(conditions, str):
         conditions = [conditions]
     for condition in conditions:
-        if not evaluator.evaluate(condition):
+        try:
+            holds = evaluator.evaluate(condition)
+        except TranslationError as exc:
+            raise TranslationError(
+                f"Could not evaluate requires clause {condition!r} for RTL module "
+                f"{entry.get('rtl_module')!r}: {exc}"
+            ) from exc
+        if not holds:
             raise TranslationError(
                 f"RTL module {entry.get('rtl_module')!r} does not support this "
                 f"configuration: {condition} is false"
@@ -581,6 +687,7 @@ def _translate_node(node, mapping, mapping_path):
     config = dict(config)
     entry = _select_entry(mapping, class_name, config, node.get("rtl_module"))
     file_path = _resolve_rtl_file(mapping_path, entry)
+    _construct_model(entry, config)
     parameters = _resolve_parameters(entry, node, config)
     port_map = PortMap(entry.get("inputs"), entry.get("outputs"))
     _reject_sources_for_null_ports(entry, node, port_map)

@@ -30,11 +30,12 @@ dimension (a deterministic toggle would correlate with the weight stream). The
 unipolar variant pads with a constant zero spike and has no pad encoder.
 
 The weight sits on Sobol dimension `dim`, the bias on `dim + 1`, and the pad on
-`dim + 2`, so this file writes three ROMs from the model's own encoders:
-vec/cm_wrom.hex, vec/cm_brom.hex, and vec/cm_prom.hex, relative to the simulation
-cwd (module/conv_mix/). The RTL encode cells $readmemb those tables. The number
-sequences depend on the dimension and generator, not the polarity, so one ROM per
-dimension serves both polarity DUTs.
+`dim + 2`, so this file writes three direction-vector tables from the model's own
+encoders: vec/cm_wdv.hex, vec/cm_bdv.hex, and vec/cm_pdv.hex, relative to the
+simulation cwd (module/conv_mix/). The RTL encode cells $readmemb those tables and
+run the sequence online from them. The number sequences depend on the dimension
+and generator, not the polarity, so one table per dimension serves both polarity
+DUTs.
 
 Eight DUT configurations share each row, one column of expected output each: four
 geometries per polarity, chosen so padding, bias, stride, and dilation each vary.
@@ -397,28 +398,58 @@ def run_negative(rows):
         f'unipolar geometry d went negative, to {bottom[0]}'
 
 
-def write_rom():
-    """Emit the weight, bias, and pad number-sequence ROMs the RTL encode cells read.
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
 
-    The weight, bias, and pad encoders sit on consecutive Sobol dimensions, so the
-    three tables differ. A bipolar padded geometry with a bias holds all three
-    encoders; the sequences do not depend on the polarity, so one file per
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
+    """
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
+        code = round(scaled)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
+
+
+def write_dirvec():
+    """Emit the direction-vector tables the RTL encode cells generate from.
+
+    The weight, bias, and pad encoders sit on consecutive Sobol dimensions, and the
+    three tables are asserted to differ. A bipolar padded geometry with a bias holds
+    all three encoders; the sequences do not depend on the polarity, so one file per
     dimension serves both polarity DUTs.
     """
     reference = arm('bipolar').layers[0]
-    tables = [(reference.w_encoder, "cm_wrom.hex"),
-              (reference.b_encoder, "cm_brom.hex"),
-              (reference.pad_encoder, "cm_prom.hex")]
-    for encoder, name in tables:
-        num_seq = encoder.num_seq.detach().float().reshape(-1)
-        assert num_seq.numel() == LEN, f'{name} length {num_seq.numel()} != LEN {LEN}'
-        lines = []
-        for index in range(LEN):
-            scaled = num_seq[index].item() * LEN
-            code = round(scaled)
-            assert abs(scaled - code) < 1e-9, f'{name} num_seq[{index}] off the 1/{LEN} grid'
-            lines.append(f"{code:0{SEQ_WIDTH}b}")
-        (VEC_DIR / name).write_text("\n".join(lines) + "\n")
+    tables = [(reference.w_encoder, "cm_wdv.hex", 'weight sequence'),
+              (reference.b_encoder, "cm_bdv.hex", 'bias sequence'),
+              (reference.pad_encoder, "cm_pdv.hex", 'pad sequence')]
+    written = {}
+    for encoder, name, label in tables:
+        rows = dirvec_rows(encoder.num_seq, SEQ_WIDTH, label)
+        for other, other_rows in written.items():
+            assert rows != other_rows, f'the {label} shares the {other}'
+        written[label] = rows
+        (VEC_DIR / name).write_text("\n".join(rows) + "\n")
 
 
 def main():
@@ -441,7 +472,7 @@ def main():
     assert [row[3] for row in columns] != [row[4] for row in columns], \
         'bipolar weight stimulus is identical to unipolar'
 
-    write_rom()
+    write_dirvec()
     defines = [("BATCH", BATCH), ("IN_CHANNELS", IN_CHANNELS), ("IN_H", IN_H), ("IN_W", IN_W),
                ("OUT_CHANNELS", OUT_CHANNELS), ("KERNEL_H", KERNEL[0]), ("KERNEL_W", KERNEL[1]),
                ("SEQ_WIDTH", SEQ_WIDTH), ("WIDTH", ACC_WIDTH),

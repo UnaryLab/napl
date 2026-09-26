@@ -80,7 +80,7 @@ def test_butterfly_ugemm_dyn_streaming():
         assert operation.scale_max == SCALE_MAX
         assert operation.compensation is None
         # The multiplier turns the constant twiddle into a stream itself.
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         assert not hasattr(operation, 'encoder_x')
         assert not hasattr(operation, 'decoder_y')
 

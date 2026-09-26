@@ -70,7 +70,7 @@ CONFIG = {
 def test_relu_tc():
     """Verify relu_tc against analytic and known-answer streams, including reset and timing."""
     # The kernel holds its own zero-reference encoder.
-    assert make_operation('bipolar', TIMESTEPS, 'cpu').internal_encode is True
+    assert make_operation('bipolar', TIMESTEPS, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
 
 

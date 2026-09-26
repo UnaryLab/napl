@@ -35,6 +35,8 @@ class mul_unibi_mux(napl_base):
         output = multiply(torch.tensor([1], dtype=torch.int8),
                           torch.tensor([1], dtype=torch.int8))
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

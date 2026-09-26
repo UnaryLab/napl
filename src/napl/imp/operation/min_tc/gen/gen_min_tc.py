@@ -13,6 +13,7 @@ from napl.sim.operation import min_tc
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vec")
 OUT_PATH = os.path.join(OUT_DIR, "min_tc.vec")
+PARAMS_PATH = os.path.join(OUT_DIR, "min_tc_params.vh")
 
 
 def main():
@@ -34,7 +35,13 @@ def main():
     with open(OUT_PATH, "w") as f:
         f.write("\n".join(lines) + "\n")
 
-    print(f"wrote {OUT_PATH} ({len(lines) - 1} vectors)")
+    # Row count excluding the header line, so the testbench can require that it
+    # compared every row this generator wrote.
+    rows = len(lines) - 1
+    with open(PARAMS_PATH, "w") as f:
+        f.write(f"`define GEN_VECTORS {rows}\n")
+
+    print(f"wrote {OUT_PATH} ({rows} vectors)")
 
 
 if __name__ == "__main__":

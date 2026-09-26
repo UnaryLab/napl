@@ -182,8 +182,8 @@ class fft_dyn(napl_base):
 
         #: Hardware latency and timing metadata for the streaming FFT.
         self.hw.pp_delay = 0
-        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
-        self.internal_encode = any(part.internal_encode for part in self.children())
+        #: Encoder the hardware counterpart carries, private when any part carries one.
+        self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'
         #: Rate coding on both input and both output spike ports.
         self.encoding_io = {port: 'rc' for port in
                             ('input_real', 'input_imag',

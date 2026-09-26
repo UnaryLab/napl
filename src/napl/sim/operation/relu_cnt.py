@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 
 
@@ -33,6 +34,8 @@ class relu_cnt(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -50,13 +53,17 @@ class relu_cnt(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Counter bit width; the default is ``3``.
+              - **width**: Counter bit width, an integer of at least 1; the default is ``3``. Other values raise ``AssertionError``.
               - **name**: Optional module name.
         """
         super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Saturating accumulator width in bits.
         self.width = config['width']
+        if type(self.width) is not int or self.width < 1:
+            message = f'Invalid width: <{self.width}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
 
         #: Largest value retained by the ReLU accumulator.
         self.buf_max = 2**self.width - 1

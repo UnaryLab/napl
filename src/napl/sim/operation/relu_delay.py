@@ -1,0 +1,136 @@
+import torch
+
+from loguru import logger
+from napl.sim.base import napl_base
+from .delay import delay
+
+
+class relu_delay(napl_base):
+    r"""
+    Apply ReLU to a bipolar rate-coded stream using a delay-line estimate.
+
+    The target rate-domain operation is
+
+    .. math::
+
+       y = \max(x,0).
+
+    A **depth**-entry delay line holds the recent output spikes, and the kernel
+    forces extra one-spikes whenever their count falls below half the line
+    depth, so the result approximates the target to the resolution of the line.
+    The input and the output are both bipolar 0/1 spike streams.
+
+    .. rubric:: Example
+
+    .. code-block:: python
+
+        import torch
+        from napl.sim.operation import relu_delay
+
+        operation = relu_delay({'depth': 4})
+        output = operation(torch.tensor([0.0, 1.0]))
+
+    .. container:: api-references
+
+        .. rubric:: References
+
+        *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
+    """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'delay'
+
+
+    def __init__(self, config={'depth': 4}):
+        """
+        Configure the delay-line estimator.
+
+        .. container:: api-parameter-list
+
+            **Parameters:**
+
+            - **config** – Configuration mapping.
+
+              - **depth**: Delay-line length as an integer in ``[1, 127]``; the default is ``4``.
+              - **name**: Optional module name.
+        """
+        super().__init__(config, ['depth'], optional_key_list=['polarity'], polarity_required=False)
+
+        #: Number of spike-history entries retained by the ReLU register.
+        self.depth = config['depth']
+        if not isinstance(self.depth, int) or not (0 < self.depth <= 127):
+            message = f'Invalid depth: <{self.depth}>; legal values: integers in [1, 127].'
+            logger.error(message)
+            raise AssertionError(message)
+        #: Half-depth count threshold that represents bipolar zero.
+        self.depth_half = self.depth / 2
+
+        #: Delay line holding the last :attr:`depth` ReLU output spikes.
+        self.delay = delay({'depth': self.depth, 'init': 'alternate'})
+        #: Number of one-spikes currently held by :attr:`delay`.
+        self.count: torch.Tensor
+        self.register_buffer('count', torch.zeros(1, dtype=torch.long))
+        #: Previous timestep's delay-line count used by the output decision.
+        self.count_delayed: torch.Tensor
+        self.register_buffer('count_delayed', torch.zeros(1, dtype=torch.long))
+        #: Whether the spike count must be expanded for the first input shape.
+        self.is_first_call = True
+        #: Hardware latency and timing metadata for the combinational output path.
+        self.hw.pp_delay = 0
+
+        self.encoding_io = {'input': 'rc', 'output': 'rc'}
+        self.polarity_io = {'input': 'bipolar', 'output': 'bipolar'}
+        self.correlation_i = {}
+
+
+    def _reset(self):
+        """
+        Restore the counters and the first-call flag.
+
+        The delay line is a registered child and :meth:`~napl.sim.base.napl_base.reset`
+        already resets it.
+        """
+        self.count.resize_(1).zero_()
+        self.count_delayed.resize_(1).zero_()
+        self.is_first_call = True
+
+
+    def forward(self, input: torch.Tensor):
+        """
+        Process one timestep of a bipolar rate-coded stream.
+
+        The first call seeds the spike count for the input shape. Each call then
+        pushes the output through the delay line and updates the running count
+        with the spike that entered and the one that left.
+
+        Args:
+            input: Tensor of current 0/1 input spikes.
+
+        Returns:
+            Bipolar 0/1 ReLU spike tensor with the same shape as ``input``.
+            The first call after construction or :meth:`reset` returns all
+            ones.
+
+        **Example:**
+
+        .. code-block:: python
+
+            output = operation(torch.tensor([0.0, 1.0]))
+        """
+        input_i8 = input.type(torch.int8)
+        if self.is_first_call:
+            # The alternating seed of a depth-entry line holds depth // 2 one-spikes.
+            self.count.resize_(input.shape).fill_(self.depth // 2)
+            output = torch.ones_like(input, dtype=self.stype)
+            self.is_first_call = False
+        else:
+            output = (
+                torch.lt(self.count_delayed, self.depth_half) | input_i8
+            ).type(self.stype)
+
+        if self.count_delayed.shape == self.count.shape:
+            self.count_delayed.copy_(self.count.detach())
+        else:
+            self.count_delayed.resize_as_(self.count).copy_(self.count.detach())
+        removed = self.delay(output)
+        self.count.add_(output).sub_(removed)
+        return output

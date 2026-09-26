@@ -109,7 +109,7 @@ def test_fft_dyn_hub_streaming():
             assert operation.point == POINT and operation.stages == 3
             assert operation.scale_max == SCALE_MAX
             # Every stage multiplier turns its constant twiddle into a stream itself.
-            assert operation.internal_encode is True
+            assert operation.internal_encode == 'private'
             # The scales arrive per call, so no static scale list is exposed.
             assert not hasattr(operation, 'scales')
             assert isinstance(operation.core, fft_dyn)

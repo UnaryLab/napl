@@ -7,13 +7,13 @@ sqrt_emit is opportunistic-bit-inserting square root. It is stateful: a unipolar
 non-scaled accumulator (add_scale, scale=1, intwidth=3), a depth-2 shift register that
 scrambles the inverted output, the emitted feedback bit, and -- for bipolar only
 -- a bi2uni accumulator (width=2). Both polarity variants share the same input
-stream and the same accumulator/shiftreg path; only the feedback (emit) differs
+stream and the same accumulator/shift-register path; only the feedback (emit) differs
 (unipolar uses output directly, bipolar uses bi2uni(output)).
 
-These sizes (nsadd intwidth=3, shiftreg depth=2, bi2uni width=2) are intrinsic
+These sizes (nsadd intwidth=3, shift register depth=2, bi2uni width=2) are intrinsic
 algorithm constants hardcoded inside sqrt_emit.__init__; the op's only config key
 is `polarity` (no config-derived numeric size key), so the RTL carries no sizing
-parameters and is validated as-is.
+parameters and ../vec/sqrt_emit_params.vh carries only the generated vector count.
 
 We drive both models from reset() with one shared input stream and record, per
 cycle, the input, a mid-stream RESET flag, and each variant's output. The output
@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sqrt_emit.vec"
+PARAMS = Path(__file__).resolve().parent.parent / "vec" / "sqrt_emit_params.vh"
 
 # Encoder settings mirror test_sqrt_emit.py.
 CODEC = {"polarity": "unipolar", "timestep": 256, "generator": "sobol", "dim": 4}
@@ -76,6 +77,8 @@ def main():
             out_b = int(bip(inp_b).item())
             f.write(f"{int(bit)} {rst} {out_u} {out_b}\n")
             rows += 1
+
+    PARAMS.write_text(f"`define GEN_VECTORS {rows}\n")
     print(f"wrote {VEC} ({rows} vectors, mid-stream reset at segment {reset_seg})")
 
 

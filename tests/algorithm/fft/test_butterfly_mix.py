@@ -113,7 +113,7 @@ def test_butterfly_mix_streaming():
         assert operation.compensation == SCALE
         # The class encodes the constant twiddle itself, because an XNOR gate needs
         # both operands as streams.
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         assert isinstance(operation.mul_wx, mul_gaines)
         assert operation.reference_encode.num_seq.shape == (TIMESTEP,)
         # The spike ports are the whole point of this class, so its interface
@@ -220,9 +220,21 @@ def test_butterfly_mix_known_answer():
 
 
 def test_butterfly_mix_rejects_invalid_config():
-    """Verify construction and calls reject unipolar, bad twiddles, and mismatched shapes."""
+    """Verify construction and calls reject invalid generators, twiddles, and shapes."""
     codec_config, add_config = _configs()
     twiddle = torch.zeros(4, dtype=global_config.ntype)
+
+    invalid_generator = dict(codec_config, generator='lfsr')
+    try:
+        butterfly_mix(twiddle, twiddle, invalid_generator, add_config)
+    except AssertionError as error:
+        assert str(error) == (
+            'butterfly_mix decorrelates operands via distinct sobol dimensions, but '
+            'generator <lfsr> does not decorrelate by dim (identical sequences across '
+            "operands). Legal values: <['sobol', 'rc', 'rate']>."
+        ), error
+    else:
+        raise AssertionError('butterfly_mix accepted generator lfsr')
 
     unipolar = dict(codec_config, polarity='unipolar')
     try:

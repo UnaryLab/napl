@@ -96,7 +96,7 @@ def _fidelity_checks():
                     (device, polarity, has_bias, padding)
                 assert inst.conv.timestep_cur == timestep
                 # The layer holds its own weight and bias encoders.
-                assert inst.conv.internal_encode is True
+                assert inst.conv.internal_encode == 'private'
                 print(f'[{device}] {polarity} bias={has_bias} entry={entry} pad={padding}: '
                       f'rmse={rmse:.5f} max_err={error.max().item():.5f}')
                 inst.reset()
@@ -442,5 +442,21 @@ def test_conv_gaines():
     streaming_suite(CONFIG)
 
 
+def test_conv_gaines_rejects_empty_out_channels():
+    """Verify zero output channels are rejected and one output channel builds."""
+    config = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol', 'dim': 2,
+              'scaled': True}
+    for bias in (None, torch.zeros(0)):
+        try:
+            conv_gaines(torch.zeros(0, 1, 2, 2), bias, config=dict(config))
+        except AssertionError as error:
+            assert 'Invalid out_channels' in str(error), str(error)
+        else:
+            raise AssertionError('conv_gaines accepted invalid out_channels <0>')
+    # A 2x2 kernel over one input channel is a power-of-two fan-in of four.
+    assert conv_gaines(torch.zeros(1, 1, 2, 2), None, config=dict(config)).out_channels == 1
+
+
 if __name__ == '__main__':
     test_conv_gaines()
+    test_conv_gaines_rejects_empty_out_channels()

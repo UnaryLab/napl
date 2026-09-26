@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 
 
@@ -36,6 +37,8 @@ class exp_n2g(napl_base):
 
         *Stochastic Neural Computation I: Computational Elements*, IEEE Transactions on Computers, 2001.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(
@@ -54,7 +57,7 @@ class exp_n2g(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **depth**: Counter bit width; the default is ``5``.
+              - **depth**: Counter bit width, an integer of at least 1; the default is ``5``. Other values raise ``AssertionError``.
               - **gain**: Exponential gain and number of upper counter states that emit zero; the default is ``1``.
               - **name**: Optional module name.
         """
@@ -62,6 +65,10 @@ class exp_n2g(napl_base):
 
         #: Saturating state-counter width in bits.
         self.depth = config['depth']
+        if type(self.depth) is not int or self.depth < 1:
+            message = f'Invalid depth: <{self.depth}>; legal values: an integer of at least 1.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Exponential gain and number of upper counter states that emit zero.
         self.gain = config.get('gain', 1)
 

@@ -44,10 +44,6 @@ def main():
     model.reset()
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_WIDTH {model.width}\n"
-        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
-    )
 
     rows = 0
     with VEC.open("w") as f:
@@ -61,6 +57,12 @@ def main():
                 count = int(model.spike_count.item())
                 f.write(f"{bit} {count} {rst}\n")
                 rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {model.width}\n"
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} (GEN_WIDTH={model.width})")
 
 

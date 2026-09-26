@@ -17,6 +17,9 @@ class log_n1(napl_base):
     input domain, so no input value is rejected; only the unipolar polarity is
     supported.
 
+    The first 4 outputs are 0 regardless of input, because ``d4`` is a
+    zero-filled tap and the last stage is AND (always; 4 taps).
+
     The target operation is
 
     .. math::
@@ -69,9 +72,12 @@ class log_n1(napl_base):
     # 2/3, 1/2 here vs 1/5, 1/4, 1/3, 1/2) and the final stage: an AND
     # (out = m_4 & input_d4, multiply by x) instead of exp_n1's output NAND.
 
-    #: The coefficient streams are encoded from held coefficient codes, so the
-    #: RTL counterpart holds its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The coefficient streams come
+    #: from held coefficient codes, replayed in RTL from a baked coefficient
+    #: ROM, so no external stream supplies them and the ROM cannot be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'delay'
 
 
     def __init__(

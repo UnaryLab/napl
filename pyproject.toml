@@ -23,7 +23,7 @@ dependencies = [
     "numpy",
     "scipy",
     "pyfiglet",
-    "torch>=2.0",
+    "torch>=2.14",
     "matplotlib",
     "pylfsr"
 ]

@@ -38,9 +38,10 @@ module div_scale_unipolar #(
 
     // ---- derived sizing (all magic constants trace to the parameters) ----
 
-    // The stored value spans [0, SCALE-1], so ACC_W bits hold it.
-    localparam integer ACC_W = clog2(SCALE + 1);
-    // One spare bit carries the sum, which reaches SCALE.
+    // The stored value spans [0, SCALE-1], so ACC_W bits hold it; SCALE 1 stores
+    // only 0 and keeps one bit.
+    localparam integer ACC_W = (SCALE > 1) ? clog2(SCALE) : 1;
+    // One spare bit carries the sum, which reaches SCALE <= 2**ACC_W.
     localparam integer SUM_W = ACC_W + 1;
 
     reg [ACC_W-1:0] acc;

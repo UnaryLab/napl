@@ -54,6 +54,8 @@ module mul_scale_unipolar #(
         end
     endgenerate
 
+    localparam [ACC_W-1:0] ACC_ONE = 1;
+
     reg [ACC_W-1:0] acc;
 
     // ---- combinational: this cycle's output and next-cycle accumulator state ----
@@ -65,7 +67,7 @@ module mul_scale_unipolar #(
     // fire at one whole unit; a fire drains exactly one unit and the clamped sum is
     // at least one, so the difference stays within [0, ACC_MAX], also ACC_W.
     wire             fire = (clmp >= {{(SUM_W-1){1'b0}}, 1'b1});
-    wire [ACC_W-1:0] nxt  = fire ? (clmp[ACC_W-1:0] - {{(ACC_W-1){1'b0}}, 1'b1})
+    wire [ACC_W-1:0] nxt  = fire ? (clmp[ACC_W-1:0] - ACC_ONE)
                                  : clmp[ACC_W-1:0];
 
     assign o_output = fire;

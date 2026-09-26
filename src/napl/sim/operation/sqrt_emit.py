@@ -3,7 +3,7 @@ import torch
 from napl.sim.base import napl_base
 from .bi2uni import bi2uni
 from .add_scale import add_scale
-from .shiftreg import shiftreg
+from .delay import delay
 
 
 class sqrt_emit(napl_base):
@@ -41,6 +41,8 @@ class sqrt_emit(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'insertion'
 
 
     def __init__(
@@ -69,10 +71,10 @@ class sqrt_emit(napl_base):
 
         #: Unipolar saturating adder that emits the square-root output spike.
         self.nsadd = add_scale({'polarity': 'unipolar', 'scale': 1, 'intwidth': 3, 'fracwidth': 0})
-        #: Fixed delay length of the internal emission shift register.
+        #: Fixed delay length of the internal emission delay line.
         self.depth = 2
         #: Delay line that decorrelates the inverted output in the emission path.
-        self.shiftreg = shiftreg({'depth': self.depth})
+        self.delay = delay({'depth': self.depth, 'init': 'alternate'})
 
         if self.polarity == 'bipolar':
             #: Converter that re-encodes the bipolar output value ``2p - 1`` as a
@@ -119,6 +121,10 @@ class sqrt_emit(napl_base):
 
             output = operation(torch.tensor([0.0, 1.0]))
         """
+        # The emission feedback path runs at rank 1, so a 0-dim input is carried as a
+        # one-element tensor and the output of the whole run carries that rank.
+        input = torch.atleast_1d(input)
+
         if self.is_first_call:
             self.emit_out.resize_as_(input).zero_()
             self.is_first_call = False
@@ -141,7 +147,7 @@ class sqrt_emit(napl_base):
     def _unipolar_emit(self, output):
         """Generate the next emission bit for a unipolar output spike."""
         output_inv = 1 - output
-        output_inv_scrambled = self.shiftreg(output_inv)
+        output_inv_scrambled = self.delay(output_inv)
         emit_out = output_inv_scrambled.type(torch.int8) & output.type(torch.int8)
         return emit_out
 
@@ -149,7 +155,7 @@ class sqrt_emit(napl_base):
     def _bipolar_emit(self, output):
         """Generate the next emission bit for a bipolar output spike."""
         output_inv = 1 - output
-        output_inv_scrambled = self.shiftreg(output_inv)
+        output_inv_scrambled = self.delay(output_inv)
         output_uni = self.bi2uni(output)
         emit_out = output_inv_scrambled.type(torch.int8) & output_uni.type(torch.int8)
         return emit_out

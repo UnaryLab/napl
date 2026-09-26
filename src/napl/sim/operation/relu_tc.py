@@ -40,9 +40,12 @@ class relu_tc(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
-    #: The zero reference is encoded from a cycle counter, so the RTL
-    #: counterpart holds its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The zero reference is produced
+    #: inside the operation from a free-running cycle counter, so no external
+    #: stream feeds it and nothing here can be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(self, config={'width': 8}):

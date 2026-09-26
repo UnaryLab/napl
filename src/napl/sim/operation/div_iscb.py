@@ -45,6 +45,8 @@ class div_iscb(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(
@@ -89,8 +91,10 @@ class div_iscb(napl_base):
             self.uni2bi_quotient = uni2bi({'width': 3})
         #: Hardware latency and timing metadata for the composed divider.
         self.hw.pp_delay = 0
-        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
-        self.internal_encode = any(part.internal_encode for part in self.children())
+        #: Encoder the hardware counterpart carries, derived from the registered
+        #: parts: ``'private'`` when any part carries an encoder of its own,
+        #: ``'none'`` otherwise.
+        self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'
 
         self.encoding_io = {'dividend': 'rc', 'divisor': 'rc', 'output': 'rc'}
         self.polarity_io = {'dividend': self.polarity, 'divisor': self.polarity, 'output': self.polarity}

@@ -13,12 +13,12 @@
 // row oh*STRIDE + kh*DILATION - PADDING and column ow*STRIDE + kw*DILATION -
 // PADDING. A tap outside the input reads the decorrelated rate-0.5 bipolar-zero pad
 // spike, which one internal encode cell produces from the constant probability 0.5
-// on its own Sobol dimension (a separate pad ROM). A deterministic pad toggle would
+// on its own Sobol dimension (a separate pad table). A deterministic pad toggle would
 // correlate with the weight stream, so the pad keeps its own decorrelated encoder.
 // The weight and bias encoders are held here too: i_weight and i_bias carry held
 // fixed-point probability codes, and one encode cell per weight tap and per output
 // channel's bias re-encodes them every timestep. Weight, bias, and pad each read
-// their own number-sequence ROM (W_ROM, B_ROM, PAD_ROM).
+// their own direction-vector table (W_DIRVEC, B_DIRVEC, PAD_DIRVEC).
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every sequence index and accumulator to match reset().
 // WIDTH must satisfy 2**(WIDTH-1) > ENTRY (= K + HAS_BIAS), so the signed
@@ -43,9 +43,9 @@ module conv_mix_bipolar #(
     parameter integer SCALE        = 19,  // output divisor;      tb overrides via `GEN_SCALE
     parameter integer HAS_BIAS     = 1,   // 1 encodes a bias spike addend, 0 drops it
     parameter integer LANES        = 108, // output positions;    tb overrides via `GEN_LANES
-    parameter W_ROM   = "vec/cm_wrom.hex",// weight number-sequence ROM, sim-cwd relative
-    parameter B_ROM   = "vec/cm_brom.hex",// bias number-sequence ROM, sim-cwd relative
-    parameter PAD_ROM = "vec/cm_prom.hex" // pad number-sequence ROM, sim-cwd relative
+    parameter W_DIRVEC   = "vec/cm_wdv.hex", // weight Sobol direction vectors, sim-cwd relative
+    parameter B_DIRVEC   = "vec/cm_bdv.hex", // bias Sobol direction vectors, sim-cwd relative
+    parameter PAD_DIRVEC = "vec/cm_pdv.hex"  // pad Sobol direction vectors, sim-cwd relative
 ) (
     input  wire                                                       i_clk,
     input  wire                                                       i_rst_n,
@@ -98,7 +98,7 @@ module conv_mix_bipolar #(
             encode #(
                 .WIDTH    (SEQ_WIDTH),
                 .FRAC     (SEQ_WIDTH),
-                .ROM_FILE (PAD_ROM)
+                .DIRVEC_FILE (PAD_DIRVEC)
             ) u_pad (
                 .i_clk   (i_clk),
                 .i_rst_n (i_rst_n),
@@ -140,7 +140,7 @@ module conv_mix_bipolar #(
                 encode #(
                     .WIDTH    (SEQ_WIDTH),
                     .FRAC     (SEQ_WIDTH),
-                    .ROM_FILE (W_ROM)
+                    .DIRVEC_FILE (W_DIRVEC)
                 ) u_w_enc (
                     .i_clk   (i_clk),
                     .i_rst_n (i_rst_n),
@@ -161,7 +161,7 @@ module conv_mix_bipolar #(
                 encode #(
                     .WIDTH    (SEQ_WIDTH),
                     .FRAC     (SEQ_WIDTH),
-                    .ROM_FILE (B_ROM)
+                    .DIRVEC_FILE (B_DIRVEC)
                 ) u_bias (
                     .i_clk   (i_clk),
                     .i_rst_n (i_rst_n),

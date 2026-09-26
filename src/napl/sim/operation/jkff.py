@@ -33,6 +33,8 @@ class jkff(napl_base):
         q = flip_flop(torch.tensor([1], dtype=torch.int8),
                       torch.tensor([0], dtype=torch.int8))
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'finite-state-machine'
 
 
     def __init__(

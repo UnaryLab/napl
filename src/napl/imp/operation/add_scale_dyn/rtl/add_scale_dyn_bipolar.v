@@ -79,8 +79,11 @@ module add_scale_dyn_bipolar #(
     genvar lane;
     generate
         for (lane = 0; lane < ENTRY; lane = lane + 1) begin : g_count
-            assign partial_count[lane+1] = partial_count[lane]
-                + {{(COUNT_W-1){1'b0}}, i_input[lane]};
+            // Padded by a full COUNT_W zeros and sliced so no replication is empty.
+            /* verilator lint_off UNUSEDSIGNAL */
+            wire [COUNT_W:0] lane_pad = {{COUNT_W{1'b0}}, i_input[lane]};
+            /* verilator lint_on UNUSEDSIGNAL */
+            assign partial_count[lane+1] = partial_count[lane] + lane_pad[COUNT_W-1:0];
         end
     endgenerate
 

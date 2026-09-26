@@ -73,7 +73,10 @@ def main():
         f"the stimulus covers {len(covered)} of the 8 (input_u, input_b, state) combinations"
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_PP_DELAY {model.hw.pp_delay}\n")
+    PARAMS.write_text(
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {len(rows)}\n"
+    )
     with VEC.open("w") as output:
         for reset, spike_u, spike_b, result in rows:
             output.write(f"{reset} {spike_u} {spike_b} {result}\n")

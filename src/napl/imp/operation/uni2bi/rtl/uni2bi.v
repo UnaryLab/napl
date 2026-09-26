@@ -10,6 +10,8 @@
 // a width whose acc_max = 2^(WIDTH-1)-1 is below the emission threshold 2, so
 // every legal WIDTH has acc_max >= 3 >= sum and acc_min = -2^(WIDTH-1) <= 0 <= acc:
 // neither clamp arm can ever be taken at any legal size.
+// Restriction: WIDTH >= 3, the Python model's legal widths; elaboration fails
+// below it with ERROR_uni2bi_WIDTH_must_be_at_least_3.
 
 
 module uni2bi #(
@@ -20,12 +22,20 @@ module uni2bi #(
     input  wire i_input,      // input spike (unipolar stream)
     output wire o_output   // output spike (bipolar stream)
 );
-    // acc range [0, 1]; a (WIDTH+1)-bit signed bus also covers the sum
-    // acc+addend (addend in {1,2}).
-    reg signed [WIDTH:0] acc;
+    generate
+        if (WIDTH < 3) begin : g_bad_width
+            // An unresolvable module reference makes iverilog fail the build when
+            // acc_max = 2^(WIDTH-1)-1 is below the emission threshold 2.
+            ERROR_uni2bi_WIDTH_must_be_at_least_3 u_bad ();
+        end
+    endgenerate
+
+    // acc range [0, 1], so one bit holds it; the (WIDTH+1)-bit signed bus
+    // covers the sum acc+addend (addend in {1,2}).
+    reg acc;
 
     wire signed [WIDTH:0] addend = i_input ? 2 : 1;
-    wire signed [WIDTH:0] sum    = acc + addend;
+    wire signed [WIDTH:0] sum    = $signed({{WIDTH{1'b0}}, acc}) + addend;
 
     assign o_output = (sum >= 2);
 
@@ -33,9 +43,9 @@ module uni2bi #(
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
-            acc <= {(WIDTH+1){1'b0}};
+            acc <= 1'b0;
         else
-            acc <= acc_nxt;
+            acc <= acc_nxt[0];
     end
 endmodule
 `default_nettype wire

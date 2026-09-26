@@ -34,6 +34,8 @@ class mul_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

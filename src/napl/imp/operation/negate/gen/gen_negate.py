@@ -34,7 +34,6 @@ def main():
     model.reset()
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_PP_DELAY {model.hw.pp_delay}\n")
 
     rows = 0
     with VEC.open("w") as output:
@@ -42,6 +41,11 @@ def main():
             result = int(model(torch.tensor(bit, dtype=model.stype)).item())
             output.write(f"{bit} {result}\n")
             rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} "
           f"(GEN_PP_DELAY={model.hw.pp_delay})")

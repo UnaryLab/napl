@@ -14,30 +14,35 @@ module bi2uni #(
     input  wire i_input,      // input spike (bipolar stream)
     output wire o_output   // output spike (unipolar stream)
 );
-    // (WIDTH+1)-bit signed datapath: holds acc in [ACC_MIN, ACC_MAX] and the
-    // pre-clamp sum in [ACC_MIN-1, ACC_MAX+1].
+    // (WIDTH+1)-bit signed datapath: holds the pre-clamp sum in
+    // [ACC_MIN-1, ACC_MAX+1]. The stored acc stays in [ACC_MIN, ACC_MAX-1], since
+    // a clamped value of ACC_MAX always fires and drops by one, so WIDTH signed
+    // bits hold it.
     localparam integer DW = WIDTH + 1;
 
     localparam signed [DW-1:0] ACC_MAX =  (1 <<< (WIDTH-1)) - 1;
     localparam signed [DW-1:0] ACC_MIN = -(1 <<< (WIDTH-1));
     localparam signed [DW-1:0] ONE      =  1;
 
-    reg signed [DW-1:0] acc;
+    reg signed [WIDTH-1:0] acc;
 
     wire signed [DW-1:0] addend  = i_input ? ONE : -ONE;
-    wire signed [DW-1:0] sum     = acc + addend;
+    wire signed [DW-1:0] sum     = {acc[WIDTH-1], acc} + addend;
     wire signed [DW-1:0] clamped = (sum > ACC_MAX) ? ACC_MAX :
                                    (sum < ACC_MIN) ? ACC_MIN : sum;
 
     assign o_output = (clamped >= ONE);
 
+    // acc_nxt's top bit only repeats its sign, so the register drops it.
+    /* verilator lint_off UNUSEDSIGNAL */
     wire signed [DW-1:0] acc_nxt = o_output ? (clamped - ONE) : clamped;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
-            acc <= {DW{1'b0}};
+            acc <= {WIDTH{1'b0}};
         else
-            acc <= acc_nxt;
+            acc <= acc_nxt[WIDTH-1:0];
     end
 endmodule
 `default_nettype wire

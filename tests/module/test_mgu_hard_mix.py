@@ -65,7 +65,7 @@ def check_bipolar_only():
     """Verify mgu_hard_mix rejects unipolar configuration and reports a held encoder."""
     weight_f, bias_f, weight_n, bias_n = _reference_parameters()
     # The gate multipliers encode their own operands.
-    assert make_operation('bipolar', TIMESTEPS, 'cpu').internal_encode is True
+    assert make_operation('bipolar', TIMESTEPS, 'cpu').internal_encode == 'private'
     try:
         mgu_hard_mix(weight_f, bias_f, weight_n, bias_n, _hx_value(),
             {'polarity': 'unipolar', 'timestep': 16, 'generator': 'sobol'})

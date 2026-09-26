@@ -26,6 +26,8 @@ class tanh_hard(napl_base):
         operation = tanh_hard()
         output = operation(torch.tensor([0.0, 1.0]))
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

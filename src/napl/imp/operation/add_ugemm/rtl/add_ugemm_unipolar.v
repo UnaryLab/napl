@@ -8,7 +8,7 @@ module add_ugemm_unipolar #(
     parameter integer SCALED = 1,      // inherited from config['scaled']; tb overrides via `GEN_SCALED
     parameter integer ENTRY = 8,       // # addends (reduction dim); tb overrides via `GEN_ENTRY
     parameter integer COUNT_WIDTH = 4, // derived from ENTRY; tb overrides via `GEN_COUNT_WIDTH
-    parameter integer ACC_WIDTH = 14   // accumulator width; tb overrides via `GEN_ACC_WIDTH
+    parameter integer ACC_WIDTH = 14   // accumulator width; tb overrides via `GEN_ACC_WIDTH_UNI
 ) (
     input  wire             i_clk,
     input  wire             i_rst_n,
@@ -21,8 +21,11 @@ module add_ugemm_unipolar #(
     genvar lane;
     generate
         for (lane = 0; lane < ENTRY; lane = lane + 1) begin : g_count
-            assign partial_count[lane+1] = partial_count[lane]
-                + {{(COUNT_WIDTH-1){1'b0}}, i_input[lane]};
+            // Padded by a full COUNT_WIDTH zeros and sliced so no replication is empty.
+            /* verilator lint_off UNUSEDSIGNAL */
+            wire [COUNT_WIDTH:0] lane_pad = {{COUNT_WIDTH{1'b0}}, i_input[lane]};
+            /* verilator lint_on UNUSEDSIGNAL */
+            assign partial_count[lane+1] = partial_count[lane] + lane_pad[COUNT_WIDTH-1:0];
         end
     endgenerate
 
@@ -49,32 +52,26 @@ module add_ugemm_unipolar #(
                     accumulator <= next_accumulator;
             end
         end else begin : g_unscaled
-            reg signed [ACC_WIDTH-1:0] accumulator_x2;
-            reg signed [ACC_WIDTH-1:0] output_count_x2;
+            // gap_x2 is twice the Python accumulator minus twice the
+            // emitted-spike count; the model fires when that gap is positive.
+            reg signed [ACC_WIDTH-1:0] gap_x2;
+            // ACC_WIDTH >= COUNT_WIDTH + 1 holds for every mapped size, so the
+            // zero fill is at least one bit wide.
             wire signed [ACC_WIDTH-1:0] input_x2 =
-                $signed({
-                    1'b0,
-                    {(ACC_WIDTH-COUNT_WIDTH-1){1'b0}},
-                    input_count
-                }) <<< 1;
+                $signed({{(ACC_WIDTH-COUNT_WIDTH){1'b0}}, input_count}) <<< 1;
             wire signed [ACC_WIDTH-1:0] sum =
-                accumulator_x2 + input_x2;
-            wire fire = (sum > output_count_x2);
-            wire signed [ACC_WIDTH-1:0] next_output_count_x2 =
-                output_count_x2
-                + (fire ? {{(ACC_WIDTH-2){1'b0}}, 2'b10}
-                        : {ACC_WIDTH{1'b0}});
+                gap_x2 + input_x2;
+            wire fire = (sum > $signed({ACC_WIDTH{1'b0}}));
 
             assign o_output = fire;
 
             always @(posedge i_clk or negedge i_rst_n) begin
-                if (!i_rst_n) begin
-                    accumulator_x2 <= {ACC_WIDTH{1'b0}};
-                    output_count_x2 <= {ACC_WIDTH{1'b0}};
-                end else begin
-                    accumulator_x2 <= sum;
-                    output_count_x2 <= next_output_count_x2;
-                end
+                if (!i_rst_n)
+                    gap_x2 <= {ACC_WIDTH{1'b0}};
+                else
+                    gap_x2 <= sum
+                        - (fire ? {{(ACC_WIDTH-2){1'b0}}, 2'b10}
+                                : {ACC_WIDTH{1'b0}});
             end
         end
     endgenerate

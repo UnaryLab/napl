@@ -81,6 +81,44 @@ def check_rank2():
         assert torch.equal(result.cpu(), input_0_cpu)
 
 
+def check_zero_weight_stream():
+    """Verify a zero unipolar weight emits an all-zero spike stream at every timestep."""
+    # Pins the per-timestep spike values, which the printed fidelity error does
+    # not gate. The multiply-by-one case in check_rank2() returns the input
+    # unchanged by contract, so a zero weight is what makes the correct output
+    # differ from the input.
+    timesteps = 8
+    config = {
+        'polarity': 'unipolar',
+        'timestep': timesteps,
+        'generator': 'sobol',
+    }
+    spike_cpu = torch.tensor(
+        [[1, 1, 1], [1, 0, 1]],
+        dtype=global_config.stype,
+    )
+    weight_cpu = torch.zeros((2, 3), dtype=global_config.ntype)
+    expected = torch.zeros_like(spike_cpu)
+
+    for device in devices():
+        operation = mul_ugemm(config).to(device)
+        spike = spike_cpu.to(device)
+        weight = weight_cpu.to(device)
+        for step in range(timesteps):
+            result = operation(spike, weight)
+            assert torch.equal(result.cpu(), expected), (
+                f'[{device}] timestep {step} emitted a nonzero spike for a '
+                f'zero weight'
+            )
+
+
+def extra_checks():
+    check_rank2()
+    check_zero_weight_stream()
+
+
+# Gate 17 does not apply: mul_ugemm returns a single output, which the
+# suite reads, so there is no unread output to pin.
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
     'make_operation': make_operation,
@@ -89,7 +127,7 @@ CONFIG = {
     'make_random_perf_values': make_random_perf_values,
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
-    'extra_checks': check_rank2,
+    'extra_checks': extra_checks,
     'timesteps': TIMESTEPS,
 }
 

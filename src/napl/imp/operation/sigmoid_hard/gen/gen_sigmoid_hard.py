@@ -16,8 +16,8 @@ hard-sigmoid constant. intwidth sets only the accumulator clamp bounds, and thos
 are unreachable at every width the model accepts: add_scale rejects width below 3
 (scale 2 exceeds its accumulator maximum), and at width 3 the clamp is already
 [-4, 3] while the accumulator holds 0 or 1. So width changes no output bit, the
-RTL carries no sizing parameter, and the module is validated as-is (no
-<op>_params.vh emitted).
+RTL carries no sizing parameter, so vec/sigmoid_hard_params.vh carries only the
+generated vector count.
 
 Output: vec/sigmoid_hard.vec, one line per cycle:
 
@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sigmoid_hard.vec"
+PARAMS = Path(__file__).resolve().parent.parent / "vec" / "sigmoid_hard_params.vh"
 
 # Encoder settings mirror test_sigmoid_hard.py.
 CODEC = {"polarity": "bipolar", "timestep": 256, "generator": "sobol", "dim": 1}
@@ -84,6 +85,7 @@ def main():
     with VEC.open("w") as f:
         for rst_n, s, out in rows:
             f.write(f"{rst_n} {s} {out}\n")
+    PARAMS.write_text(f"`define GEN_VECTORS {len(rows)}\n")
     print(f"wrote {VEC} ({len(rows)} vectors, mid-stream reset at cycle {split})")
 
 

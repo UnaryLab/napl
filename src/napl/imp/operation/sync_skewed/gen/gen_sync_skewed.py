@@ -69,7 +69,6 @@ def main():
     seg_a, seg_b = stream[:half], stream[half:]
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_WIDTH {WIDTH}\n")
 
     rows = 0
     with VEC.open("w") as f:
@@ -77,6 +76,12 @@ def main():
         f.write("RST\n")
         model.reset()
         rows += emit_segment(model, f, seg_b)
+
+    # The RST sentinel row is not a compared vector, so the count excludes it.
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {WIDTH}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors, WIDTH={WIDTH}) and {PARAMS} "
           f"(GEN_WIDTH={WIDTH})")
 

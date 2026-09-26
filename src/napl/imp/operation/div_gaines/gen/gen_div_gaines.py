@@ -74,10 +74,7 @@ def main():
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     write_rom(model_uni)
-    PARAMS.write_text(
-        f"`define GEN_WIDTH {WIDTH}\n"
-        f"`define GEN_PP_DELAY {model_uni.hw.pp_delay}\n"
-    )
+    rows = 0
     with VEC.open("w") as output:
         for index, row in enumerate(
             zip(uni_0, uni_1, out_uni, bi_0, bi_1, out_bi)
@@ -86,9 +83,16 @@ def main():
             output.write(
                 f"{reset_flag} " + " ".join(str(value) for value in row) + "\n"
             )
+            rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {WIDTH}\n"
+        f"`define GEN_PP_DELAY {model_uni.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
-        f"wrote {VEC} ({len(uni_0)} vectors, reset@{reset_at}), "
+        f"wrote {VEC} ({rows} vectors, reset@{reset_at}), "
         f"{PARAMS}, and {ROM} ({len(model_uni.rng_seq)} ROM lines)"
     )
 

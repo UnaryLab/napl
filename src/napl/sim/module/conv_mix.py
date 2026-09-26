@@ -39,7 +39,7 @@ class conv_mix(napl_base):
     #: The weight, bias, and pad encoders are held inside the layer, so the RTL
     #: counterpart encodes those operands itself from held numeric codes
     #: instead of taking them as spikes from a shared encoder.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
@@ -51,7 +51,7 @@ class conv_mix(napl_base):
 
             **Parameters:**
 
-            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **weight** – Numeric tensor shaped ``(out_channels, in_channels, kernel_height, kernel_width)``, with ``out_channels`` of at least 1; other shapes raise ``AssertionError``.
             - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
             - **stride** – Convolution stride; the default is ``1``.
             - **padding** – Symmetric zero padding; the default is ``0``.
@@ -61,7 +61,7 @@ class conv_mix(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1`` and the bipolar pad stream on ``dim + 2``; the default is ``2``.
+              - **dim**: One-based weight Sobol dimension, with the bias on ``dim + 1`` and the bipolar pad stream on ``dim + 2``; the default is ``2``. A caller that encodes **input** with Sobol must keep its encoder dimension outside the weight span ``dim``.
               - **scale**: Output divisor, where ``None`` uses the fan-in plus bias; the default is ``None``.
               - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = fan_in + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.
@@ -70,6 +70,10 @@ class conv_mix(napl_base):
 
         if weight.dim() != 4:
             message = f'conv_mix weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
+        if weight.shape[0] < 1:
+            message = f'Invalid out_channels: <{weight.shape[0]}>; legal values: an integer of at least 1.'
             logger.error(message)
             raise AssertionError(message)
         #: Number of convolution output channels.

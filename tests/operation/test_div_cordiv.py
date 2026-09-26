@@ -146,7 +146,7 @@ CONFIG = {
 def test_div_cordiv():
     """Verify div_cordiv with quotient in [0, 1] and nonzero divisors."""
     # The kernel holds its own buffer-index-sequence encoder.
-    assert make_operation('unipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('unipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
 
 

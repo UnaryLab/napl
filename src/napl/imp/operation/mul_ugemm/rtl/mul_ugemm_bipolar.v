@@ -2,8 +2,9 @@
 `default_nettype none
 
 // Bipolar mul_ugemm equivalent. The WIDTH+1 operand spans [0,2**WIDTH]; two
-// input-gated counters address the Python-generated number-sequence ROM.
-// Output is combinational (pp_delay=0); active-low reset clears both counters.
+// online Sobol generators walk the same sequence, one advanced by the input
+// spike and one by its complement.
+// Output is combinational (pp_delay=0); active-low reset restarts both.
 
 module mul_ugemm_bipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
@@ -15,8 +16,6 @@ module mul_ugemm_bipolar #(
     output wire             o_output
 );
 
-    reg  [WIDTH-1:0] seq_idx;
-    reg  [WIDTH-1:0] seq_idx_inv;
     wire [WIDTH-1:0] num_seq;
     wire [WIDTH-1:0] num_seq_inv;
     wire             spike;
@@ -24,32 +23,36 @@ module mul_ugemm_bipolar #(
     wire             path;
     wire             path_inv;
 
-    // num_seq ROM generated from the model for the inherited WIDTH (one entry per
-    // index, value = round(num_seq[i] * 2**WIDTH)); loaded by $readmemb so the
-    // table tracks WIDTH. Both read ports
-    // (seq_idx and seq_idx_inv) index the SAME array. The vvp cwd is
-    // imp/operation/mul_ugemm/, so the path is relative to that dir.
-    reg  [WIDTH-1:0] num_seq_rom [0:(1<<WIDTH)-1];
-    initial $readmemb("vec/mul_ugemm_rom.hex", num_seq_rom);
+    // Both paths walk the same number sequence, produced online by the Sobol
+    // recurrence over a WIDTH-entry direction-vector table: one generator is
+    // advanced by the input spike and one by its complement, so each emits the
+    // model's num_seq at its own sequence index. Both read the same table. The
+    // vvp cwd is imp/operation/mul_ugemm/, so the path is relative to that dir.
+    sobol #(
+        .WIDTH       (WIDTH),
+        .DIRVEC_FILE ("vec/mul_ugemm_dv.hex")
+    ) u_seq (
+        .i_clk   (i_clk),
+        .i_rst_n (i_rst_n),
+        .i_en    (i_input_0),
+        .o_rand  (num_seq)
+    );
 
-    assign num_seq = num_seq_rom[seq_idx];
-    assign num_seq_inv = num_seq_rom[seq_idx_inv];
+    sobol #(
+        .WIDTH       (WIDTH),
+        .DIRVEC_FILE ("vec/mul_ugemm_dv.hex")
+    ) u_seq_inv (
+        .i_clk   (i_clk),
+        .i_rst_n (i_rst_n),
+        .i_en    (~i_input_0),
+        .o_rand  (num_seq_inv)
+    );
 
     assign spike     = (i_input_1 > {1'b0, num_seq})     ? 1'b1 : 1'b0;
     assign spike_inv = (i_input_1 > {1'b0, num_seq_inv}) ? 1'b1 : 1'b0;
     assign path      = i_input_0 & spike;
     assign path_inv  = (~i_input_0) & (~spike_inv);
     assign o_output     = path | path_inv;
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            seq_idx     <= {WIDTH{1'b0}};
-            seq_idx_inv <= {WIDTH{1'b0}};
-        end else begin
-            seq_idx     <= seq_idx     + {{(WIDTH-1){1'b0}},  i_input_0};
-            seq_idx_inv <= seq_idx_inv + {{(WIDTH-1){1'b0}}, ~i_input_0};
-        end
-    end
 
 endmodule
 

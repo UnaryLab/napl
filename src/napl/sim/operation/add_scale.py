@@ -2,7 +2,7 @@ import torch
 import math
 
 from napl.sim.base import napl_base
-from napl.utils import pow2_lshift
+from napl.utils import grow_state_to, pow2_lshift
 from loguru import logger
 
 
@@ -47,6 +47,8 @@ class add_scale(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(
@@ -167,7 +169,7 @@ class add_scale(napl_base):
 
         .. code-block:: python
 
-            output = adder(torch.tensor([1, 1], dtype=torch.int8), dim=0)
+            output = adder(torch.tensor([[1, 1], [1, 0]], dtype=torch.int8), dim=0)
         """
         if self.is_first_call:
             if self.polarity == 'bipolar':
@@ -188,13 +190,9 @@ class add_scale(napl_base):
         else:
             acc_delta = pow2_lshift(torch.sum(input, dim, dtype=self.ntype), self.fracwidth)
         acc_delta.sub_(self.offset)
-        # Matching shapes update in place and any shape mismatch broadcasts out of place, with the
-        # clamp holding the accumulator bounded when scale < entry lets inflow outpace the drain.
-        if self.accumulator.shape == acc_delta.shape:
-            self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)
-        else:
-            updated = self.accumulator.add(acc_delta).clamp(self.acc_min, self.acc_max)
-            self.accumulator.resize_as_(updated).copy_(updated.detach())
+        grow_state_to(self.accumulator, acc_delta)
+        # The clamp holds the accumulator bounded when scale < entry lets inflow outpace the drain.
+        self.accumulator.add_(acc_delta).clamp_(self.acc_min, self.acc_max)
         output = torch.ge(self.accumulator, self.scale_raw).type(self.ntype)
         # With scale > 0, emitting a carry preserves the accumulator bounds.
         self.accumulator.sub_(output, alpha=self.scale_raw)

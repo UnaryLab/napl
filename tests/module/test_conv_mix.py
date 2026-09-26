@@ -62,7 +62,7 @@ def _kernel_specific_checks():
     assert isinstance(with_bias.w_encoder, encode)
     assert isinstance(with_bias.b_encoder, encode)
     # The layer holds its own weight, bias, and pad encoders.
-    assert with_bias.internal_encode is True
+    assert with_bias.internal_encode == 'private'
     no_bias = conv_mix(weight_cpu, None, stride=1, padding=0, config=conv_config)
     assert isinstance(no_bias.w_encoder, encode)
     try:
@@ -128,5 +128,21 @@ def test_conv_mix():
     streaming_suite(CONFIG)
 
 
+def test_conv_mix_rejects_empty_out_channels():
+    """Verify zero output channels are rejected and one output channel builds, per polarity."""
+    for polarity in ('unipolar', 'bipolar'):
+        config = {'polarity': polarity, 'timestep': 256, 'generator': 'sobol', 'dim': 2,
+                  'width': 12}
+        for bias in (None, torch.zeros(0)):
+            try:
+                conv_mix(torch.zeros(0, 1, 1, 1), bias, config=dict(config))
+            except AssertionError as error:
+                assert 'Invalid out_channels' in str(error), str(error)
+            else:
+                raise AssertionError(f'conv_mix accepted invalid out_channels <0> for {polarity}')
+        assert conv_mix(torch.zeros(1, 1, 1, 1), None, config=dict(config)).out_channels == 1
+
+
 if __name__ == '__main__':
     test_conv_mix()
+    test_conv_mix_rejects_empty_out_channels()

@@ -1,6 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
+from napl.utils import grow_state_to
 from loguru import logger
 
 
@@ -43,6 +44,8 @@ class add_ugemm(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(
@@ -141,16 +144,12 @@ class add_ugemm(napl_base):
             self.is_first_call = False
 
         acc_delta = torch.sum(input, dim, dtype=self.ntype)
-        # The scalar initial state broadcasts out of place; matching shapes update in place.
-        if self.accumulator.shape == acc_delta.shape:
-            self.accumulator.add_(acc_delta)
-            if self.scaled:
-                self.accumulator.clamp_(self.acc_min, self.acc_max)
-        else:
-            updated = self.accumulator.add(acc_delta)
-            if self.scaled:
-                updated = updated.clamp(self.acc_min, self.acc_max)
-            self.accumulator.resize_as_(updated).copy_(updated.detach())
+        grow_state_to(self.accumulator, acc_delta)
+        if not self.scaled:
+            grow_state_to(self.out_accumulator, acc_delta)
+        self.accumulator.add_(acc_delta)
+        if self.scaled:
+            self.accumulator.clamp_(self.acc_min, self.acc_max)
 
         if self.scaled:
             output = torch.ge(self.accumulator, self.acc_bound).type(self.stype)
@@ -162,15 +161,8 @@ class add_ugemm(napl_base):
                 torch.maximum(self.accumulator, self.out_accumulator + self.acc_min),
                 self.out_accumulator + self.acc_max,
             )
-            if self.accumulator.shape == bounded.shape:
-                self.accumulator.copy_(bounded)
-            else:
-                self.accumulator.resize_as_(bounded).copy_(bounded.detach())
+            self.accumulator.copy_(bounded)
             output = torch.gt(self.accumulator, self.out_accumulator).type(self.stype)
-            if self.out_accumulator.shape == output.shape:
-                self.out_accumulator.add_(output)
-            else:
-                updated = self.out_accumulator.add(output)
-                self.out_accumulator.resize_as_(updated).copy_(updated.detach())
+            self.out_accumulator.add_(output)
 
         return output

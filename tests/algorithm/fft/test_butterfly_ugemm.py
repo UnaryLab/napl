@@ -81,7 +81,7 @@ def test_butterfly_ugemm_streaming():
         assert operation.lane == LANE
         assert operation.compensation == SCALE
         # The multiplier turns the constant twiddle into a stream itself.
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         # The spike ports are the whole point of this class, so its interface
         # must declare rate coding rather than the hub family's empty mapping.
         assert operation.encoding_io == {port: 'rc' for port in

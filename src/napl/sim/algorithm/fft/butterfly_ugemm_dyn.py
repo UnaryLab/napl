@@ -152,8 +152,8 @@ class butterfly_ugemm_dyn(napl_base):
         # Multiplication and addition are combinational within one timestep.
         #: Hardware latency and timing metadata for the streaming butterfly.
         self.hw.pp_delay = 0
-        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
-        self.internal_encode = any(part.internal_encode for part in self.children())
+        #: Encoder the hardware counterpart carries, private when any part carries one.
+        self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'
 
         #: Rate coding on every spike port, which the class neither encodes nor decodes.
         self.encoding_io = {port: 'rc' for port in

@@ -12,10 +12,38 @@ import torch
 import torch.nn.functional as F
 
 from napl.sim.operation import encode
-from napl.sim.metric import accuracy, stability
+from napl.sim.metric import accuracy, stability, stability_builder
 
 # Denominator floor so a fully unstable input stream does not divide by zero.
 _EPS = 1e-12
+
+# Requested normalized stability of every encoded input stream. ``None`` encodes
+# the value with a plain encoder; a number builds a designed stream instead.
+INPUT_NORMSTABILITY = None
+
+# Generators whose built stream keeps the plain-encode rate. The builder restarts
+# its number-sequence counter per segment, so only generators whose prefixes are
+# equidistributed survive it; the temporal codes emit ones first and do not.
+_RATE_CODED = frozenset({'sobol', 'rc', 'rate', 'sys', 'lfsr', 'lfsr_ext'})
+
+
+class NotRateCoded(ValueError):
+    """Raised when a stream's generator is not rate coded, so no level can be built."""
+
+
+def _make_stream(codec, value, label):
+    """Return a zero-arg callable emitting the next spike of one input stream."""
+    if INPUT_NORMSTABILITY is not None:
+        generator = codec['generator'].lower()
+        if generator not in _RATE_CODED:
+            raise NotRateCoded(
+                f'Cannot build a stability-controlled stream for <{label}>: generator '
+                f'<{generator}> is not rate coded, so the built stream loses the encoded '
+                f'value; rate-coded generators: <{sorted(_RATE_CODED)}>.')
+        return stability_builder(value, {**codec, 'threshold': 0.05,
+                                         'normstability': float(INPUT_NORMSTABILITY)})
+    encoder = encode(codec)
+    return lambda: encoder(value)
 
 
 def _output_rmse(monitors, refs):
@@ -52,7 +80,8 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
         seed: Torch manual seed for reproducibility.
 
     Returns:
-        A result dict with keys ``flux_stability``, ``rmse``, ``polarity``, ``timesteps``,
+        A result dict with keys ``flux_stability``, ``input_stability`` (mean realized
+        stability over the effective inputs), ``rmse``, ``polarity``, ``timesteps``,
         ``shape``, ``seed``, ``n_inputs`` (effective inputs, counting each reduced
         slice separately), and ``n_outputs``.
     """
@@ -73,11 +102,11 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
             lo, hi = spec['range']
             values.append(lo + (hi - lo) * torch.rand(spec['shape']))
 
-    # Build a Sobol encoder and stability monitor for each encoded input stream, mirroring _make_pipeline.
-    encoders, in_monitors, encoded_index = [], [], []
+    # Build a stream source and stability monitor for each encoded input stream, mirroring _make_pipeline.
+    streams, in_monitors, encoded_index = [], [], []
     for i, (spec, value) in enumerate(zip(inputs, values)):
         if not spec.get('encode', True):
-            encoders.append(None)
+            streams.append(None)
             continue
         codec = {
             'polarity': spec['polarity'],
@@ -85,7 +114,7 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
             'generator': spec.get('generator', 'sobol'),
             'dim': spec.get('dim', i + 1),
         }
-        encoders.append(encode(codec))
+        streams.append(_make_stream(codec, value, f'{type(op).__name__} input {i}'))
         in_monitors.append(stability(value, {'polarity': spec['polarity'], 'threshold': 0.05}))
         encoded_index.append(i)
 
@@ -96,13 +125,13 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
     out_monitors = [stability(r, {'polarity': out_polarity, 'threshold': 0.05}) for r in refs]
     out_accuracy = [accuracy({'polarity': out_polarity}) for _ in refs]
 
-    # Stream: encode each input, feed its input monitor, apply the op, feed each output monitor.
+    # Stream: emit each input, feed its input monitor, apply the op, feed each output monitor.
     for _ in range(timesteps):
         spikes = []
-        for i, (enc, value) in enumerate(zip(encoders, values)):
-            if enc is None:
+        for stream in streams:
+            if stream is None:
                 continue
-            spikes.append(enc(value))
+            spikes.append(stream())
         for spike, mon in zip(spikes, in_monitors):
             mon(spike)
         out_spikes = apply(op, spikes, values)
@@ -131,6 +160,7 @@ def profile_op(op_class, *, ctor, inputs, reference, apply=None,
     first_encoded_shape = list(values[encoded_index[0]].shape)
     return {
         'flux_stability': flux,
+        'input_stability': torch.stack(denoms).mean().item(),
         'rmse': rmse,
         'polarity': polarity,
         'timesteps': timesteps,
@@ -169,7 +199,8 @@ def profile_module(make_op, *, activation, reference, polarity,
         seed: Torch manual seed for reproducibility.
 
     Returns:
-        A result dict with keys ``flux_stability``, ``rmse``, ``polarity``, ``timesteps``,
+        A result dict with keys ``flux_stability``, ``input_stability`` (mean realized
+        stability over the effective inputs), ``rmse``, ``polarity``, ``timesteps``,
         ``shape``, ``seed``, ``n_inputs`` (effective inputs), and ``n_outputs``.
     """
     torch.manual_seed(seed)
@@ -179,12 +210,12 @@ def profile_module(make_op, *, activation, reference, polarity,
     # Draw the activation value tensor uniform over its range and build its encoder + monitor.
     lo, hi = activation['range']
     act_value = lo + (hi - lo) * torch.rand(activation['shape'])
-    act_encoder = encode({
+    act_stream = _make_stream({
         'polarity': act_polarity,
         'timestep': timesteps,
         'generator': activation.get('generator', 'sobol'),
         'dim': activation.get('dim', 1),
-    })
+    }, act_value, f'{type(op).__name__} activation')
     act_monitor = stability(act_value, {'polarity': act_polarity, 'threshold': 0.05})
 
     # One output stability monitor per analytic output stream.
@@ -205,9 +236,9 @@ def profile_module(make_op, *, activation, reference, polarity,
         })
         hx_spike = hx_encoder(feedback['init'])
 
-    # Stream: encode the activation, feed its monitor, call the module, feed each output monitor.
+    # Stream: emit the activation, feed its monitor, call the module, feed each output monitor.
     for _ in range(timesteps):
-        act_spike = act_encoder(act_value)
+        act_spike = act_stream()
         act_monitor(act_spike)
         if feedback is None:
             out = op(act_spike)
@@ -244,6 +275,7 @@ def profile_module(make_op, *, activation, reference, polarity,
 
     return {
         'flux_stability': flux,
+        'input_stability': torch.stack(denoms).mean().item(),
         'rmse': rmse,
         'polarity': polarity,
         'timesteps': timesteps,

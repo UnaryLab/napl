@@ -9,7 +9,7 @@ from napl.sim.metric import accuracy
 
 
 class napl_add_gaines_scaled(napl_base):
-    """One shared-RNG encoder over the (entry, col) tensor, MUX add over dim 0."""
+    """One shared-RNG encoder over the (entry, col) tensor, MUX add over the last dim."""
 
 
     def __init__(self, codec_config, add_config):
@@ -23,13 +23,13 @@ class napl_add_gaines_scaled(napl_base):
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
         i_spike = self.encoder(input)
-        o_spike = self.add_gaines(i_spike, dim=0)
+        o_spike = self.add_gaines(i_spike.movedim(0, -1), dim=-1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
 
 class napl_add_gaines_or(napl_base):
-    """Per-row decorrelated encoders (distinct Sobol dims), OR add over dim 0."""
+    """Per-row decorrelated encoders (distinct Sobol dims), OR add over the last dim."""
 
 
     def __init__(self, codec_configs, add_config):
@@ -42,8 +42,8 @@ class napl_add_gaines_or(napl_base):
 
     @napl_sim_timesteps
     def forward(self, input, timesteps=256):
-        i_spike = torch.stack([enc(input[i]) for i, enc in enumerate(self.encoders)], 0)
-        o_spike = self.add_gaines(i_spike, dim=0)
+        i_spike = torch.stack([enc(input[i]) for i, enc in enumerate(self.encoders)], -1)
+        o_spike = self.add_gaines(i_spike, dim=-1)
         self.decoder(o_spike)
         self.accuracy(o_spike)
 
@@ -92,11 +92,22 @@ def _kernel_specific_checks():
 
             # Identical rows pass through the MUX for every select value.
             mux = add_gaines(dict(add_config)).to(device)
-            ones = torch.ones(entry, 4, dtype=global_config.stype, device=device)
-            assert torch.equal(mux(ones, dim=0).cpu(), torch.ones(4, dtype=global_config.stype))
-            zeros = torch.zeros(entry, 4, dtype=global_config.stype, device=device)
-            assert torch.equal(mux(zeros, dim=0).cpu(), torch.zeros(4, dtype=global_config.stype))
+            assert mux.correlation_i == {}
+            ones = torch.ones(4, entry, dtype=global_config.stype, device=device)
+            assert torch.equal(mux(ones, dim=-1).cpu(), torch.ones(4, dtype=global_config.stype))
+            zeros = torch.zeros(4, entry, dtype=global_config.stype, device=device)
+            assert torch.equal(mux(zeros, dim=-1).cpu(), torch.zeros(4, dtype=global_config.stype))
             mux.reset()
+
+            # A rank-2 input separates the default stream axis from axis 0.
+            lanes = torch.arange(4 * entry, dtype=global_config.stype,
+                                 device=device).remainder(2).view(4, entry)
+            default_mux = add_gaines(dict(add_config)).to(device)
+            explicit_mux = add_gaines(dict(add_config)).to(device)
+            assert torch.equal(default_mux(lanes).cpu(), explicit_mux(lanes, dim=-1).cpu())
+            assert default_mux(lanes).shape == torch.Size([4])
+            default_mux.reset()
+            explicit_mux.reset()
 
             print(f'{device}/{polarity}/scaled: rmse {err:.4f}')
 
@@ -117,11 +128,47 @@ def _kernel_specific_checks():
         inst.reset()
 
         gate = add_gaines(dict(add_config)).to(device)
+        assert gate.correlation_i == {('input', 'input'): 'neg'}
         a = torch.tensor([[0, 0, 1, 1], [0, 1, 0, 1]], dtype=global_config.stype, device=device)
-        assert torch.equal(gate(a, dim=0).cpu(), torch.tensor([0, 1, 1, 1], dtype=global_config.stype))
+        assert torch.equal(gate(a.t(), dim=-1).cpu(), torch.tensor([0, 1, 1, 1], dtype=global_config.stype))
         gate.reset()
 
+        # A rank-2 input separates the default stream axis from axis 0.
+        default_gate = add_gaines(dict(add_config)).to(device)
+        explicit_gate = add_gaines(dict(add_config)).to(device)
+        axis0_gate = add_gaines(dict(add_config)).to(device)
+        assert torch.equal(default_gate(a).cpu(), explicit_gate(a, dim=-1).cpu())
+        assert not torch.equal(default_gate(a).cpu(), axis0_gate(a, dim=0).cpu())
+        default_gate.reset()
+        explicit_gate.reset()
+        axis0_gate.reset()
+
         print(f'{device}/unipolar/or: rmse {err:.4f}')
+
+        evidence_config = {'polarity': 'unipolar', 'timestep': timestep,
+                           'generator': 'sobol'}
+        independent_encoders = [
+            encode({**evidence_config, 'dim': dim}).to(device)
+            for dim in [1, 2]
+        ]
+        correlated_encoder = encode({**evidence_config, 'dim': 1}).to(device)
+        independent_gate = add_gaines(dict(add_config)).to(device)
+        correlated_gate = add_gaines(dict(add_config)).to(device)
+        value = torch.tensor(0.3, device=device)
+        independent_output = []
+        correlated_output = []
+        for _ in range(timestep):
+            independent_lanes = torch.stack([encoder(value) for encoder in independent_encoders])
+            correlated_lane = correlated_encoder(value)
+            correlated_lanes = torch.stack([correlated_lane, correlated_lane])
+            independent_output.append(independent_gate(independent_lanes, dim=-1))
+            correlated_output.append(correlated_gate(correlated_lanes, dim=-1))
+        independent_rate = torch.stack(independent_output).type(torch.float32).mean().item()
+        correlated_rate = torch.stack(correlated_output).type(torch.float32).mean().item()
+        print(
+            f'{device}/unipolar/or-correlation: independent {independent_rate:.6f}, '
+            f'maximally-correlated {correlated_rate:.6f}'
+        )
 
     # Non-scaled bipolar mode is invalid.
     try:
@@ -138,24 +185,24 @@ def _kernel_specific_perf():
     """Per device, time add_gaines (scaled MUX) against add_scale (the obvious baseline) on identical spikes."""
     iters = 200
     entry = 8
-    spikes_cpu = (torch.rand(entry, 100000) > 0.5).type(global_config.stype)
+    spikes_cpu = (torch.rand(100000, entry) > 0.5).type(global_config.stype)
     for device in devices():
         spikes = spikes_cpu.to(device)
         results = {}
 
         op = add_scale({'polarity': 'unipolar', 'scale': entry, 'intwidth': 10, 'fracwidth': 0}).to(device)
-        op(spikes, dim=0)  # Warm up before timing.
+        op(spikes, dim=-1)  # Warm up before timing.
         with timer(device) as elapsed:
             for _ in range(iters):
-                op(spikes, dim=0)
+                op(spikes, dim=-1)
         results['add_scale'] = elapsed.seconds
 
         op = add_gaines({'polarity': 'unipolar', 'scaled': True, 'entry': entry,
                          'generator': 'sobol', 'dim': 5}).to(device)
-        op(spikes, dim=0)  # Warm up before timing.
+        op(spikes, dim=-1)  # Warm up before timing.
         with timer(device) as elapsed:
             for _ in range(iters):
-                op(spikes, dim=0)
+                op(spikes, dim=-1)
         results['add_gaines'] = elapsed.seconds
 
         ratio = results['add_scale'] / results['add_gaines']
@@ -201,7 +248,7 @@ SCALED_CONFIG = {
     'known_answer_case': _scaled_known_answer,
     'polarities': ['unipolar', 'bipolar'],
     'timesteps': 256,
-    'apply_operation': lambda operation, spikes: operation(spikes[0], dim=0),
+    'apply_operation': lambda operation, spikes: operation(spikes[0].movedim(0, -1), dim=-1),
 }
 
 
@@ -244,7 +291,7 @@ OR_CONFIG = {
     'known_answer_case': _or_known_answer,
     'polarities': ['unipolar'],
     'timesteps': 256,
-    'apply_operation': lambda operation, spikes: operation(torch.stack(spikes), dim=0),
+    'apply_operation': lambda operation, spikes: operation(torch.stack(spikes, dim=-1), dim=-1),
     'extra_checks': _all_kernel_specific_checks,
 }
 
@@ -252,7 +299,7 @@ OR_CONFIG = {
 def test_add_gaines():
     """Verify add_gaines; OR mode uses unipolar inputs in the [0, 0.15] range."""
     # The kernel holds its own select-sequence encoder.
-    assert _scaled_operation('bipolar', 256, 'cpu').internal_encode is True
+    assert _scaled_operation('bipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(SCALED_CONFIG)
     streaming_suite(OR_CONFIG)
 

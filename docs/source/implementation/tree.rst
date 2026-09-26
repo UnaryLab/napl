@@ -36,8 +36,11 @@ read by ``napl/syn/translate.py``. Each entry fixes, for one unit, its
 ``rtl_module`` name, its ``layer`` (``operation`` or ``module``), the
 ``sim_module`` Python source it binds to, the input and output port names, and
 the Verilog ``parameters`` as expressions over the simulation ``config`` (for
-example ``DEPTH: "config['depth']"``). An entry may also list ``requires``
-constraints that a configuration must satisfy to have a hardware form. This file
-is what maps a NAPL computation graph onto the circuits and what fixes each
-unit's Verilog parameters; the co-simulation coverage floor
-(:doc:`verification`) checks the swept unit list against this registry.
+example ``DEPTH: "config['depth']"``). Translation builds the simulation class
+from the node config before checking ``requires`` and rejects any configuration
+its constructor rejects; an entry may also list ``requires`` constraints,
+RTL-only restrictions on configurations the simulation class builds but the RTL
+has no verified form for. This file is what maps a NAPL computation graph onto
+the circuits and what fixes each unit's Verilog parameters; the co-simulation
+coverage floor (:doc:`verification`) checks the swept unit list against this
+registry.

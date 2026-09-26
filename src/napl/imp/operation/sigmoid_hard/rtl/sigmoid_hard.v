@@ -25,25 +25,23 @@ module sigmoid_hard (
 );
     localparam signed [4:0] SCALE = 5'sd2;
 
-    reg signed [4:0] acc;
+    // acc holds only 0 or 1, so one bit stores it.
+    reg acc;
 
-    // acc + (i_input + 1): i_input extended to the signed accumulator width.
-    // The bus carries the model's [-8, 7] range at the default width 4, of
-    // which [0, 3] is reachable.
-    wire signed [4:0] acc_sum = acc + $signed({4'b0000, i_input}) + 5'sd1;
+    // acc + (i_input + 1), both zero-extended to a signed bus that carries the
+    // model's [-8, 7] range at the default width 4, of which [1, 3] is reachable.
+    wire signed [4:0] acc_sum = $signed({4'b0000, acc}) + $signed({4'b0000, i_input}) + 5'sd1;
 
     // output spike: combinational in (acc, i_input)
     assign o_output = (acc_sum >= SCALE) ? 1'b1 : 1'b0;
 
-    // accumulator update: subtract scale where output fired. result stays in
-    // [0, 1].
-    wire signed [4:0] acc_next = o_output ? (acc_sum - SCALE) : acc_sum;
-
+    // accumulator update: subtract scale where output fired. The result stays
+    // in [0, 1] and subtracting 2 leaves bit 0 unchanged, so acc_sum[0] is it.
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
-            acc <= 5'sd0;
+            acc <= 1'b0;
         else
-            acc <= acc_next;
+            acc <= acc_sum[0];
     end
 endmodule
 `default_nettype wire

@@ -23,9 +23,10 @@ feeding one add_scale_<polarity>:
     add_scale_<polarity>    -- one per output feature, the scaled accumulator
 
 The weight and the bias sequences are distinct Sobol dimensions (weight on dim,
-bias on dim + 1), so this file writes two ROMs: vec/lm_wrom.hex from the weight
-encoder and vec/lm_brom.hex from the bias encoder, both relative to the simulation
-cwd (module/linear_mix/). The RTL encode cells $readmemb those tables.
+bias on dim + 1), so this file writes two direction-vector tables: vec/lm_wdv.hex
+from the weight encoder and vec/lm_bdv.hex from the bias encoder, both relative to
+the simulation cwd (module/linear_mix/). The RTL encode cells $readmemb those
+tables and run the sequence online from them.
 
 Six DUT configurations share each row, one column of expected output each:
   out_u     -- unipolar, with bias   (entry = scale = in_features + 1)
@@ -336,24 +337,62 @@ def run_negative(rows):
     return bottom[1]
 
 
-def write_rom(layer):
-    """Emit the weight and bias number-sequence ROMs the RTL encode cells read.
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
+
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
+    """
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
+        code = round(scaled)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
+
+
+def write_dirvec(layer):
+    """Emit the direction-vector tables the RTL encode cells generate from.
 
     The weight encoder sits on one Sobol dimension and the bias encoder on the
-    next, so the two tables differ. A ROM that drifted from the model would change
-    the compared outputs.
+    next. A table that drifted from the model would change the compared outputs.
+
+    Every table is asserted to differ from every other. Two encoders sharing one
+    Sobol dimension would put the model and the RTL on the same table, so the
+    co-simulation stays green by construction and this assertion is the only
+    check on the dimensions being distinct.
     """
-    for encoder, name in [(layer.w_encoder, "lm_wrom.hex"),
-                          (layer.b_encoder, "lm_brom.hex")]:
-        num_seq = encoder.num_seq.detach().float().reshape(-1)
-        assert num_seq.numel() == LEN, f'num_seq length {num_seq.numel()} != LEN {LEN}'
-        lines = []
-        for index in range(LEN):
-            scaled = num_seq[index].item() * LEN
-            code = round(scaled)
-            assert abs(scaled - code) < 1e-9, f'{name} num_seq[{index}] off the 1/{LEN} grid'
-            lines.append(f"{code:0{SEQ_WIDTH}b}")
-        (VEC_DIR / name).write_text("\n".join(lines) + "\n")
+    written = {}
+    tables = []
+    for encoder, name, label in [(layer.w_encoder, "lm_wdv.hex", 'weight sequence'),
+                                 (layer.b_encoder, "lm_bdv.hex", 'bias sequence')]:
+        rows = dirvec_rows(encoder.num_seq, SEQ_WIDTH, label)
+        for other, other_rows in written.items():
+            assert rows != other_rows, f'the {label} shares the {other}'
+        written[label] = rows
+        tables.append((name, rows))
+
+    for name, rows in tables:
+        (VEC_DIR / name).write_text("\n".join(rows) + "\n")
 
 
 def write_operands():
@@ -391,7 +430,7 @@ def main():
     assert [row[1] for row in columns] != [row[2] for row in columns], \
         'bipolar input stimulus is identical to unipolar'
 
-    write_rom(layer)
+    write_dirvec(layer)
     write_operands()
     pp_delay = layer.hw.pp_delay
     PARAMS.write_text(

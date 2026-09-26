@@ -106,6 +106,25 @@ def known_answer_case(_polarity):
     return (values,), torch.exp(-values)
 
 
+def _validation_checks():
+    """Reject a config that omits any required key."""
+    required = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol'}
+    for missing in ('polarity', 'timestep', 'generator'):
+        config = dict(required)
+        del config[missing]
+        try:
+            exp_n1(config)
+        except AssertionError as error:
+            assert str(error) == f'Missing key <{missing}> in the input configuration.'
+            continue
+        raise AssertionError(f'exp_n1 must require {missing}')
+
+
+def _extra_checks():
+    _validation_checks()
+    _kernel_specific_checks()
+
+
 CONFIG = {
     'polarities': ['unipolar'],
     'make_operation': make_operation,
@@ -115,14 +134,14 @@ CONFIG = {
     'known_answer_case': known_answer_case,
     'encoder_dims': [5],
     'timesteps': 256,
-    'extra_checks': _kernel_specific_checks,
+    'extra_checks': _extra_checks,
 }
 
 
 def test_exp_n1():
-    """Verify exp_n1 against analytic and known-answer streams, including reset and timing."""
+    """Verify exp_n1 against analytic and known-answer streams, including reset and timing; the NAND cascade encodes exp(-x) only on [0, 1] rates."""
     # The kernel holds its own coefficient-stream encoder.
-    assert make_operation('unipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('unipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
 
 

@@ -10,8 +10,9 @@
 //
 // The generator replays its Python step() against the printed trajectory cycle
 // by cycle, so the recurrence it uses is pinned to the hardware rather than to
-// its own arithmetic. `make test` compiles tb/sqrt_traceiscb_tb.v only; this
-// file is built by the generator.
+// its own arithmetic. The Makefile's compile recipe builds tb/sqrt_traceiscb_tb.v;
+// this file is built by the generator, which `make test` runs through its
+// vectors target, under the same three warning checks the Makefile applies.
 
 
 module sqrt_traceiscb_probe;

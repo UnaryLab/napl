@@ -1,8 +1,7 @@
 import torch
-import math
 
 from napl.sim.base import napl_base
-from .encode import encode
+from .encode_cond import encode_cond
 from loguru import logger
 
 
@@ -59,9 +58,12 @@ class mul_ugemm(napl_base):
 
         *uGEMM: Unary Computing for GEMM Applications*, IEEE Micro, 2021.
     """
-    #: Encoding advances conditionally on data, so the RTL counterpart holds
-    #: its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. Encoding advances
+    #: conditionally on the data, so the RTL holds its own input-gated Sobol
+    #: generator, which cannot ride a shared sequencer.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'conditional-generation'
 
 
     def __init__(
@@ -88,36 +90,17 @@ class mul_ugemm(napl_base):
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], polarity_required=True)
 
+        #: Conditional spike generator that owns the number sequence and its indices.
+        self.gen = encode_cond(config)
+
         #: Requested stream length used to size the conditional number sequence.
-        self.timestep = config['timestep']
-        if self.timestep <= 0:
-            message = f'Invalid timestep: <{self.timestep}>; legal values: a positive integer.'
-            logger.error(message)
-            raise AssertionError(message)
+        self.timestep = self.gen.timestep
         #: Bit width of the power-of-two conditional number sequence.
-        self.width = math.ceil(math.log2(self.timestep))
+        self.width = self.gen.width
         #: Lowercase name of the configured number-sequence generator.
-        self.generator = config['generator'].lower()
+        self.generator = self.gen.generator
         #: Period of the conditional number sequence.
-        self.len = 2**self.width
-
-
-        #: Periodic number sequence used to generate conditional operand spikes.
-        self.num_seq: torch.Tensor
-        self.register_buffer(
-            'num_seq',
-            encode({'polarity': self.polarity,
-                    'timestep': self.len,
-                    'generator': self.generator}).num_seq,
-        )
-
-        #: Per-element index of the next number-sequence value for input-one events.
-        self.seq_idx: torch.Tensor
-        self.register_buffer('seq_idx', torch.zeros(1, dtype=torch.long))
-        if self.polarity == 'bipolar':
-            #: Per-element index for the complementary bipolar input-zero path.
-            self.seq_idx_inv: torch.Tensor
-            self.register_buffer('seq_idx_inv', torch.zeros(1, dtype=torch.long))
+        self.len = self.gen.len
 
         # The product spike is combinational, so the pipeline delay is zero.
         #: Hardware latency and timing metadata for the combinational multiplier.
@@ -130,11 +113,9 @@ class mul_ugemm(napl_base):
 
     def _reset(self):
         """
-        Restart the enabled sequence indices.
+        Hold no local state: ``reset()`` restarts the sequence indices through the registered generator.
         """
-        self.seq_idx.resize_(1).zero_()
-        if self.polarity == 'bipolar':
-            self.seq_idx_inv.resize_(1).zero_()
+        pass
 
 
     def forward(self, input_0: torch.Tensor, input_1: torch.Tensor):
@@ -161,27 +142,28 @@ class mul_ugemm(napl_base):
             message = 'Invalid input_1: <None>; legal values: a numeric tensor.'
             logger.error(message)
             raise AssertionError(message)
-        in_1_prob = ((input_1 + 1) / 2 if self.polarity == 'bipolar' else input_1).type(self.ntype)
+        return self.gen(input_0, input_1)
 
-        # int8 inputs promote to long in the sequence-index update.
-        in_0_i8 = input_0.type(torch.int8)
-        spike_csg = torch.gt(in_1_prob, self.num_seq[self.seq_idx])
-        path = in_0_i8 & spike_csg
-        if self.seq_idx.shape == in_0_i8.shape:
-            self.seq_idx.add_(in_0_i8)
-        else:
-            updated = self.seq_idx.add(in_0_i8)
-            self.seq_idx.resize_as_(updated).copy_(updated.detach())
 
-        if self.polarity == 'unipolar':
-            return path.type(self.stype)
-        else:
-            spike_csg = torch.gt(in_1_prob, self.num_seq[self.seq_idx_inv])
-            inv_in_0_i8 = in_0_i8 ^ 1
-            path_inv = inv_in_0_i8 & ~spike_csg
-            if self.seq_idx_inv.shape == inv_in_0_i8.shape:
-                self.seq_idx_inv.add_(inv_in_0_i8)
-            else:
-                updated = self.seq_idx_inv.add(inv_in_0_i8)
-                self.seq_idx_inv.resize_as_(updated).copy_(updated.detach())
-            return (path | path_inv).type(self.stype)
+    @property
+    def num_seq(self) -> torch.Tensor:
+        """
+        Periodic number sequence the generator thresholds to produce operand spikes.
+        """
+        return self.gen.num_seq
+
+
+    @property
+    def seq_idx(self) -> torch.Tensor:
+        """
+        Per-element index of the next number-sequence value for input-one events.
+        """
+        return self.gen.seq_idx
+
+
+    @property
+    def seq_idx_inv(self) -> torch.Tensor:
+        """
+        Per-element index for the complementary bipolar input-zero path.
+        """
+        return self.gen.seq_idx_inv

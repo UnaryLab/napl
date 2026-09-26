@@ -57,7 +57,6 @@ def main():
             items.append((bit, reset_flag))
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_WIDTH {SIGNABS['width']}\n")
 
     rows = 0
     with VEC.open("w") as f:
@@ -68,6 +67,11 @@ def main():
             sign, abs_ = model(inp)
             f.write(f"{reset_flag} {bit} {int(sign.item())} {int(abs_.item())}\n")
             rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {SIGNABS['width']}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors, WIDTH={SIGNABS['width']}) and {PARAMS}")
 
 

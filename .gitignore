@@ -228,5 +228,4 @@ src/napl/imp/module/*/vec/*.vh
 .peon-code-task*.md
 REVIEW.md
 .claude/
-.githooks/
 reports/

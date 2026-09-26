@@ -15,9 +15,8 @@ module exp_n2g #(
     output wire o_output
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
-    localparam [DEPTH-1:0] CNT_INIT = {
-        1'b1, {(DEPTH-1){1'b0}}
-    };
+    // Only the top bit set.
+    localparam [DEPTH-1:0] CNT_INIT = CNT_MAX ^ (CNT_MAX >> 1);
     localparam [DEPTH:0] FULL_SCALE = {
         1'b1, {DEPTH{1'b0}}
     };

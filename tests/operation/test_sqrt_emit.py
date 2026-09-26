@@ -59,6 +59,42 @@ def _kernel_specific_checks():
     print('Test passed.')
 
 
+# Values the 0-dim check drives and the output spike counts they place over a
+# RANK0_TIMESTEPS run. A 0-dim input carries no lane to place a value grid on, so
+# the check reads one value at a time.
+RANK0_TIMESTEPS = 256
+RANK0_VALUES = (0.25, 0.5625)
+RANK0_COUNT = {'unipolar': (137, 188), 'bipolar': (185, 227)}
+
+
+def _rank0_checks():
+    """Assert a 0-dim input is carried at rank 1 and places the pinned output spike count."""
+    for device in devices():
+        for polarity in CONFIG['polarities']:
+            for index, value in enumerate(RANK0_VALUES):
+                operation = sqrt_emit({'polarity': polarity}).to(device)
+                encoder = encode({
+                    'polarity': polarity, 'timestep': RANK0_TIMESTEPS,
+                    'generator': 'sobol', 'dim': CONFIG['encoder_dims'][0],
+                }).to(device)
+                input = torch.tensor(value, device=device)
+                outputs = torch.stack([
+                    operation(encoder(input)) for _ in range(RANK0_TIMESTEPS)
+                ])
+                assert outputs.shape == (RANK0_TIMESTEPS, 1), (
+                    f'{polarity} sqrt_emit emitted per-timestep shape '
+                    f'{tuple(outputs.shape[1:])} on a 0-dim input on {device}, not the '
+                    f'rank-1 shape the emission feedback path leaves it at'
+                )
+                count = int(outputs.sum())
+                assert count == RANK0_COUNT[polarity][index], (
+                    f'{polarity} sqrt_emit counted {count} spikes on a 0-dim input '
+                    f'{value} on {device}, against the pinned '
+                    f'{RANK0_COUNT[polarity][index]}'
+                )
+    print('a 0-dim input is carried at rank 1 and keeps the pinned spike count.')
+
+
 def make_operation(polarity, _timestep, _device):
     return sqrt_emit({'polarity': polarity})
 
@@ -94,8 +130,9 @@ CONFIG = {
 
 
 def test_sqrt_emit():
-    """Verify sqrt_emit for both polarities on the non-negative square-root domain."""
+    """Verify sqrt_emit for both polarities on the non-negative square-root domain and pin the 0-dim input rank."""
     streaming_suite(CONFIG)
+    _rank0_checks()
 
 
 if __name__ == '__main__':

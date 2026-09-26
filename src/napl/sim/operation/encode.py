@@ -40,8 +40,10 @@ def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.Tensor:
         polylist = LFSR().get_fpolyList(m=width)
         poly = polylist[0]
     else:
-        assert isinstance(taps, list) and len(taps) > 0, \
-            f'Error: the input taps {taps} needs to be a non-empty list.'
+        if not (isinstance(taps, list) and len(taps) > 0):
+            message = f'Error: the input taps {taps} needs to be a non-empty list.'
+            logger.error(message)
+            raise AssertionError(message)
         poly = taps
 
     L = LFSR(fpoly=poly,initstate =seed)
@@ -52,6 +54,22 @@ def get_lfsr_seq(width=8, seed:int=None, taps:list=None) -> torch.Tensor:
         L.next()
 
     return torch.tensor(lfsr_seq, dtype=global_config.ntype)
+
+
+def _get_lfsr_ext_seq(width=8, seed:int=None, taps:list=None) -> torch.Tensor:
+    """Extend a maximal LFSR sequence with its missing all-zero state."""
+    seq_len = 2**width
+    states = get_lfsr_seq(width=width, seed=seed, taps=taps)[:seq_len - 1]
+    insertion = torch.nonzero(states.eq(1 / seq_len), as_tuple=False)
+    if insertion.numel() == 0 or torch.unique(states).numel() != seq_len - 1:
+        message = (
+            f'Invalid extended LFSR cycle for width <{width}>; feedback taps must '
+            f'produce all {seq_len - 1} nonzero states.'
+        )
+        logger.error(message)
+        raise AssertionError(message)
+    insertion = int(insertion[0].item()) + 1
+    return torch.cat((states[:insertion], states.new_zeros(1), states[insertion:]))
 
 
 def get_sysrand_seq(width=8, seed:int=None):
@@ -76,16 +94,22 @@ def gen_num_seq(config={
     """
     Return a number sequence of size 2**width, with each number being a number with [0, 1].
 
-    The ``lfsr`` and ``sys`` generators read the optional ``seed`` entry. A
+    The ``lfsr``, ``lfsr_ext``, and ``sys`` generators read the optional ``seed`` entry. A
     ``sys`` sequence without a seed differs between calls, so two instances built
     from one configuration hold different sequences.
+
+    ``lfsr_ext`` inserts the missing all-zero state into the maximal LFSR cycle
+    and omits the repeated opening state. Its :math:`2^m` distinct thresholds
+    represent every grid rate :math:`k/2^m` exactly over one period. The inserted
+    state breaks the LFSR's linear recurrence, so constructions that depend on
+    shift/add phase-tap identities use the classic ``lfsr`` generator instead.
     """
 
     width = config['width']
     generator = config['generator'].lower()
     seq_len = 2**width
 
-    legal_rngs = ['sobol', 'lfsr', 'sys', 'rc', 'tc', 'rate', 'temporal']
+    legal_rngs = ['sobol', 'lfsr', 'lfsr_ext', 'sys', 'rc', 'tc', 'rate', 'temporal']
 
     if generator not in legal_rngs:
         message = f'Invalid sequence generator: <{generator}>; legal values: <{legal_rngs}>.'
@@ -104,6 +128,12 @@ def gen_num_seq(config={
         num_seq = torch.tensor([x/seq_len for x in range(seq_len)])
     elif generator == 'lfsr':
         num_seq = get_lfsr_seq(width=width, seed=config.get('seed', None), taps=config.get('taps', None))
+    elif generator == 'lfsr_ext':
+        num_seq = _get_lfsr_ext_seq(
+            width=width,
+            seed=config.get('seed', None),
+            taps=config.get('taps', None),
+        )
     elif generator == 'sys':
         num_seq = get_sysrand_seq(width=width, seed=config.get('seed', None))
 
@@ -176,6 +206,8 @@ class encode(napl_base):
         Comparator-based stream generator:
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'generation'
 
 
     def __init__(
@@ -195,11 +227,14 @@ class encode(napl_base):
                   ``"bipolar"``.
                 * **timestep** - Requested positive stream length. Defaults to
                   ``256``; the generated sequence period is the next power of two.
-                * **generator** - ``"sobol"``, ``"lfsr"``, ``"sys"``,
-                  ``"rc"``, ``"tc"``, ``"rate"``, or ``"temporal"``.
+                * **generator** - ``"sobol"``, ``"lfsr"``, ``"lfsr_ext"``,
+                  ``"sys"``, ``"rc"``, ``"tc"``, ``"rate"``, or
+                  ``"temporal"``. ``"lfsr_ext"`` includes all :math:`2^m`
+                  states for exact :math:`k/2^m` rates; ``"lfsr"`` retains the
+                  linear maximal-LFSR cycle for phase-tap constructions.
                   Defaults to ``"sobol"``.
                 * **dim** - One-based Sobol dimension. Defaults to ``1``.
-                * **seed** - Integer seed for the ``lfsr`` and ``sys``
+                * **seed** - Integer seed for the ``lfsr``, ``lfsr_ext``, and ``sys``
                   generators. Defaults to ``None``; an unseeded ``sys`` sequence
                   is drawn fresh per instance.
                 * **taps** - Optional non-empty LFSR feedback-tap list. Defaults

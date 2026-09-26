@@ -1,5 +1,6 @@
 import torch
 
+from loguru import logger
 from napl.sim.base import napl_base
 
 
@@ -35,6 +36,8 @@ class sync_skewed(napl_base):
 
         *In-Stream Correlation-Based Division and Bit-Inserting Square Root in Stochastic Computing*, IEEE Design & Test, 2021.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(
@@ -52,13 +55,17 @@ class sync_skewed(napl_base):
 
             - **config** – Configuration mapping.
 
-              - **width**: Counter width in bits, giving a maximum stored skew of ``2**width - 1``; the default is ``3``.
+              - **width**: Counter width in bits, an integer of at least 0, giving a maximum stored skew of ``2**width - 1``; the default is ``3``. Other values raise ``AssertionError``.
               - **name**: Optional instance label.
         """
         super().__init__(config, ['width'], optional_key_list=['polarity'], polarity_required=False)
 
         #: Width of the stored stream-skew counter in bits.
         self.width=config['width']
+        if type(self.width) is not int or self.width < 0:
+            message = f'Invalid width: <{self.width}>; legal values: an integer of at least 0.'
+            logger.error(message)
+            raise AssertionError(message)
         #: Largest unmatched-spike count retained by the synchronizer.
         self.cnt_max = 2**self.width - 1
         #: Per-element unmatched-spike count carried across timesteps.
@@ -72,6 +79,7 @@ class sync_skewed(napl_base):
         self.encoding_io = {'input_0': 'rc', 'input_1': 'rc', 'output_0': 'rc', 'output_1': 'rc'}
         self.polarity_io = {}
         self.correlation_i = {}
+        self.correlation_o = {('output_0', 'output_1'): 'pos'}
 
 
     def _reset(self):

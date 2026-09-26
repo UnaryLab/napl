@@ -43,8 +43,17 @@ module add_scale_bipolar #(
     localparam integer ACC_LO  = -(2 ** WIDTH);      // 2*(-2^(WIDTH-1))
 
     localparam integer COUNT_W = clog2(ENTRY + 1);
-    // A = 2*acc; signed reg of width WIDTH+1 covers [-2^WIDTH, 2^WIDTH-1] ⊇ state.
-    localparam integer ACC_W = WIDTH + 1;
+    // A = 2*acc. Each cycle adds 2*partial - (ENTRY-SCALE), with partial in
+    // [0, ENTRY], then fires and subtracts 2*SCALE at or above 2*SCALE.
+    // ENTRY <= SCALE: the addend is never negative, so A never falls below 0 and
+    // a fire leaves clmp - 2*SCALE >= 0; a state below 2*SCALE plus at most
+    // ENTRY+SCALE stays below 4*SCALE, so after the fire or without one A stays in
+    // [0, 2*SCALE-1], which clog2(2*SCALE) unsigned bits hold.
+    // ENTRY > SCALE: all-zero input drifts A down by ENTRY-SCALE per cycle onto
+    // ACC_LO = -2^WIDTH, so the state needs the signed WIDTH+1 bits of
+    // [-2^WIDTH, 2^WIDTH-1].
+    localparam integer NARROW = (ENTRY <= SCALE) ? 1 : 0;
+    localparam integer ACC_W = (NARROW != 0) ? clog2(2 * SCALE) : WIDTH + 1;
     // pre-clamp sum |value| <= 2^WIDTH + 2*ENTRY + |TWO_OFS| <= 2^WIDTH + 3*ENTRY;
     // size a signed bus to hold it (clog2 magnitude + sign).
     localparam integer SUM_W = clog2((2 ** WIDTH) + 3 * ENTRY + 1) + 1;
@@ -56,14 +65,15 @@ module add_scale_bipolar #(
 
     // Elaboration-time guard: an unresolvable module reference makes iverilog
     // fail the build when WIDTH or ENTRY pushes the constants above out of the
-    // 32-bit signed range.
+    // 32-bit signed range. WIDTH 1 needs no guard: every bus stays nonempty, so it
+    // elaborates lint-clean, and Python admits no SCALE there.
     generate
         if (WIDTH > 30 || (3 * ENTRY + 1) > SUM_MAX) begin : g_bad_sizing
             ERROR_add_scale_WIDTH_and_ENTRY_overflow_32_bit_constants u_bad ();
         end
     endgenerate
 
-    reg signed [ACC_W-1:0] acc;
+    reg [ACC_W-1:0] acc;
 
     wire [COUNT_W-1:0] partial_count [0:ENTRY];
     assign partial_count[0] = {COUNT_W{1'b0}};
@@ -71,8 +81,11 @@ module add_scale_bipolar #(
     genvar lane;
     generate
         for (lane = 0; lane < ENTRY; lane = lane + 1) begin : g_count
-            assign partial_count[lane+1] = partial_count[lane]
-                + {{(COUNT_W-1){1'b0}}, i_input[lane]};
+            // Padded by a full COUNT_W zeros and sliced so no replication is empty.
+            /* verilator lint_off UNUSEDSIGNAL */
+            wire [COUNT_W:0] lane_pad = {{COUNT_W{1'b0}}, i_input[lane]};
+            /* verilator lint_on UNUSEDSIGNAL */
+            assign partial_count[lane+1] = partial_count[lane] + lane_pad[COUNT_W-1:0];
         end
     endgenerate
 
@@ -88,14 +101,17 @@ module add_scale_bipolar #(
     wire signed [SUM_W-1:0] in_ext =
         $signed({{(SUM_W-COUNT_W){1'b0}}, partial_count[ENTRY]});
     wire signed [SUM_W-1:0] two_p  = in_ext <<< 1;
-    wire signed [SUM_W-1:0] sum   = $signed(acc) + two_p - s_ofs;   // + 2*partial - 2*offset
+    // The narrow state is non-negative, so it zero-extends; the wide one is signed.
+    wire                    acc_fill = (NARROW != 0) ? 1'b0 : acc[ACC_W-1];
+    wire signed [SUM_W-1:0] acc_ext  = $signed({{(SUM_W-ACC_W){acc_fill}}, acc});
+    wire signed [SUM_W-1:0] sum   = acc_ext + two_p - s_ofs;   // + 2*partial - 2*offset
     wire signed [SUM_W-1:0] clmp  = (sum > s_hi) ? s_hi :
                                     (sum < s_lo) ? s_lo : sum;
     wire                    fire  = (clmp >= s_scl);
-    // clmp is in [ACC_LO,ACC_HI] so it fits ACC_W signed; nxt = fired? clmp-TWO_SCL : clmp
-    // stays within [ACC_LO, ACC_HI], also ACC_W signed.
-    wire signed [ACC_W-1:0] nxt   = fire ? (clmp[ACC_W-1:0] - s_scl[ACC_W-1:0])
-                                         : clmp[ACC_W-1:0];
+    // nxt = fired? clmp-TWO_SCL : clmp lies in the state range above, so the low
+    // ACC_W bits of the difference carry it exactly.
+    wire [ACC_W-1:0] nxt = fire ? (clmp[ACC_W-1:0] - s_scl[ACC_W-1:0])
+                                : clmp[ACC_W-1:0];
 
     assign o_output = fire;
 

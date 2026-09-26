@@ -108,7 +108,7 @@ def _kernel_specific_checks():
             print(f'[{device}] scaled {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
             assert inst.linear.timestep_cur == timestep
             # The layer holds its own weight and bias encoders.
-            assert inst.linear.internal_encode is True
+            assert inst.linear.internal_encode == 'private'
             inst.reset()
 
         # Non-scaled Gaines addition supports unipolar data only.
@@ -304,5 +304,21 @@ def test_linear_gaines():
     streaming_suite(CONFIG)
 
 
+def test_linear_gaines_rejects_empty_in_features():
+    """Verify an in_features of zero is rejected and one input feature builds."""
+    config = {'polarity': 'unipolar', 'timestep': 256, 'generator': 'sobol', 'dim': 2,
+              'scaled': True}
+    for bias in (None, torch.zeros(2)):
+        try:
+            linear_gaines(torch.zeros(2, 0), bias, dict(config))
+        except AssertionError as error:
+            assert 'Invalid in_features' in str(error), str(error)
+        else:
+            raise AssertionError('linear_gaines accepted invalid in_features <0>')
+    # One feature plus a bias is a power-of-two fan-in of two.
+    assert linear_gaines(torch.zeros(2, 1), torch.zeros(2), dict(config)).in_features == 1
+
+
 if __name__ == '__main__':
     test_linear_gaines()
+    test_linear_gaines_rejects_empty_in_features()

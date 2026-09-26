@@ -14,9 +14,8 @@ module tanh_pn #(
     output wire o_output
 );
     localparam [DEPTH-1:0] CNT_MAX = {DEPTH{1'b1}};
-    localparam [DEPTH-1:0] CNT_HALF = {
-        1'b1, {(DEPTH-1){1'b0}}
-    };
+    // Only the top bit set.
+    localparam [DEPTH-1:0] CNT_HALF = CNT_MAX ^ (CNT_MAX >> 1);
 
     reg [DEPTH-1:0] cnt;
 

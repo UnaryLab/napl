@@ -176,22 +176,41 @@ def run_sequence(rows, index, dirty=0):
     return arms
 
 
-def sequence_rows(sequence, width, name):
-    """Render a model number sequence as fixed-width binary ROM rows."""
-    values = sequence.detach().float().reshape(-1)
-    count = values.numel()
-    rows = []
-    for index, value in enumerate(values):
-        scaled = value.item() * count
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
+
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
+    """
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
         code = round(scaled)
-        assert abs(scaled - code) < 1e-9, \
-            f"{name}[{index}] is off the 1/{count} grid"
-        rows.append(f"{code:0{width}b}")
-    return rows
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
 
 
 def write_roms(arms):
-    """Emit weight, bias, and Gaines selection ROMs from model-owned state."""
+    """Emit the weight and bias direction vectors and the Gaines selection ROM."""
     reference = arms[0].layers[0]
     for arm in arms:
         for layer, (label, scaled, has_bias) in zip(arm.layers, arm.specs):
@@ -208,22 +227,15 @@ def write_roms(arms):
 
     thresholds = reference.w_num_seq.detach().float()
     assert tuple(thresholds.shape) == (W_LEN, IN_FEATURES), thresholds.shape
-    weight_rows = []
-    for timestep in range(W_LEN):
-        codes = []
-        for feature in reversed(range(IN_FEATURES)):
-            scaled = thresholds[timestep, feature].item() * W_LEN
-            code = round(scaled)
-            assert abs(scaled - code) < 1e-9, \
-                f"weight sequence [{timestep}, {feature}] is off the grid"
-            codes.append(f"{code:0{SEQ_WIDTH}b}")
-        weight_rows.append("".join(codes))
-    (VEC_DIR / "linear_gaines_w.hex").write_text(
-        "\n".join(weight_rows) + "\n", encoding="utf-8"
-    )
-    (VEC_DIR / "encode_rom.hex").write_text(
-        "\n".join(sequence_rows(reference.b_encoder.num_seq,
-                                SEQ_WIDTH, "bias sequence")) + "\n",
+    for feature in range(IN_FEATURES):
+        rows = dirvec_rows(thresholds[:, feature], SEQ_WIDTH,
+                           f"weight sequence of feature {feature}")
+        (VEC_DIR / f"lg_w{feature:02d}_dv.hex").write_text(
+            "\n".join(rows) + "\n", encoding="utf-8"
+        )
+    (VEC_DIR / "lg_bias_dv.hex").write_text(
+        "\n".join(dirvec_rows(reference.b_encoder.num_seq,
+                              SEQ_WIDTH, "bias sequence")) + "\n",
         encoding="utf-8",
     )
     (VEC_DIR / "gaines_rom.hex").write_text(

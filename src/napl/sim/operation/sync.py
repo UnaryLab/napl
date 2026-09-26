@@ -51,6 +51,8 @@ class sync(napl_base):
 
         *Correlation Manipulating Circuits for Stochastic Computing*, DATE, 2018.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(
@@ -97,6 +99,7 @@ class sync(napl_base):
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
                             'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
+        self.correlation_o = {('output_0', 'output_1'): 'pos'}
 
 
     def _reset(self):

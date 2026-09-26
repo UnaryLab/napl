@@ -1,6 +1,10 @@
+from .bandpass import *
 from .fft import *
+from .ica import *
+from .svm import *
 
 __all__ = [
+    'bandpass_ugemm',
     'butterfly_fp',
     'butterfly_mix',
     'butterfly_mix_dyn',
@@ -10,4 +14,7 @@ __all__ = [
     'fft_dyn',
     'fft_dyn_hub',
     'fft_hub',
+    'ica_ugemm',
+    'svm_rbf_ugemm',
+    'svm_ugemm',
 ]

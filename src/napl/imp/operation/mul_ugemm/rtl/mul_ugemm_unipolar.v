@@ -2,8 +2,8 @@
 `default_nettype none
 
 // Unipolar mul_ugemm equivalent. The WIDTH+1 operand spans [0,2**WIDTH]; an
-// input-gated counter addresses the Python-generated number-sequence ROM.
-// Output is combinational (pp_delay=0); active-low reset clears the counter.
+// input-gated online Sobol generator supplies the number sequence.
+// Output is combinational (pp_delay=0); active-low reset restarts the sequence.
 
 module mul_ugemm_unipolar #(
     parameter integer WIDTH = 8   // inherited from ceil(log2(config['timestep'])); tb overrides via `GEN_WIDTH
@@ -15,28 +15,25 @@ module mul_ugemm_unipolar #(
     output wire             o_output
 );
 
-    reg  [WIDTH-1:0] seq_idx;
     wire [WIDTH-1:0] num_seq;
     wire             spike;
 
-    // num_seq ROM generated from the model for the inherited WIDTH (one entry per
-    // index, value = round(num_seq[i] * 2**WIDTH)); loaded by $readmemb so the
-    // table tracks WIDTH. The vvp cwd is
-    // imp/operation/mul_ugemm/, so the path is relative to that dir.
-    reg  [WIDTH-1:0] num_seq_rom [0:(1<<WIDTH)-1];
-    initial $readmemb("vec/mul_ugemm_rom.hex", num_seq_rom);
-
-    assign num_seq = num_seq_rom[seq_idx];
+    // The number sequence is produced online by the Sobol recurrence over a
+    // WIDTH-entry direction-vector table, advanced by the input spike so the
+    // emitted value is the model's num_seq at the current sequence index. The
+    // vvp cwd is imp/operation/mul_ugemm/, so the path is relative to that dir.
+    sobol #(
+        .WIDTH       (WIDTH),
+        .DIRVEC_FILE ("vec/mul_ugemm_dv.hex")
+    ) u_seq (
+        .i_clk   (i_clk),
+        .i_rst_n (i_rst_n),
+        .i_en    (i_input_0),
+        .o_rand  (num_seq)
+    );
 
     assign spike = (i_input_1 > {1'b0, num_seq}) ? 1'b1 : 1'b0;
     assign o_output = i_input_0 & spike;
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n)
-            seq_idx <= {WIDTH{1'b0}};
-        else
-            seq_idx <= seq_idx + {{(WIDTH-1){1'b0}}, i_input_0};
-    end
 
 endmodule
 

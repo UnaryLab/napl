@@ -12,6 +12,18 @@ instead of passing as present.
 It also rejects a `.v` basename that appears in more than one rtl directory,
 since `-y` resolves an instantiated name to the first match along its path.
 
+The registry check runs in both directions: every `.v` file under a unit's
+`rtl/` directory resolves to a mapping entry or to `GENERATOR_PRIMITIVES`, the
+named list of sequence sources other RTL instantiates, and a `.v` file outside
+any `rtl/` or `tb/` directory is rejected. Testbench sources under `tb/` are
+compiled by name from the unit folder rather than resolved through `-y`, so they
+carry no mapping entry.
+
+A unit directory holding no `rtl/` subdirectory falls outside both the `-y`
+search path and the sweep glob, so the floor rejects it. A
+`GENERATOR_PRIMITIVES` entry naming a file that no `rtl/` directory holds is
+rejected too, so the allowlist cannot outlive the file it exempts.
+
 Run as `python sweep_floor.py "<operations>" "<modules>"`, each argument the
 space-separated list the Makefile discovered for that layer.
 """
@@ -24,6 +36,16 @@ import yaml
 MAPPING = pathlib.Path(__file__).with_name("mapping.yaml")
 ROOT = MAPPING.parent
 LAYERS = ("operation", "module")
+
+# Sequence sources under operation/encode/rtl/ that other RTL instantiates
+# through the -y path; they are not translated units, so they hold no
+# mapping.yaml entry.
+GENERATOR_PRIMITIVES = {
+    "sobol.v": "Antonov-Saleev gray-code Sobol sequence generator",
+    "lfsr.v": "Fibonacci LFSR walking the maximal cycle of its feedback polynomial",
+    "lfsr_ext.v": "Fibonacci LFSR with the all-zero state inserted into the cycle",
+    "temporalseq.v": "ascending up-counter threshold sequence",
+}
 
 
 def _candidates(entry):
@@ -74,10 +96,45 @@ def basename_collisions():
     return problems
 
 
+def unregistered_files(units, root=ROOT):
+    """Report every .v file that resolves to no mapping entry and no primitive."""
+    registered = {rtl_module for layer in LAYERS for rtl_module, _ in units[layer]}
+    problems = []
+    found = set()
+    for layer in LAYERS:
+        for path in sorted((root / layer).glob("*/rtl/*.v")):
+            found.add(path.name)
+            if path.stem not in registered and path.name not in GENERATOR_PRIMITIVES:
+                problems.append(
+                    f"{path.relative_to(root)} has no mapping.yaml entry and is not "
+                    f"one of the listed generator primitives"
+                )
+    for name in sorted(GENERATOR_PRIMITIVES.keys() - found):
+        problems.append(
+            f"generator primitive '{name}' is allowlisted but no rtl/ directory holds it"
+        )
+    for path in sorted(root.rglob("*.v")):
+        if path.parent.name not in ("rtl", "tb"):
+            problems.append(
+                f"{path.relative_to(root)} sits outside any unit's rtl/ or tb/ directory"
+            )
+    return problems
+
+
+def units_without_rtl(root=ROOT):
+    """Report every unit directory of either layer that exposes no rtl/ directory."""
+    return [
+        f"{path.relative_to(root)} is a unit directory holding no rtl/ directory"
+        for layer in LAYERS
+        for path in sorted((root / layer).glob("*"))
+        if path.is_dir() and not path.name.startswith("__") and not (path / "rtl").is_dir()
+    ]
+
+
 def check(discovered_lists):
     """Report every registered unit the sweep would skip, and every extra unit."""
     units = expected_units()
-    problems = basename_collisions()
+    problems = basename_collisions() + unregistered_files(units) + units_without_rtl()
     for layer, discovered_arg in zip(LAYERS, discovered_lists):
         discovered = set(discovered_arg.split())
         if not discovered:

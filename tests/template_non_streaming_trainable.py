@@ -6,9 +6,10 @@
 # every device. Speedup is the saved CPU runtime divided by each device runtime.
 # Use timer only for a separate unpaired elapsed measurement.
 #
-# Every one of those checks compares a computed value to an expected value, so
-# all of them pass for a kernel whose defect leaves those values intact. Gate 17
-# of RULE_SIM.md requires a check that fails on an identity wire for that case;
+# Every one of those checks reads only the outputs apply_operation passes on, so
+# a defect confined to an output the suite never reads leaves all of them green.
+# Gate 17 of RULE_SIM.md requires a check pinning that unread output when the
+# kernel returns more than one and apply_operation reads a strict subset;
 # extra_checks below is one place to put it, a separate structural test in this
 # file is another.
 from napl.utils._shared_test import non_streaming_suite
@@ -61,13 +62,12 @@ CONFIG = {
     'gradient_case': gradient_case,
     # Returns the expected input and parameter gradients from the STE equations.
     'expected_ste_gradients': expected_ste_gradients,
-    # Gate 17 of RULE_SIM.md: a callable asserting whatever the compared output
-    # and gradient values cannot show, run after the suite checks pass. Keep
-    # None only for a kernel that a wrong output or gradient already catches, or
-    # when a separate structural test in this file carries that check instead.
-    # Confirm it by returning the input unchanged from the kernel while its
-    # real state updates keep running, so the wire neuters only the emitted
-    # values, and rerunning this file, where at least one assertion must fail.
+    # Gate 17 of RULE_SIM.md: a callable asserting the property an output the
+    # suite never reads carries, run after the suite checks pass. Keep None when
+    # apply_operation reads every output the kernel returns, or when a separate
+    # structural test in this file carries that check instead. Confirm it by
+    # corrupting an unread output and rerunning this file, where the shared
+    # drivers still pass and this check is the only failure.
     'extra_checks': None,  # TODO: supply extra_checks, or state where it lives.
     # Optional. Delete unchanged entries.
     # Untimed runs before timing each device.

@@ -10,8 +10,8 @@ class sub_scale(napl_base):
     r"""
     Subtract two bipolar rate-coded streams with a configurable output scale.
 
-    Use this streaming kernel for a signed scaled difference of two independent
-    bipolar streams. The target rate-domain operation is
+    Use this streaming kernel for a signed scaled difference of two bipolar
+    streams. The target rate-domain operation is
 
     .. math::
 
@@ -46,6 +46,8 @@ class sub_scale(napl_base):
 
         *uGEMM: Unary Computing Architecture for GEMM Applications*, ISCA, 2020.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'integrate-and-fire'
 
 
     def __init__(

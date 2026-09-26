@@ -115,13 +115,13 @@ def test_mgu_hard_mix_hub_fidelity():
         assert cell.timestep_cur == 0
         assert cell.core.timestep_cur == TIMESTEP
         assert cell.decoder.timestep_cur == TIMESTEP
-        # The wrapper derives its value over its parts, and the core is the only True one: its
-        # two registered encode instances and its decoder all report False. The walk is
+        # The wrapper derives its value over its parts, and the core is the only 'private' one:
+        # its two registered encode instances and its decoder all report 'none'. The walk is
         # depth-1: the wrapper reads the core's own declared value and never descends to the
         # core's multiplier.
-        assert cell.internal_encode is True
-        assert cell.core.internal_encode is True
-        assert cell.core.fg_hx_mul.internal_encode is True
+        assert cell.internal_encode == 'private'
+        assert cell.core.internal_encode == 'private'
+        assert cell.core.fg_hx_mul.internal_encode == 'private'
         print(f'[{device}][bipolar] N={TIMESTEP}, rmse={rmse:.6f}')
 
 

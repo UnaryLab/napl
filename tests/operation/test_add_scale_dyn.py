@@ -408,6 +408,65 @@ def test_add_scale_dyn_rejects_out_of_range_call_scale():
     assert operation.scale == float(SCALE_MAX)
 
 
+def test_add_scale_dyn_reduces_a_rank_1_input_to_a_scalar():
+    """Verify a rank-1 reduction returns the 0-dim shape of its torch.sum reference, across reset()."""
+    timesteps = 8
+    for device in devices():
+        for polarity in ('unipolar', 'bipolar'):
+            input = torch.ones(ENTRY, dtype=global_config.stype, device=device)
+            reference_shape = torch.sum(input, dim=-1).shape
+            operation = add_scale_dyn({
+                'polarity': polarity,
+                'scale_max': SCALE_MAX,
+                'intwidth': INTWIDTH,
+                'fracwidth': FRACWIDTH,
+            }).to(device)
+
+            for timestep in range(timesteps):
+                output = operation(input, SCALE, dim=-1)
+                assert output.shape == reference_shape, (
+                    f'{device} {polarity}: output shape {output.shape} at timestep {timestep} '
+                    f'against reference shape {reference_shape}'
+                )
+            assert operation.accumulator.shape == reference_shape
+
+            # A rank-2 input still drops the reduced dimension alone.
+            batched = torch.ones((3, ENTRY), dtype=global_config.stype, device=device)
+            batched_operation = add_scale_dyn({
+                'polarity': polarity,
+                'scale_max': SCALE_MAX,
+                'intwidth': INTWIDTH,
+                'fracwidth': FRACWIDTH,
+            }).to(device)
+            assert batched_operation(batched, SCALE, dim=-1).shape == torch.sum(batched, dim=-1).shape
+
+            print(f'[{device}] {polarity}: rank-1 reduction gives {reference_shape}')
+
+    print('Test passed.')
+
+def test_add_scale_dyn_regrows_the_accumulator_after_reset():
+    """Verify reset() rearms the accumulator so the next call regrows it to the reduced shape."""
+    for device in devices():
+        for polarity in ('unipolar', 'bipolar'):
+            input = torch.ones(ENTRY, dtype=global_config.stype, device=device)
+            reference_shape = torch.sum(input, dim=-1).shape
+            operation = add_scale_dyn({
+                'polarity': polarity,
+                'scale_max': SCALE_MAX,
+                'intwidth': INTWIDTH,
+                'fracwidth': FRACWIDTH,
+            }).to(device)
+
+            operation(input, SCALE, dim=-1)
+            assert operation.accumulator.shape == reference_shape
+            operation.reset()
+            assert operation(input, SCALE, dim=-1).shape == reference_shape
+
+            print(f'[{device}] {polarity}: accumulator regrown to {reference_shape} after reset()')
+
+    print('Test passed.')
+
+
 if __name__ == '__main__':
     test_add_scale_dyn()
     test_add_scale_dyn_matches_add_scale_at_constant_scale()
@@ -419,3 +478,5 @@ if __name__ == '__main__':
     test_add_scale_dyn_rejects_invalid_scale_max()
     test_add_scale_dyn_rejects_invalid_accumulator_format()
     test_add_scale_dyn_rejects_out_of_range_call_scale()
+    test_add_scale_dyn_reduces_a_rank_1_input_to_a_scalar()
+    test_add_scale_dyn_regrows_the_accumulator_after_reset()

@@ -67,10 +67,7 @@ def main():
         )
         + "\n"
     )
-    PARAMS.write_text(
-        f"`define GEN_WIDTH {WIDTH}\n"
-        f"`define GEN_PP_DELAY {model_uni.hw.pp_delay}\n"
-    )
+    rows = 0
     with VEC.open("w") as output:
         for index, row in enumerate(
             zip(stream_uni, out_uni, stream_bi, out_bi)
@@ -79,6 +76,13 @@ def main():
             output.write(
                 f"{reset_flag} " + " ".join(str(value) for value in row) + "\n"
             )
+            rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {WIDTH}\n"
+        f"`define GEN_PP_DELAY {model_uni.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
         f"wrote {VEC} ({len(stream_uni)} vectors, reset@{reset_at}), "

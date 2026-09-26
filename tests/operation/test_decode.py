@@ -97,6 +97,19 @@ def test_decode_rank2():
         print(f'[{device}] rmse={error.pow(2).mean().sqrt():.4f}')
 
 
+def test_decode_rejects_invalid_timestep():
+    """Verify the timestep guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for value in (0, -1, 0.5, True):
+        try:
+            decode({'polarity': 'unipolar', 'timestep': value})
+        except AssertionError as error:
+            assert 'Invalid timestep' in str(error), str(error)
+        else:
+            raise AssertionError(f'decode accepted invalid timestep <{value}>')
+    assert decode({'polarity': 'unipolar', 'timestep': 1}).width == 0
+
+
 if __name__ == '__main__':
     test_decode()
     test_decode_rank2()
+    test_decode_rejects_invalid_timestep()

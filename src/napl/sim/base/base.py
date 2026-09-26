@@ -12,7 +12,7 @@ from inspect import unwrap
 
 @lru_cache(maxsize=None)
 def _load_flux_map(package):
-    """Return packaged flux stability as class -> polarity -> float, or {} if absent."""
+    """Return packaged flux stability as class -> polarity -> level list, or {} if absent."""
     try:
         resource = files(package).joinpath('profiling_results.yaml')
         if not resource.is_file():
@@ -21,7 +21,7 @@ def _load_flux_map(package):
     except (FileNotFoundError, ModuleNotFoundError, NotADirectoryError, OSError,
             AttributeError, ValueError):
         return {}
-    # A present-but-corrupt yaml raises loud at first construction; read_yaml is outside the guard.
+    # A corrupt yaml raises at construction because read_yaml sits outside the guard.
     profiling_results = read_yaml(path) or {}
     return {
         class_name: {
@@ -188,6 +188,27 @@ class hw_params:
     timing: dict = field(default_factory=dict)
 
 
+#: Legal values of the ``napl_base.mechanism`` field, the dominant hardware
+#: mechanism a class implements.
+#: ``gate`` is a logic network evaluated each timestep over the current spikes and any locally
+#: held bits, with no state that accumulates its inputs, in the class or in anything it
+#: composes.
+#: ``delay`` is a fixed-length shift register that holds spikes for a set number of timesteps.
+#: ``reschedule`` is buffer state that moves spikes in time or reads a stored history back.
+#: ``insertion`` is feedback that inserts extra spikes into the stream.
+#: ``finite-state-machine`` is state with a runtime bound, an explicit clamp, a modulo, or a
+#: boolean dtype.
+#: ``integrate-and-fire`` is an accumulator that fires and subtracts a threshold.
+#: ``generation`` is a comparator between a held numeric value and a number sequence.
+#: ``conditional-generation`` is generation whose sequence advances only on enabling input spikes.
+#: ``regeneration`` is re-encoding from a windowed rate estimate against a private sequence.
+#: ``popcount`` is a counter that totals the spikes in the stream.
+legal_mechanism = [
+    'gate', 'delay', 'reschedule', 'insertion', 'finite-state-machine', 'integrate-and-fire',
+    'generation', 'conditional-generation', 'regeneration', 'popcount'
+]
+
+
 class napl_base(torch.nn.Module):
     """Provide shared execution state and reset behavior for NAPL modules.
 
@@ -230,12 +251,20 @@ class napl_base(torch.nn.Module):
     #: Whether each call represents one streaming timestep.
     streaming = True
 
-    #: Whether the RTL counterpart holds its own encoder.
-    #: True when the hardware counterpart carries the encoder itself, covering
-    #: both encoding that advances conditionally on data and operands such as
-    #: weights and biases that it encodes internally from held numeric codes.
-    #: The binary-domain fxp classes have no encoder, so they are False.
-    internal_encode = False
+    #: Dominant hardware mechanism of this class, one token of ``legal_mechanism``,
+    #: or ``None`` when the class declares none.
+    mechanism = None
+
+    #: Encoder the hardware counterpart carries. ``'none'`` means it carries no
+    #: encoder, which is what the binary-domain fxp classes are. ``'private'``
+    #: means it holds its own encoder that cannot be shared, covering both
+    #: encoding that advances conditionally on data and operands such as weights
+    #: and biases that it encodes internally from held numeric codes.
+    #: ``'shared'`` means the encoder could instead ride a shared sequencer.
+    #: A class that registers parts derives
+    #: ``'private'`` when any part's internal_encode is not ``'none'``, and ``'none'``
+    #: otherwise.
+    internal_encode = 'none'
 
 
     def __init__(self, config: dict={}, key_list: list=[], optional_key_list: list=[], polarity_required: bool=False):
@@ -296,22 +325,30 @@ class napl_base(torch.nn.Module):
         #: ``"bipolar"``. Unconstrained ports are omitted.
         self.polarity_io = {}
 
-        #: Cross-correlation required between input streams, keyed by a tuple of
+        #: Cross-correlation required between input streams, keyed by a pair of
         #: ``forward()`` parameter names; ``"zero"``, ``"pos"``, or ``"neg"``.
+        #: A repeated name describes the relation among lanes stacked in that
+        #: one input port.
         self.correlation_i = {}
 
+        #: Cross-correlation produced between output streams, keyed by a pair of
+        #: output names; ``"zero"``, ``"pos"``, or ``"neg"``. Undeclared
+        #: output relations are omitted. A repeated name describes the relation
+        #: among lanes stacked in that one output port.
+        self.correlation_o = {}
+
         if not isinstance(getattr(type(self), 'flux_stability', None), property):
-            #: Relative output flux stability of this module. A subclass may
-            #: expose ``flux_stability`` as a property instead, as the
-            #: stability_flux metric does for its measured value, and then no
-            #: placeholder is set here. flux_stability comes from the class's
-            #: package profiling yaml when present, else 1.0; the class's own
-            #: package is already imported by construction time and the yaml is
-            #: data-only, so no import cycle.
+            #: Relative output flux stability of this module, a list holding one
+            #: value per profiled input-stability level in ascending order; a
+            #: temporal-coded class and an unprofiled class hold one element.
+            #: The list comes from the class's package profiling yaml when
+            #: present, else ``[1.0]``. A subclass exposing ``flux_stability``
+            #: as a property keeps that property.
             flux_map = _load_flux_map(type(self).__module__.rsplit('.', 1)[0])
             entry = flux_map.get(type(self).__name__)
             polarity = getattr(self, 'polarity', None)
-            self.flux_stability = entry.get(polarity, 1.0) if isinstance(entry, dict) else 1.0
+            # The copy keeps a caller's edit out of the shared cached map.
+            self.flux_stability = list(entry.get(polarity, [1.0])) if isinstance(entry, dict) else [1.0]
 
 
     def _reset(self):
@@ -378,12 +415,12 @@ class napl_base(torch.nn.Module):
         .. code-block:: python
 
             import torch
-            from napl.sim.operation import shiftreg
+            from napl.sim.operation import delay
 
-            delay = shiftreg({'depth': 2})
+            line = delay({'depth': 2})
             for _ in range(4):
-                output = delay.forward_timestep(torch.tensor([1], dtype=torch.int8))
-            assert delay.timestep_cur == 4
+                output = line.forward_timestep(torch.tensor([1], dtype=torch.int8))
+            assert line.timestep_cur == 4
         """
         if self.streaming:
             self.tick()
@@ -487,10 +524,7 @@ def napl_sim_timesteps(timestep_func):
             logger.info(f'Simulating <{timesteps}> timesteps in NAPL {target}...')
 
         for _ in range(timesteps):
-            # A streaming module counts a fresh run's cycles on its own counter,
-            # since __call__ charges its tick and the reset cleared the one charged
-            # for this run, while a non-streaming hub keeps its counter at 0 and its
-            # streaming children carry the cycle count instead.
+            # Only a streaming module counts a fresh run's cycles on its own counter.
             if fresh_run and module.streaming:
                 module.tick()
             output = timestep_func(*args, **kwargs)

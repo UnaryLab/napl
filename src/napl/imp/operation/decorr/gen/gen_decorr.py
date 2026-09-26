@@ -103,12 +103,6 @@ def main():
     model_bipolar = decorr(dict(CONFIG, polarity="bipolar"))
 
     rom_count = write_rom(model)
-    with open(PARAMS_PATH, "w") as params:
-        params.write(f"`define GEN_DEPTH {DEPTH}\n"
-                     f"`define GEN_IDX_W {IDX_W}\n"
-                     f"`define GEN_SEQ_LEN {SEQ_LEN}\n"
-                     f"`define GEN_SEQ_W {SEQ_W}\n"
-                     f"`define GEN_PP_DELAY {model.hw.pp_delay}\n")
 
     lines = ["rst in_0 in_1 out_0 out_1"]
     blocks = []
@@ -129,6 +123,15 @@ def main():
 
     with open(OUT_PATH, "w") as vectors:
         vectors.write("\n".join(lines) + "\n")
+
+    # The testbench skips the header line, so only the rows after it are compared.
+    with open(PARAMS_PATH, "w") as params:
+        params.write(f"`define GEN_DEPTH {DEPTH}\n"
+                     f"`define GEN_IDX_W {IDX_W}\n"
+                     f"`define GEN_SEQ_LEN {SEQ_LEN}\n"
+                     f"`define GEN_SEQ_W {SEQ_W}\n"
+                     f"`define GEN_PP_DELAY {model.hw.pp_delay}\n"
+                     f"`define GEN_VECTORS {len(lines) - 1}\n")
 
     print(f"wrote {OUT_PATH} ({len(lines) - 1} vectors, {len(blocks)} reset blocks), "
           f"{PARAMS_PATH} (GEN_DEPTH={DEPTH}, GEN_IDX_W={IDX_W}, GEN_SEQ_LEN={SEQ_LEN}, "

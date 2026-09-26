@@ -12,15 +12,16 @@ operation-layer circuits that implement exactly those pieces:
     encode                -- one per output feature, the free-running bias bit
     add_scale_<polarity>    -- one per output feature, the scaled accumulator
 
-Both `mul_ugemm_*` and `encode` $readmemb their number-sequence ROM from a path
-relative to the simulation cwd (module/linear_ugemm/), so this file writes
-vec/mul_ugemm_rom.hex and vec/encode_rom.hex with the sequence of the built model.
-Both tables are the same sequence, which is why the bias comparator can be the
-encode circuit: linear_ugemm indexes self.mul.num_seq with the free-running
-timestep for the bias bit.
+`mul_ugemm_*` and `encode` each $readmemb the Sobol direction vectors their
+online sequence generators run, both from a path relative to the simulation cwd
+(module/linear_ugemm/), so this file writes vec/mul_ugemm_dv.hex and
+vec/encode_dirvec_d1.hex from the sequence of the built model. Both describe
+the same sequence, which is why the bias comparator can be the encode circuit:
+linear_ugemm indexes self.mul.num_seq with the free-running timestep for the bias
+bit.
 
-Sequence-index bound: mul_ugemm advances seq_idx without a modulo and the ROM
-holds LEN = 2**ceil(log2(timestep)) entries, so a reset-to-reset run holds at
+Sequence-index bound: mul_ugemm advances seq_idx without a modulo and the
+sequence has period LEN = 2**ceil(log2(timestep)), so a reset-to-reset run holds at
 most LEN - 1 spiking timesteps and, in bipolar, LEN - 1 silent ones. Every driven
 block respects both.
 
@@ -341,24 +342,51 @@ def run_negative(rows):
     return bottom[1]
 
 
-def write_rom(layer):
-    """Emit the model's number-sequence ROM under both names the RTL reads.
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
 
-    mul_ugemm_* reads vec/mul_ugemm_rom.hex and encode reads vec/encode_rom.hex,
-    both relative to the simulation cwd. The layer drives the bias comparator from
-    the same self.mul.num_seq table, so the two files hold identical lines.
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
     """
-    num_seq = layer.mul.num_seq.detach().float().reshape(-1)
-    assert num_seq.numel() == LEN, f'num_seq length {num_seq.numel()} != LEN {LEN}'
-    lines = []
-    for index in range(LEN):
-        scaled = num_seq[index].item() * LEN
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
         code = round(scaled)
-        assert abs(scaled - code) < 1e-9, f'num_seq[{index}] off the 1/{LEN} grid'
-        lines.append(f"{code:0{SEQ_WIDTH}b}")
-    text = "\n".join(lines) + "\n"
-    (VEC_DIR / "mul_ugemm_rom.hex").write_text(text)
-    (VEC_DIR / "encode_rom.hex").write_text(text)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
+
+
+def write_dirvec(layer):
+    """Emit the sequence tables the composed circuits read at simulation time.
+
+    Both mul_ugemm_* and encode generate their sequence online with a `sobol`
+    generator, reading the direction-vector tables vec/mul_ugemm_dv.hex and
+    vec/encode_dirvec_d1.hex relative to the simulation cwd. The layer drives the
+    bias comparator from the same self.mul.num_seq table, so the two files
+    describe one sequence.
+    """
+    rows = dirvec_rows(layer.mul.num_seq, SEQ_WIDTH, 'bias sequence')
+    (VEC_DIR / "mul_ugemm_dv.hex").write_text("\n".join(rows) + "\n")
+    (VEC_DIR / "encode_dirvec_d1.hex").write_text("\n".join(rows) + "\n")
 
 
 def write_operands():
@@ -396,7 +424,7 @@ def main():
     assert [row[1] for row in columns] != [row[2] for row in columns], \
         'bipolar input stimulus is identical to unipolar'
 
-    write_rom(layer)
+    write_dirvec(layer)
     write_operands()
     pp_delay = layer.hw.pp_delay
     PARAMS.write_text(

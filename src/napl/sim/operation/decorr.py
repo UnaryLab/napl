@@ -54,10 +54,13 @@ class decorr(napl_base):
 
         *Correlation Manipulating Circuits for Stochastic Computing*, DATE, 2018.
     """
-    #: The buffer-position index sequences are encoded from held number
-    #: sequences, so the RTL counterpart holds its own encoder instead of
-    #: sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The buffer-position index
+    #: sequences come from held number sequences, replayed in RTL from a baked
+    #: index ROM, so no external stream supplies them and the ROM cannot be
+    #: shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'reschedule'
 
 
     def __init__(
@@ -125,6 +128,9 @@ class decorr(napl_base):
         self.polarity_io = {'input_0': self.polarity, 'input_1': self.polarity,
                             'output_0': self.polarity, 'output_1': self.polarity}
         self.correlation_i = {}
+        self.correlation_o = (
+            {('output_0', 'output_1'): 'pos'} if self.depth == 1 else {}
+        )
 
 
     def _reset(self):

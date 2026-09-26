@@ -6,11 +6,12 @@
 # polarity. Speedup is the saved CPU runtime divided by each device runtime.
 # Use timer only for a separate unpaired elapsed measurement.
 #
-# Every one of those checks compares a decoded value to an expected value, or a
-# run to its own replay, so all of them pass for a kernel whose defect leaves
-# the decoded value intact. Gate 17 of RULE_SIM.md requires a check that fails
-# on an identity wire for that case; extra_checks below is one place to put it,
-# a separate structural test in this file is another.
+# Every one of those checks reads only the outputs apply_operation passes on, so
+# a defect confined to an output the suite never reads leaves all of them green.
+# Gate 17 of RULE_SIM.md requires a check pinning that unread output when the
+# kernel returns more than one and apply_operation reads a strict subset;
+# extra_checks below is one place to put it, a separate structural test in this
+# file is another.
 from napl.sim.metric import accuracy
 from napl.utils._shared_test import streaming_suite
 
@@ -55,13 +56,12 @@ CONFIG = {
     'analytic_reference': analytic_reference,
     # Per polarity: CPU (input_tuple, expected_output).
     'known_answer_case': known_answer_case,
-    # Gate 17 of RULE_SIM.md: a callable asserting whatever the decoded value
-    # cannot show, run after the four suite checks pass. Keep None only for a
-    # kernel that a wrong decoded value already catches, or when a separate
-    # structural test in this file carries that check instead. Confirm it by
-    # returning the input unchanged from the kernel while its real state
-    # updates keep running, so the wire neuters only the emitted values, and
-    # rerunning this file, where at least one assertion must fail.
+    # Gate 17 of RULE_SIM.md: a callable asserting the property an output the
+    # suite never reads carries, run after the four suite checks pass. Keep None
+    # when apply_operation reads every output the kernel returns, or when a
+    # separate structural test in this file carries that check instead. Confirm
+    # it by corrupting an unread output and rerunning this file, where the four
+    # shared drivers still pass and this check is the only failure.
     'extra_checks': None,  # TODO: supply extra_checks, or state where it lives.
     # Optional. Delete unchanged entries.
     # Calls the operation on the encoded spikes; the default unpacks them.

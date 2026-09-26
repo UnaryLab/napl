@@ -105,5 +105,18 @@ def test_signabs():
     streaming_suite(CONFIG)
 
 
+def test_signabs_rejects_invalid_width():
+    """Verify the width guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for value in (0, -1, 0.5, True):
+        try:
+            signabs({'width': value})
+        except AssertionError as error:
+            assert 'Invalid width' in str(error), str(error)
+        else:
+            raise AssertionError(f'signabs accepted invalid width <{value}>')
+    assert signabs({'width': 1}).width == 1
+
+
 if __name__ == '__main__':
     test_signabs()
+    test_signabs_rejects_invalid_width()

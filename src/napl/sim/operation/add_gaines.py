@@ -19,12 +19,24 @@ class add_gaines(napl_base):
     .. math::
 
        y_{\\mathrm{scaled}} = \\frac{1}{n}\\sum_i x_i,\\qquad
-       y_{\\mathrm{non-scaled}} = \\min\\left(1,\\sum_i x_i\\right).
+       p_{\\mathrm{non-scaled}} = \\min\\left(1,\\sum_i p_i\\right)
+       \\ \\text{(non-overlapping)},\\qquad
+       1 - \\prod_i (1 - p_i)\\ \\text{(independent)}.
 
     Scaled mode holds the number sequence used to pick one input stream per
     timestep, so it needs **entry** and **generator** and accepts a power-of-two
-    input count only. Non-scaled mode is unipolar only, and its output
-    approaches the clipped sum only while the input streams do not overlap.
+    input count only. Its MUX selects one data lane per timestep, so correlation
+    among the input lanes does not change its rate-domain mean. The internally
+    generated Sobol select stream must still avoid the data streams' Sobol
+    sub-lattice: select-versus-data correlation can bias the sampled mean, a
+    known UnarySim limitation. Composed modules therefore keep select and data
+    dimensions separate and require bit-exact composition tests rather than an
+    accuracy promise from this kernel. Non-scaled mode is unipolar only and
+    OR-reduces the lanes. The OR is exact only for non-overlapping lanes, that
+    is negatively correlated streams whose ones never coincide, which is the
+    accuracy-optimal input correlation this class declares. Pairwise
+    independent lanes instead give the rate ``1 - prod(1 - p_i)``, which is
+    ``a + b - ab`` for two lanes.
 
     .. rubric:: Example
 
@@ -43,9 +55,12 @@ class add_gaines(napl_base):
 
         *Stochastic Computing Systems*, Advances in Information Systems Science, 1969.
     """
-    #: The MUX select sequence is encoded from a held number sequence, so the
-    #: RTL counterpart holds its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. No external select stream is
+    #: needed: the RTL replays a precomputed select-index ROM stepped by its own
+    #: counter, and that ROM cannot be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(
@@ -81,7 +96,7 @@ class add_gaines(napl_base):
         #: Whether addition uses MUX-based averaging instead of an OR reduction.
         self.scaled = config['scaled']
         if self.polarity == 'bipolar' and not self.scaled:
-            message = 'Non-scaled Gaines addition does not support bipolar data.'
+            message = 'Non-scaled Gaines addition for bipolar data does not exist.'
             logger.error(message)
             raise AssertionError(message)
 
@@ -106,12 +121,14 @@ class add_gaines(napl_base):
             # Python scalar indices avoid device synchronization on each timestep.
             #: Periodic input indices selected by the configured number sequence.
             self.sel_seq = reference_encode.num_seq.mul(self.entry).type(torch.long).tolist()
+
         #: Hardware latency and timing metadata for the Gaines adder.
         self.hw.pp_delay = 0
-
         self.encoding_io = {'input': 'rc', 'output': 'rc'}
         self.polarity_io = {'input': self.polarity, 'output': self.polarity}
-        self.correlation_i = {}
+        # Declares accuracy-optimal lane correlation: negative, since OR
+        # reduction is exact only for non-overlapping lanes.
+        self.correlation_i = {} if self.scaled else {('input', 'input'): 'neg'}
 
 
     def _reset(self):
@@ -121,13 +138,13 @@ class add_gaines(napl_base):
         pass
 
 
-    def forward(self, input: torch.Tensor, dim: int = 0):
+    def forward(self, input: torch.Tensor, dim: int = -1):
         """
         Reduce one timestep of input spikes.
 
         Args:
             input: Spike tensor containing the streams to add.
-            dim: Dimension containing the input streams; the default is ``0``.
+            dim: Dimension containing the input streams; the default is ``-1``.
 
         Returns:
             The selected spike in scaled mode or the elementwise OR reduction

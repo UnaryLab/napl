@@ -55,8 +55,8 @@ CONFIG = {
     'analytic_reference': analytic_reference,
     'known_answer_case': known_answer_case,
     'timesteps': 256,
-    # Gate 17 does not apply: sub_scale returns a single read output and is not
-    # rate-conserving, so a wrong decoded value already catches its failure modes.
+    # Gate 17 does not apply: sub_scale returns a single output, which the suite
+    # reads, so there is no unread output to pin.
     'extra_checks': None,
 }
 

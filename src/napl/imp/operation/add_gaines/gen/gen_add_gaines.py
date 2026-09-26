@@ -94,16 +94,6 @@ def main():
         )
         + "\n"
     )
-    PARAMS.write_text(
-        f"`define GEN_SCALED {int(SCALED['scaled'])}\n"
-        f"`define GEN_UNSCALED {int(UNSCALED['scaled'])}\n"
-        f"`define GEN_SCALED_ENTRY {SCALED_ENTRY}\n"
-        f"`define GEN_UNSCALED_ENTRY {UNSCALED_ENTRY}\n"
-        f"`define GEN_SCALED_SELECT_WIDTH {SCALED_SELECT_WIDTH}\n"
-        f"`define GEN_UNSCALED_SELECT_WIDTH {UNSCALED_SELECT_WIDTH}\n"
-        f"`define GEN_PP_DELAY {scaled_uni.hw.pp_delay}\n"
-    )
-
     rows = 0
     resets = 0
     with VEC.open("w") as output:
@@ -121,6 +111,17 @@ def main():
                 )
                 rows += 1
                 resets += reset
+
+    PARAMS.write_text(
+        f"`define GEN_SCALED {int(SCALED['scaled'])}\n"
+        f"`define GEN_UNSCALED {int(UNSCALED['scaled'])}\n"
+        f"`define GEN_SCALED_ENTRY {SCALED_ENTRY}\n"
+        f"`define GEN_UNSCALED_ENTRY {UNSCALED_ENTRY}\n"
+        f"`define GEN_SCALED_SELECT_WIDTH {SCALED_SELECT_WIDTH}\n"
+        f"`define GEN_UNSCALED_SELECT_WIDTH {UNSCALED_SELECT_WIDTH}\n"
+        f"`define GEN_PP_DELAY {scaled_uni.hw.pp_delay}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
 
     print(
         f"wrote {VEC} ({rows} vectors, {resets} resets), "

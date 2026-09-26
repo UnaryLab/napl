@@ -2,12 +2,20 @@
 """Emit golden vectors for mul_ugemm from the napl Python model.
 
 mul_ugemm is a stateful bit-serial op: a fixed-point operand i_input_1 is compared
-against a generator ROM num_seq[idx], with idx counters advanced by the input
-spike. The RTL inherits its size (WIDTH = ceil(log2(timestep))) from this config,
-and the num_seq ROM is GENERATED here from the model and loaded by the RTL via
-$readmemb, so the table follows WIDTH. The vectors are pinned to timestep=1024 with
-the 'sobol' generator -> WIDTH=10, LEN=1024, which is the size the RTL is verified
-at. Expected outputs come from the napl model, never a hand truth table.
+against the number sequence num_seq[idx], with idx advanced by the input spike.
+The RTL inherits its size (WIDTH = ceil(log2(timestep))) from this config and
+produces num_seq online with a `sobol` generator, so this script emits the
+WIDTH-entry direction-vector table that generator reads instead of a full-period
+ROM. The vectors are pinned to timestep=1024 with the 'sobol' generator ->
+WIDTH=10, LEN=1024, which is the size the RTL is verified at. Expected outputs
+come from the napl model, never a hand truth table.
+
+Sequence-index budget: the model advances seq_idx without a modulo, so a block
+holds at most LEN enabling timesteps and every timestep after the LENth raises
+IndexError rather than reading a wrapped sample. The blocks below sit at that
+ceiling, so the last compared row reads index LEN-1 and no row compares the
+generator's wrap. mul_ugemm_regen, whose rng index wraps modulo, is where the
+co-simulation covers the wrapped sample of the shared sobol circuit.
 
 Per cycle we record:  rst in_0 in_1u out_uni in_1b out_bi
   rst    -- 1 on the first cycle of each independent sequence (pulse i_rst_n low)
@@ -31,14 +39,15 @@ from napl.sim.operation import mul_ugemm
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 from _gen_common import encode_value
 
-# WIDTH derives from the model timestep and sizes counters, operands, and the ROM.
+# WIDTH derives from the model timestep and sizes the sequence, operands, and the
+# direction-vector table.
 TIMESTEP = 1024  # timestep of the verified golden vectors
 WIDTH = math.ceil(math.log2(TIMESTEP))
 LEN = 2 ** WIDTH
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vec")
 OUT_PATH = os.path.join(OUT_DIR, "mul_ugemm.vec")
 PARAMS_PATH = os.path.join(OUT_DIR, "mul_ugemm_params.vh")
-ROM_PATH = os.path.join(OUT_DIR, "mul_ugemm_rom.hex")
+DIRVEC_PATH = os.path.join(OUT_DIR, "mul_ugemm_dv.hex")
 
 # input_0 uses a bipolar Sobol encoder.
 CODEC_IN0 = {"polarity": "bipolar", "timestep": LEN, "generator": "sobol", "dim": 1}
@@ -115,37 +124,59 @@ def emit_block(lines, in0_stream, in1_value, out_uni, out_bi):
         lines.append(f"{rst} {in0_stream[t]} {in1u} {out_uni[t]} {in1b} {out_bi[t]}")
 
 
-def write_rom():
-    """Emit the num_seq ROM hex from a real model instance at the test config.
+def dirvec_rows(num_seq, width, name):
+    """Direction vectors of a Sobol sequence, checked against the model's num_seq.
 
-    The RTL $readmemb-loads exactly LEN lines, line i = round(num_seq[i]*LEN) as a
-    WIDTH-bit binary string. num_seq is read from a built mul_ugemm (the model's
-    actual sequence), not re-derived. Bipolar reuses the SAME table at two indices,
-    so one file serves both read ports. The grid assert guarantees the integer
-    compare in RTL is bit-exact with the model's float gt (num_seq*LEN is integral).
+    The hardware generator runs the Antonov-Saleev gray-code recurrence
+    x_{n+1} = x_n ^ v[l(n)], where l(n) is the position of the least significant
+    zero of the width-bit counter n. The table v is recovered from the model's own
+    sequence and replayed here over the whole period, so a sequence the recurrence
+    does not reproduce fails the generator instead of the co-simulation.
     """
-    m = mul_ugemm(CFG_UNI)  # unipolar/bipolar share the same (generator, WIDTH) num_seq
-    ns = m.num_seq.detach().float().reshape(-1)
-    assert ns.numel() == LEN, f"num_seq length {ns.numel()} != LEN {LEN}"
-    rom_lines = []
-    for i in range(LEN):
-        scaled = ns[i].item() * LEN
-        v = round(scaled)
-        assert abs(scaled - v) < 1e-9, f"num_seq[{i}]={ns[i].item()} off the 1/{LEN} grid"
-        assert 0 <= v < LEN, f"num_seq code {v} out of [0,{LEN})"
-        rom_lines.append(f"{v:0{WIDTH}b}")
-    with open(ROM_PATH, "w") as f:
-        f.write("\n".join(rom_lines) + "\n")
-    return len(rom_lines)
+    period = 2 ** width
+    values = num_seq.detach().float().reshape(-1)
+    assert values.numel() == period, f'{name} holds {values.numel()} points, not {period}'
+    codes = []
+    for index in range(period):
+        scaled = values[index].item() * period
+        code = round(scaled)
+        assert abs(scaled - code) < 1e-9, f'{name}[{index}] is off the 1/{period} grid'
+        codes.append(code)
+    assert codes[0] == 0, f'{name} starts at {codes[0]}, not the post-reset 0'
+
+    vectors = [codes[2 ** k] ^ codes[2 ** k - 1] for k in range(width)]
+    state = 0
+    for index in range(period):
+        assert state == codes[index], \
+            f'{name} is not a gray-code Sobol sequence: the recurrence gives {state} ' \
+            f'at index {index}, the model gives {codes[index]}'
+        # The all-ones counter state takes the top position, which returns to 0.
+        position = width - 1 if index == period - 1 else (~index & (index + 1)).bit_length() - 1
+        state ^= vectors[position]
+    assert state == 0, f'{name} returns to {state} on the wrap, not 0'
+    return [f'{vector:0{width}b}' for vector in vectors]
+
+
+def write_dirvec():
+    """Emit the direction-vector table the RTL sobol generators read.
+
+    The table is recovered from a built mul_ugemm's own num_seq. Both polarities
+    share one (generator, WIDTH) sequence and bipolar walks it at two indices, so
+    a single file serves every sobol instance.
+    """
+    uni = mul_ugemm(CFG_UNI).num_seq
+    bi = mul_ugemm(CFG_BI).num_seq
+    assert torch.equal(uni, bi), "the two polarities no longer share one num_seq"
+    rows = dirvec_rows(uni, WIDTH, "mul_ugemm num_seq")
+    with open(DIRVEC_PATH, "w") as f:
+        f.write("\n".join(rows) + "\n")
+    return len(rows)
 
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    with open(PARAMS_PATH, "w") as f:
-        f.write(f"`define GEN_WIDTH {WIDTH}\n")
-
-    rom_count = write_rom()
+    dirvec_count = write_dirvec()
 
     lines = ["rst in_0 in_1u out_uni in_1b out_bi"]
 
@@ -168,8 +199,14 @@ def main():
     with open(OUT_PATH, "w") as f:
         f.write("\n".join(lines) + "\n")
 
+    pp_delay = mul_ugemm(CFG_UNI).hw.pp_delay
+    with open(PARAMS_PATH, "w") as f:
+        f.write(f"`define GEN_WIDTH {WIDTH}\n")
+        f.write(f"`define GEN_PP_DELAY {pp_delay}\n")
+        f.write(f"`define GEN_VECTORS {len(lines) - 1}\n")
+
     print(f"wrote {OUT_PATH} ({len(lines) - 1} vectors), {PARAMS_PATH} "
-          f"(GEN_WIDTH={WIDTH}), and {ROM_PATH} ({rom_count} ROM lines)")
+          f"(GEN_WIDTH={WIDTH}), and {DIRVEC_PATH} ({dirvec_count} direction vectors)")
 
 
 if __name__ == "__main__":

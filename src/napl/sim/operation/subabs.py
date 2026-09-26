@@ -9,15 +9,16 @@ class subabs(napl_base):
     Subtract two unipolar rate-coded streams with a single XOR gate.
 
     Use this kernel for the absolute difference of two unipolar streams that are
-    positively correlated. The target rate-domain operation is
+    related by ``pos`` (SCC ``+1``). The target rate-domain operation is
 
     .. math::
 
        y = |p_0 - p_1|.
 
     The kernel is correlation sensitive: it realizes the absolute difference
-    only when the two input streams have SCC ``+1``. Decorrelated inputs make
-    the output rate approach :math:`p_0 + p_1 - 2 p_0 p_1` instead, so a caller
+    only when the two input streams have the ``pos`` relation. Inputs with the
+    ``zero`` relation make the output rate approach
+    :math:`p_0 + p_1 - 2 p_0 p_1` instead, so a caller
     that cannot guarantee positively correlated operands passes them through
     :class:`~napl.sim.operation.sync` first.
 
@@ -40,6 +41,8 @@ class subabs(napl_base):
 
         *Fast and accurate computation using stochastic circuits*, DATE, 2014.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

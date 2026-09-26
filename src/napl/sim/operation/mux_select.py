@@ -45,6 +45,8 @@ class mux_select(napl_base):
 
         *2-to-1 stream multiplexer with a data select*, derived.
     """
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'gate'
 
 
     def __init__(

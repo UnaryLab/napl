@@ -12,7 +12,7 @@
 // what unipolar zero padding is: the model pads the input tensor with 0.
 // Weight and bias arrive as held fixed-point codes, not spikes: the composed
 // layer holds one threshold sequence per patch tap and generates both streams
-// itself (Python internal_encode = True). Their packing is the linear_gaines
+// itself (its Python internal_encode is 'private'). Their packing is the linear_gaines
 // packing at IN_FEATURES = K, which is the (oc*K + tap) order used here.
 // Each position holds its own copy of the threshold index, the bias encoder
 // index and the Gaines select index. All three advance by one unconditionally

@@ -67,18 +67,41 @@ Non-streaming execution is used by FXP linear, convolution, recurrent, and round
 | --- | --- | --- | --- |
 | Streaming | One-bit spike streams | One timestep per call | `linear_mix`, `conv_mix`, `linear_gaines`, `conv_gaines`, `linear_ugemm`, `conv_ugemm`, `avgpool2d_ugemm`, `mgu_hard_mix`, and streaming operations |
 | HUB | Numeric tensors at the boundary codecs, one-bit spike streams inside | Non-streaming at the numeric ports: one complete `timestep`-cycle run per call, one timestep per inner call on the same numeric input | `mgu_hard_mix_hub`, `linear_ugemm_hub`, `conv_ugemm_hub`, `fft_hub`, `fft_dyn_hub` |
-| FXP | Quantized fixed-point tensors | One tensor per call | `linear_fxp`, `conv_fxp`, `mgu_hard_fxp`, `round_fxp`, `relu_fxp`, `sigmoid_fxp`, `tanh_fxp` |
+| FXP | Quantized fixed-point tensors | One tensor per call | `linear_fxp`, `conv_fxp`, `mgu_hard_fxp`, `round_fxp`, `relu_fxp`, `sigmoid_hard_fxp`, `tanh_hard_fxp` |
 | Binary FFT butterfly | Complex numeric tensors | One tensor per call | `butterfly_fp` |
 | Streaming FFT butterfly | Spike streams | One timestep per call | `butterfly_ugemm`, `butterfly_ugemm_dyn`, `butterfly_mix`, `butterfly_mix_dyn` |
 | Streaming FFT | Spike streams | One timestep per call | `fft`, `fft_dyn` |
 
 The table covers the computational classes. The `sim/metric/` classes `accuracy`, `correlation`, `stability`, `stability_builder`, `stability_flux`, and `stability_norm` are deliberately outside it: they serve stream analysis, measuring the properties of a stream or building a stream that has prescribed ones, instead of computing a result from operand streams. The [metric layer](#metric-layer) section covers them.
 
-A `_dyn` name in the scaling and FFT families marks the variant that takes its scale at call time rather than at construction. Such a class replaces the fixed key `scale` with the ceiling key `scale_max`, in its own config or in a nested one, and each call then supplies the scale in force for that timestep. Exactly six classes follow that rule: `add_scale_dyn`, `div_scale_dyn`, `butterfly_ugemm_dyn`, `butterfly_mix_dyn`, `fft_dyn`, and `fft_dyn_hub`.
+A `_dyn` name marks the variant that takes a construction constant as a runtime input instead, so the value in force for a timestep arrives with that timestep's call. Exactly eight classes follow that rule. Six of them are the scaling and FFT families, which take the scale at call time: each replaces the fixed key `scale` with the ceiling key `scale_max`, in its own config or in a nested one, and each call then supplies the scale in force for that timestep. They are `add_scale_dyn`, `div_scale_dyn`, `butterfly_ugemm_dyn`, `butterfly_mix_dyn`, `fft_dyn`, and `fft_dyn_hub`. The other two are `clamp_sat_dyn` and `clamp_comp_dyn`, which carry no band in their config and take the `lo` and `hi` bounds as call-time streams alongside the input.
 
 `add_scale_dyn` and `div_scale_dyn` hold `scale_max` in their own config, so `napl_base.__init__` both requires it and rejects `scale` as a key outside the accepted list. The other four take it in the nested `add_config`, while their own `mul_config` or `codec_config` accepts the same keys as the static counterpart's. An `add_config` carrying `scale` alone fails their own guard with `Missing key <scale_max> in the dynamic adder configuration`; the `napl_base` rejection of `scale` fires only when both keys are present.
 
 `fft` and `fft_dyn` pick their stage class from the optional `mul_config` key `kernel`: `'ugemm'`, the default, builds the conditional-spike butterflies, and `'mix'` builds the Gaines butterflies, whose stage `index` encodes its constant twiddle on Sobol dimension `5 + index`. `fft_hub` and `fft_dyn_hub` pass `mul_config` to their core unchanged, so they carry the same knob.
+
+## Naming convention
+
+Every class name reads as a grammar of underscore-joined fields. The class name is also its file basename, one class per file (see [RULE_SIM.md](RULE_SIM.md) gate 2), so the name on disk is the name a program imports.
+
+The grammar splits by interface domain:
+
+- Streaming classes take spike-stream ports and are RTL-eligible: `<func>[_<mech>][_tc][_dyn]`.
+- Non-streaming classes take binary or numeric ports and have no RTL. A native binary-domain reference is `<func>_(fxp|fp)`. A wrapper with binary ports around a streaming core is `<func>[_<mech>][_tc][_dyn]_hub`, and stripping `_hub` yields the wrapped core's exact class name, so `linear_ugemm_hub` wraps `linear_ugemm`.
+
+The fields are:
+
+- `<func>` is what the class computes. It is an open vocabulary and is never empty. It may itself carry underscores, for fused approximation identities (`sigmoid_hard`, `tanh_hard`, `tanh_p1`, `tanh_pn`, and the `mgu_hard` stem of `mgu_hard_mix`), target-shaping tokens (`exp_n1`, `exp_n2g`, `log_n1`, and the `exp_m1` stem of `exp_m1_delay`), and operand-polarity signatures (`mul_unibi`).
+- `<mech>` is how the class realizes the function, a closed vocabulary with at most one token per name. The stochastic-computing families are `gaines`, `ugemm`, `ugemm_regen`, `mix`, and `scale`; the cited algorithms are `cordiv`, `iscb`, `traceiscb`, and `tracejkff`; the realizing primitives are `cnt`, `sat`, `comp`, `delay`, `regen`, `emit`, `hold`, `cond`, `sync`, `desync`, `select`, `interleave`, `skewed`, and `mux`. The token `ugemm_regen` is the uGEMM multiplier variant that regenerates its second operand from a shift-register spike history so both operands run as streams, as in `mul_ugemm_regen`; it is one mech token.
+- `_tc` marks temporal coding. Rate coding is the default and stays unmarked. The current temporal-coding classes are `inhibit_tc`, `max_tc`, `min_tc`, `relu_tc`, and `wta_tc`.
+- `_dyn` is the runtime-input field: the class takes a construction constant as a per-call input instead. The scaling and FFT families replace config key `scale` with the ceiling key `scale_max`; `clamp_sat_dyn` and `clamp_comp_dyn` replace the config keys `lo` and `hi` with call-time bound streams. The eight classes that carry it are listed under [Kernel families](#kernel-families) above.
+- `fxp` is a quantized fixed-point reference and `fp` is an exact floating-point reference. Both attach directly to `<func>` with no mech, `_tc`, or `_dyn` field, and neither has RTL.
+
+Synthesis identifies a class by parsing the name right to left:
+
+1. A tail of `fxp` or `fp` marks a non-streaming reference with no RTL; stop. A tail of `hub` is stripped, and parsing recurses on the core name.
+2. Take the longest known mech token that ends the remaining name first, so a trailing `ugemm_regen` reads as one mech token. When no mech token ends the name, strip a `_dyn` field, then a `_tc` field, then the single mech token.
+3. The remainder is `<func>` and is never empty. The non-empty rule disambiguates the tokens that exist as both a func and a mech (`delay`, `sync`, `desync`, `mux`).
 
 ## Package map
 
@@ -92,12 +115,14 @@ Each of the six `sim` subpackages declares `__all__` listing its own public clas
 | `src/napl/sim/module/` | Neural layers | linear, convolution, recurrent, and pooling layers in streaming, FXP, Gaines, uGEMM, and HUB variants |
 | `src/napl/sim/operation/` | Stream endpoints and reusable spike and binary primitives | encode, decode; arithmetic, comparison, activation, state, polarity conversion, and stream synchronization |
 | `src/napl/sim/metric/` | Progressive stream monitors and stream construction | accuracy, correlation, stability metrics, `stability_builder` |
-| `src/napl/sim/algorithm/` | Compositions of modules and operations | binary and streaming FFT butterflies; fixed- and runtime-scale FFTs |
+| `src/napl/sim/algorithm/` | Compositions of modules and operations | binary and streaming FFTs; fixed-parameter linear and RBF SVM, FIR bandpass, and ICA apply-side compositions |
 | `src/napl/imp/operation/` | Synthesizable operation counterparts | per-operation RTL, testbenches, and golden-vector generators |
 | `src/napl/imp/module/` | Synthesizable module counterparts | lane-replicated module RTL, testbenches, and golden-vector generators |
 | `src/napl/imp/` | Hardware build root | shared Makefile and the simulation-to-RTL `mapping.yaml` |
 | `src/napl/utils/` | Shared validation and tensor helpers | YAML I/O, config checks, device discovery, random tensors, power-of-two shift shims |
 | `src/napl/sim/structure/` | Biological-neuron abstraction boundary | axon, soma, dendrite, synapse, receptor, column placeholders |
+
+`src/napl/syn/` translates simulation nodes into RTL bindings through `imp/mapping.yaml`, and imports `napl.sim.operation` or `napl.sim.module` to build each node's simulation class from its config, so translation rejects every configuration the simulation class rejects; a mapping clause can also compare a simulation kernel's number sequence against the sequence its RTL holds.
 
 `src/napl/main.py` defines the `napl` command-line entry point. The current command only prints a banner.
 
@@ -114,7 +139,7 @@ Streaming layers keep computation in the spike domain. Mix, Gaines, and uGEMM va
 The remaining operations are small computational blocks used directly by programs and composed into higher-level modules. The package includes:
 
 - arithmetic and conversion: multiply, add, divide, square, square root, polarity conversion, sign and magnitude;
-- comparison and stream control: minimum, maximum, less-than, greater-than, synchronization;
+- comparison and stream control: binary minimum and maximum, K-way rate-coded maximum and minimum selection, less-than, greater-than, synchronization;
 - activation approximations: ReLU, sigmoid, tanh, and exponential variants;
 - stateful elements: D flip-flop, JK flip-flop, and shift register.
 
@@ -143,6 +168,9 @@ Unipolar streams represent values in `[0, 1]`. Bipolar streams represent values 
 
 ### Stream independence
 
+Correlation contracts use `zero` for SCC `0` (independent), `pos` for SCC `+1`,
+and `neg` for negative correlation.
+
 Independent operands must use independent number sequences. With Sobol encoding, assign distinct `dim` values to operands that must be decorrelated. Reusing a Sobol dimension correlates streams and can bias the result even when each input stream has the correct marginal rate.
 
 Padding is also part of this contract. Bipolar zero-padding in `conv_mix` uses a separate decorrelated rate-0.5 stream because bipolar zero maps to probability 0.5.
@@ -160,9 +188,11 @@ Streaming state belongs to the module that updates it. `napl_base.reset()` reset
 
 `pp_delay` must match the verified RTL pipeline. It also controls alignment when paths reconverge. Purely combinational operations use `pp_delay = 0` and place their through-delay in `cp_delay`. Registered operations separate internal, input-to-register, and register-to-output timing as defined by `timing`.
 
-The composites named here derive `internal_encode` as the OR over the parts they register: `self.internal_encode = any(part.internal_encode for part in self.children())`, evaluated once the parts are constructed. `linear_ugemm_hub`, `conv_ugemm_hub`, `mgu_hard_mix_hub`, `fft_hub`, `fft_dyn_hub`, `fft`, `fft_dyn`, `butterfly_ugemm`, `butterfly_ugemm_dyn`, `div_iscb`, and `sqrt_traceiscb` write that line, so all five HUB wrappers derive the flag. `div_iscb` and `sqrt_traceiscb` each derive `True` from the one `div_cordiv` kernel they register, whose RTL inlines its own Sobol index; their other parts are all `False`. A composite that derives it reports that its RTL counterpart holds an encoder whenever any part it registers directly holds one. Other composites declare the flag on the class instead, as `linear_ugemm`, `conv_ugemm`, `linear_gaines`, `conv_gaines`, `linear_mix`, `conv_mix`, `mgu_hard_mix`, `butterfly_mix`, and `butterfly_mix_dyn` do. The flag marks an encoder held in the hardware counterpart, covering both encoding that advances conditionally on data and operands such as weights and biases that the counterpart encodes internally from held numeric codes, a registered `encode` instance does not raise it: `mgu_hard_mix_hub` registers two plain Sobol `encode` instances, and with its `mgu_hard_mix` core forced to `False` the hub derives `False` while both encoders stay registered. The binary-domain `conv_fxp`, `linear_fxp`, and `mgu_hard_fxp` hold no encoder and keep the default `False`. `self.children()` is depth-1, so the walk stops at each registered part's own value: the hub reads `True` from `mgu_hard_mix`, which declares `internal_encode = True` on the class because its gate multipliers encode their own operands, and never sees that cell's parts `mul_ugemm` and `mul_ugemm_dyn`, both `True`. Depth-1 covers the whole tree because every class carries its own correct value, declared or derived, so the flag is not transitive; `encode` itself keeps `internal_encode = False`, which keeps a held encoder a statement each holder makes rather than a property inferred from the codec class.
+The composites named here derive `internal_encode` from the parts they register: `self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'`, evaluated once the parts are constructed. `linear_ugemm_hub`, `conv_ugemm_hub`, `mgu_hard_mix_hub`, `fft_hub`, `fft_dyn_hub`, `fft`, `fft_dyn`, `butterfly_ugemm`, `butterfly_ugemm_dyn`, `bandpass_ugemm`, `ica_ugemm`, `svm_rbf_ugemm`, `div_iscb`, `sqrt_traceiscb`, `sqrt_tracejkff`, `pow_delay`, `pow_regen`, `exp_m1_delay`, and `exp_m1_regen` write that line, so all five HUB wrappers derive the value. `div_iscb` and `sqrt_traceiscb` each derive `'private'` from the one `div_cordiv` kernel they register, whose RTL inlines its own Sobol index; their other parts are all `'none'`. A composite that derives it reports `'private'` whenever any part it registers directly carries an encoder. Other composites declare the value on the class instead, as `linear_ugemm`, `conv_ugemm`, `linear_gaines`, `conv_gaines`, `linear_mix`, `conv_mix`, `mgu_hard_mix`, `butterfly_mix`, `butterfly_mix_dyn`, and `svm_ugemm` do, and `encode_regen` sets it on the instance. `'private'` marks an encoder the hardware counterpart holds and cannot share, covering both encoding that advances conditionally on data and operands such as weights and biases that the counterpart encodes internally from held numeric codes; `'shared'` marks an encoder that could instead ride a shared sequencer. A registered `encode` instance does not by itself lift a class above `'none'`: `mgu_hard_mix_hub` registers two plain Sobol `encode` instances, and with its `mgu_hard_mix` core forced to `'none'` the hub derives `'none'` while both encoders stay registered. The binary-domain `conv_fxp`, `linear_fxp`, and `mgu_hard_fxp` hold no encoder and keep the default `'none'`. `self.children()` is depth-1, so the walk stops at each registered part's own value: the hub reads `'private'` from `mgu_hard_mix`, which declares `internal_encode = 'private'` on the class because its gate multipliers encode their own operands, and never sees that cell's parts `mul_ugemm` and `mul_ugemm_regen`, both `'private'`. Depth-1 covers the whole tree because every class carries its own correct value, declared or derived, so the value is not transitive; `encode` itself keeps `internal_encode = 'none'`, which keeps a held encoder a statement each holder makes rather than a property inferred from the codec class.
 
-Every operation with generated RTL sets `self.hw.pp_delay`. The non-streaming binary-domain classes `relu_fxp`, `sigmoid_fxp`, `tanh_fxp`, `conv_fxp`, `linear_fxp`, `mgu_hard_fxp`, `round_fxp`, and `butterfly_fp` never set `pp_delay`, so it keeps its default of 0, and they have no gate-level RTL counterpart.
+`napl_base.mechanism` holds the class's dominant hardware mechanism as one token of `legal_mechanism` in `sim/base/base.py`, and defaults to `None`. That list is canonical: it carries the tokens themselves and the boundaries between the ones that are easy to confuse.
+
+Every operation with generated RTL sets `self.hw.pp_delay`. The non-streaming binary-domain classes `relu_fxp`, `sigmoid_hard_fxp`, `tanh_hard_fxp`, `conv_fxp`, `linear_fxp`, `mgu_hard_fxp`, `round_fxp`, and `butterfly_fp` never set `pp_delay`, so it keeps its default of 0, and they have no gate-level RTL counterpart.
 
 ## Hardware boundary
 
@@ -179,7 +209,7 @@ Fixed-point accumulators are a simulation-only width. `add_scale`, `add_scale_dy
 | Python/PyTorch transpilation | No transpiler package is present in `src/napl/`. |
 | CLI | `napl` is a banner-only placeholder. |
 | FFT RTL | Binary and streaming FFT implementations are available in Python; the algorithm package has no RTL counterpart. |
-| Spike components | `wta` provides temporal earliest-spike selection; `inhibit` provides temporal stream gating. |
+| Spike components | `wta_tc` provides temporal earliest-spike selection; `inhibit_tc` provides temporal stream gating; `argmax` and `argmin` provide K-way rate-coded maximum and minimum one-hot selection. |
 | Biological structure | `napl.sim.structure` files are empty placeholders. |
 
 Treat these as package boundaries that are not yet implemented, not as completed interfaces.

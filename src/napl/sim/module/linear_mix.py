@@ -43,7 +43,7 @@ class linear_mix(napl_base):
     #: The weight and bias encoders are held inside the layer, so the RTL
     #: counterpart encodes those operands itself from held numeric codes
     #: instead of taking them as spikes from a shared encoder.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(
@@ -72,7 +72,7 @@ class linear_mix(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Weight-encoder stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: One-based weight Sobol dimension, with the bias on the next dimension; the default is ``2``.
+              - **dim**: One-based weight Sobol dimension, with the bias on the next dimension; the default is ``2``. A caller that encodes **input** with Sobol must keep its encoder dimension outside the weight span ``dim``.
               - **scale**: Output scaling divisor, where ``None`` uses ``in_features + has_bias``; the default is ``None``.
               - **width**: Signed accumulator width, which must satisfy ``2 ** (width - 1) - 1 >= (scale - grid) + delta_max``, where ``delta_max`` is the largest per-timestep accumulator step (``entry`` when unipolar, ``(entry + scale) / 2`` when bipolar, with ``entry = in_features + has_bias``) and ``grid`` is the accumulator step (``0.5`` when bipolar with odd ``entry - scale``, else ``1``); the default is ``12``. This bound is static for ``scale >= entry``; for ``scale < entry`` the width must also satisfy ``2 ** (width - 1) > entry``, a minimum burst-headroom floor rather than a safety bound, since the accumulator then drains by at most ``scale`` per timestep and correctness is conditional on the long-run mean inflow staying below ``scale`` (see :class:`add_scale`).
               - **name**: Optional instance label.

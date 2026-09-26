@@ -2,9 +2,8 @@
 # `conda run -n napl make test MODULE=<module>` (module layer) with iverilog and
 # vvp on PATH. Each unit supplies RTL, a self-checking testbench, and Python
 # golden vectors. `make sweep` runs every unit plus the mapping.yaml floor, the guards
-# suite, the reference-form equivalence walk, and the translate pytest; it is
-# required before any commit touching
-# src/napl/imp/, which `make install-hooks` enforces.
+# suite, the reference-form equivalence walk, and the translate pytest; it runs
+# only on explicit request. The per-change check is `make test` on each changed unit.
 
 # OP defaults to the canonical example; giving MODULE= instead requires OP untouched.
 DEFAULT_OP := mul_gaines
@@ -41,7 +40,7 @@ LIBS := $(patsubst %,-y %,$(sort $(wildcard operation/*/rtl)) $(sort $(wildcard 
 SWEEP_OPS     := $(notdir $(patsubst %/rtl,%,$(sort $(wildcard operation/*/rtl))))
 SWEEP_MODULES := $(notdir $(patsubst %/rtl,%,$(sort $(wildcard module/*/rtl))))
 
-.PHONY: test vectors compile run guards equiv floor translate sweep install-hooks clean
+.PHONY: test vectors compile run guards equiv floor translate sweep clean
 
 # Every unit test runs the elaboration guards first, so a deleted or reversed
 # guard turns a target red without anyone typing `make guards`.
@@ -50,9 +49,28 @@ test: guards run
 vectors:
 	$(PYTHON) $(LAYER)/$(UNIT)/gen/gen_$(UNIT).py
 
+# iverilog only warns on a `define the testbench uses but the generated params
+# header no longer defines: it expands to nothing, the compare still elaborates,
+# and the run still prints PASS. The compile output is captured to
+# build/compile.log so that warning class is a build failure, like a `^ERROR`
+# line in the sim log. Three warning classes are rejected: an undefined macro,
+# an implicitly defined wire, and a port width mismatch (iverilog pads or
+# truncates and continues). Every RTL and testbench file here carries
+# `default_nettype none, under which a typo'd net name is an elaboration error
+# that fails the compile on its own, so the implicit-wire grep only bites in a
+# file lacking that directive. Other iverilog warnings stay warnings.
 compile: vectors
-	mkdir -p $(LAYER)/$(UNIT)/build
-	$(IVERILOG) -g2001 -Wall -I$(LAYER) $(LIBS) -o $(LAYER)/$(UNIT)/build/sim $(LAYER)/$(UNIT)/rtl/*.v $(LAYER)/$(UNIT)/tb/$(UNIT)_tb.v
+	@mkdir -p $(LAYER)/$(UNIT)/build
+	@$(IVERILOG) -g2001 -Wall -I$(LAYER) $(LIBS) -o $(LAYER)/$(UNIT)/build/sim $(LAYER)/$(UNIT)/rtl/*.v $(LAYER)/$(UNIT)/tb/$(UNIT)_tb.v >$(LAYER)/$(UNIT)/build/compile.log 2>&1; \
+	status=$$?; \
+	cat $(LAYER)/$(UNIT)/build/compile.log; \
+	[ $$status -eq 0 ] || { echo "*** $(UNIT): COMPILE FAILED ***"; exit 1; }; \
+	! grep -q "undefined (and assumed null)" $(LAYER)/$(UNIT)/build/compile.log \
+		|| { echo "*** $(UNIT): UNDEFINED MACRO ***"; exit 1; }; \
+	! grep -q "implicit definition of wire" $(LAYER)/$(UNIT)/build/compile.log \
+		|| { echo "*** $(UNIT): IMPLICIT WIRE ***"; exit 1; }; \
+	! grep -qE "expects [0-9]+ bits, got [0-9]+" $(LAYER)/$(UNIT)/build/compile.log \
+		|| { echo "*** $(UNIT): PORT WIDTH MISMATCH ***"; exit 1; }
 
 # Testbenches resolve vec/<unit>.vec relative to the unit directory.
 # The `vvp | tee` pipe reports tee's status, so the pipe's own exit code proves
@@ -65,6 +83,15 @@ run: compile
 	@# vvp exits 0 after a runtime ERROR line, so an unreadable $$readmemb ROM
 	@# would otherwise reach the PASS grep with an all-x memory.
 	@! grep -q "^ERROR" $(LAYER)/$(UNIT)/build/sim.log || { echo "*** $(UNIT): SIMULATION ERROR ***"; exit 1; }
+	@# $$readmemb and $$readmemh warn and keep going on a memory-load mismatch, so
+	@# the two classes that corrupt the loaded table are rejected here. "Not enough
+	@# words" leaves the tail of the memory at x, and "Excess binary digits" keeps
+	@# only the low bits of an over-wide word, loading a value the file does not
+	@# hold. "Too many words" is the accepted class: every requested entry is
+	@# loaded from the file and only the surplus tail is dropped, which is how a
+	@# shared table sized for the widest instance is read by a narrower one.
+	@! grep -qE "Not enough words in the file|Excess binary digits" $(LAYER)/$(UNIT)/build/sim.log \
+		|| { echo "*** $(UNIT): MEMORY LOAD MISMATCH ***"; exit 1; }
 
 # Elaborate every guarded module with a violating parameter set and require the
 # build to fail; unit-independent, so it takes no OP= or MODULE=.
@@ -82,16 +109,12 @@ equiv:
 floor:
 	$(PYTHON) sweep_floor.py "$(SWEEP_OPS)" "$(SWEEP_MODULES)"
 
-# mapping.yaml and syn/translate.py carry no RTL of their own, so no unit target
-# covers them; their pytest runs in the sweep.
+# mapping.yaml, syn/translate.py, and the RULE_IMP.md rule 6 ledger carry no RTL
+# of their own, so no unit target covers them. The whole tests/syn/ directory
+# runs here, gating translation in both the reject and the accept direction and
+# picking up any test later added there; it runs in the sweep.
 translate:
-	$(PYTHON) -m pytest -q ../../../tests/syn/test_translate.py
-
-# Refuse a commit touching src/napl/imp/ without a green sweep. Versioned under
-# .githooks/ so every clone installs the same hook from this one command.
-install-hooks:
-	git -C ../../.. config core.hooksPath .githooks
-	@echo "pre-commit hook installed (bypass a single commit with git commit --no-verify)"
+	$(PYTHON) -m pytest -q ../../../tests/syn/
 
 # The mapping.yaml floor, every operation target, every module target, the guards
 # suite, the reference-form equivalence walk, and the translate pytest. Runs the
@@ -127,4 +150,4 @@ sweep:
 	echo "SWEEP PASSED: $(words $(SWEEP_OPS)) operations, $(words $(SWEEP_MODULES)) modules, floor, guards, equiv, translate"
 
 clean:
-	rm -rf $(LAYER)/$(UNIT)/build $(LAYER)/$(UNIT)/vec/*.vec $(LAYER)/$(UNIT)/vec/*_params.vh
+	rm -rf $(LAYER)/$(UNIT)/build $(LAYER)/$(UNIT)/vec/*.vec $(LAYER)/$(UNIT)/vec/*_params.vh $(LAYER)/$(UNIT)/vec/*.hex

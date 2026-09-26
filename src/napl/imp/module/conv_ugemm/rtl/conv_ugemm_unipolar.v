@@ -14,7 +14,7 @@
 // unipolar stream with. The pad tap drives its mul_ugemm cell like any other
 // tap: a zero spike gates the product off and holds the cell's sequence index.
 // Weight and bias arrive as held fixed-point codes, not spikes: this layer
-// generates both streams in hardware (Python internal_encode = True).
+// generates both streams in hardware (its Python internal_encode is 'private').
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every sequence index, the bias counters, and every
 // accumulator, to match reset().

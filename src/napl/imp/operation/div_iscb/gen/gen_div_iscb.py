@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import pair_streams, rep_pairs
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "div_iscb.vec"
+PARAMS = Path(__file__).resolve().parent.parent / "vec" / "div_iscb_params.vh"
 
 # Width the bipolar variant elaborates its bi2uni helpers at.
 B2U_WIDTH = 3
@@ -89,6 +90,8 @@ def main():
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
     rows = 0
+    # The testbench counts only the compared rows, not the reset markers.
+    compared = 0
     with VEC.open("w") as f:
         for i, (dd, ds, bx) in enumerate(zip(dividend_stream, divisor_stream, b2u_stream)):
             if i == reset_at:
@@ -111,6 +114,8 @@ def main():
             out_b2u = int(b2u(torch.tensor([bx], dtype=b2u.stype)).item())
             f.write(f"0 {dd} {ds} {out_uni} {out_bi} {bx} {out_b2u}\n")
             rows += 1
+            compared += 1
+    PARAMS.write_text(f"`define GEN_VECTORS {compared}\n")
     # Stimulus check: without a taken low clamp the arm is unobservable.
     assert clamped > 0, 'bi2uni low clamp was never taken'
     print(f"wrote {VEC} ({rows} vectors, mid-stream reset at row {reset_at}, "

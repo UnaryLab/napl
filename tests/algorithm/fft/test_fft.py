@@ -147,7 +147,7 @@ def test_fft_streaming():
             assert operation.scales == [SCALE] * operation.stages
             assert operation.compensation == 2 * SCALE ** operation.stages
             # Every stage multiplier turns its constant twiddle into a stream itself.
-            assert operation.internal_encode is True
+            assert operation.internal_encode == 'private'
             # Stage 0 absorbs the input halving the hub version applies numerically,
             # so its adder runs at twice the requested scale.
             child_scales = [
@@ -302,7 +302,7 @@ def test_fft_mix_kernel():
             for stage in range(operation.stages)
         ]
         assert all(isinstance(stage, butterfly_mix) for stage in stages)
-        assert operation.internal_encode is True
+        assert operation.internal_encode == 'private'
         assert operation.compensation == 2 * SCALE ** operation.stages
 
         # Stage index i encodes its constant twiddle on Sobol dimension 5 + i.

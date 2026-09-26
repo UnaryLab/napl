@@ -10,14 +10,14 @@
 // the addends, matching add_gaines at SCALED = 0.
 // Weight and bias arrive as held fixed-point codes, not spikes: this layer holds
 // one threshold sequence per input feature and generates both streams itself
-// (Python internal_encode = True).
-// The weight-threshold ROM is W_LEN x IN_FEATURES and sits outside the lane
-// generate, shared by every lane; the comparators cannot be shared with it,
-// because each of the LANES x IN_FEATURES weight codes needs its own compare
-// against the feature threshold of this timestep.
+// (its Python internal_encode is 'private').
+// One weight-threshold generator per input feature sits outside the lane
+// generate and is shared by every lane; the comparators cannot be shared, because
+// each of the LANES x IN_FEATURES weight codes needs its own compare against the
+// feature threshold of this timestep.
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
-// Active-low reset clears the threshold index and every encoder index, to match
-// reset().
+// Active-low reset clears every threshold generator, selector index, and encoder
+// index, to match reset().
 // In scaled mode ENTRY must equal 2**SCALE_WIDTH, so the free-running selector
 // addresses every addend and nothing else, and the select ROM holds one row per
 // addend. That is the power-of-two addend count the Python add_gaines model
@@ -43,47 +43,58 @@ module linear_gaines_unipolar #(
 
 
     localparam integer OPW     = SEQ_WIDTH + 1;          // fixed-point operand width
-    localparam integer W_LEN   = 1 << SEQ_WIDTH;         // weight-threshold sequence length
     localparam integer ENTRY   = IN_FEATURES + HAS_BIAS; // addends per lane
 
 
     // Elaboration-time guard: an unresolvable module reference makes iverilog
-    // fail when the scaled selector span does not match the addend count.
+    // fail when the scaled selector span does not match the addend count, and
+    // when the scaled adder has fewer than two addends, which Python rejects; the
+    // module name records only the span term.
     generate
-        if (SCALED != 0 && ENTRY != (1 << SCALE_WIDTH)) begin : g_bad_scale_width
+        if (SCALED != 0 && (ENTRY < 2 || ENTRY != (1 << SCALE_WIDTH))) begin : g_bad_scale_width
             ERROR_linear_gaines_SCALE_WIDTH_must_match_ENTRY u_bad ();
         end
     endgenerate
 
-    // Weight thresholds, one row per timestep and one field per input feature,
-    // generated from w_num_seq. The row is shared by every lane.
-    reg [IN_FEATURES*SEQ_WIDTH-1:0] w_rom [0:W_LEN-1];
-    initial $readmemb("vec/linear_gaines_w.hex", w_rom);
-
-    reg  [SEQ_WIDTH-1:0]            seq_idx;
+    // Weight thresholds, one field per input feature, shared by every lane. The
+    // model holds one Sobol dimension per feature, so each field is its own online
+    // generator over that dimension's direction vectors. The table paths carry a
+    // two-digit feature index, so IN_FEATURES is at most 100.
     wire [IN_FEATURES*SEQ_WIDTH-1:0] w_row;
+
+    genvar seq;
+    generate
+        for (seq = 0; seq < IN_FEATURES; seq = seq + 1) begin : g_w_seq
+            localparam [7:0] TENS = "0" + (seq / 10);
+            localparam [7:0] ONES = "0" + (seq % 10);
+
+            sobol #(
+                .WIDTH       (SEQ_WIDTH),
+                .DIRVEC_FILE ({"vec/lg_w", TENS, ONES, "_dv.hex"})
+            ) u_w_seq (
+                .i_clk   (i_clk),
+                .i_rst_n (i_rst_n),
+                .i_en    (1'b1),
+                .o_rand  (w_row[seq*SEQ_WIDTH +: SEQ_WIDTH])
+            );
+        end
+    endgenerate
 
     reg  [SCALE_WIDTH-1:0] select_rom [0:ENTRY-1];
     reg  [SCALE_WIDTH-1:0] select_idx;
     wire [SCALE_WIDTH-1:0] select;
+    localparam [SCALE_WIDTH-1:0] SEL_ZERO = 0;
+    localparam [SCALE_WIDTH-1:0] SEL_ONE  = 1;
 
     initial $readmemb("vec/gaines_rom.hex", select_rom);
 
-    assign w_row = w_rom[seq_idx];
     assign select = select_rom[select_idx];
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n)
-            seq_idx <= {SEQ_WIDTH{1'b0}};
+            select_idx <= SEL_ZERO;
         else
-            seq_idx <= seq_idx + {{(SEQ_WIDTH-1){1'b0}}, 1'b1};
-    end
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n)
-            select_idx <= {SCALE_WIDTH{1'b0}};
-        else
-            select_idx <= select_idx + {{(SCALE_WIDTH-1){1'b0}}, 1'b1};
+            select_idx <= select_idx + SEL_ONE;
     end
 
     genvar lane, feature;
@@ -110,8 +121,9 @@ module linear_gaines_unipolar #(
             // is the plain encoder over that sequence.
             if (HAS_BIAS != 0) begin : g_bias
                 encode #(
-                    .WIDTH (SEQ_WIDTH),
-                    .FRAC  (SEQ_WIDTH)
+                    .WIDTH       (SEQ_WIDTH),
+                    .FRAC        (SEQ_WIDTH),
+                    .DIRVEC_FILE ("vec/lg_bias_dv.hex")
                 ) u_bias (
                     .i_clk   (i_clk),
                     .i_rst_n (i_rst_n),

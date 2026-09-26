@@ -34,32 +34,33 @@ module relu_sat (
     input  wire i_input,        // bipolar rate-coded input spike
     output wire o_output     // bipolar rate-coded ReLU output spike
 );
-    // Half-unit accumulators (2*acc): signed, acc_sub in [-8, 1] and acc_add in
-    // [0, 2]; 5-bit signed holds both.
-    reg signed [4:0] acc_sub;
-    reg signed [4:0] acc_add;
+    // Half-unit accumulators (2*acc): acc_sub in [-8, 1] fits 4-bit signed and
+    // acc_add in [0, 2] fits 2-bit unsigned.
+    reg signed [3:0] acc_sub;
+    reg        [1:0] acc_add;
 
     // ---- combinational: this cycle's outputs and next-cycle accumulator state ----
     // sub stage
-    wire signed [5:0] sum_sub = $signed({acc_sub[4], acc_sub}) + (i_input ? 6'sd1 : -6'sd1);
+    wire signed [5:0] sum_sub = $signed({{2{acc_sub[3]}}, acc_sub}) + (i_input ? 6'sd1 : -6'sd1);
     wire signed [5:0] clmp_sub = (sum_sub < -6'sd8) ? -6'sd8 : sum_sub;
     wire out_sub = (clmp_sub >= 6'sd2);
     // clmp_sub is in [-8, 2] and out_sub subtracts 2 only when clmp_sub >= 2,
-    // so nxt_sub stays in [-8, 1]: fits 5-bit signed exactly.
-    wire signed [4:0] nxt_sub = out_sub ? (clmp_sub[4:0] - 5'sd2) : clmp_sub[4:0];
+    // so nxt_sub stays in [-8, 1]: fits 4-bit signed.
+    wire signed [3:0] nxt_sub = out_sub ? (clmp_sub[3:0] - 4'sd2) : clmp_sub[3:0];
 
     // add stage (input partial = sub_1_out + 1 -> half-units 2*out_sub + 1)
-    wire signed [5:0] sum_add = $signed({acc_add[4], acc_add}) + (out_sub ? 6'sd3 : 6'sd1);
+    wire signed [5:0] sum_add = $signed({4'b0000, acc_add}) + (out_sub ? 6'sd3 : 6'sd1);
     wire out_add = (sum_add >= 6'sd2);
-    wire signed [4:0] nxt_add = out_add ? (sum_add[4:0] - 5'sd2) : sum_add[4:0];
+    // sum_add is in [1, 4], so nxt_add stays in [0, 2]: fits 2-bit unsigned.
+    wire [1:0] nxt_add = out_add ? (sum_add[1:0] - 2'd2) : sum_add[1:0];
 
     assign o_output = out_add;
 
     // ---- sequential: advance accumulators; i_rst_n low maps to reset() (acc = 0) ----
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            acc_sub <= 5'sd0;
-            acc_add <= 5'sd0;
+            acc_sub <= 4'sd0;
+            acc_add <= 2'd0;
         end else begin
             acc_sub <= nxt_sub;
             acc_add <= nxt_add;

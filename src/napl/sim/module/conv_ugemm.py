@@ -23,10 +23,12 @@ class conv_ugemm(napl_base):
        y = \frac{\mathrm{conv2d}(x, W) + b}{s}.
 
     Bipolar zero padding alternates ``0`` and ``1`` each timestep, a
-    deterministic rate-``0.5`` stream, where :class:`conv_mix` instead uses a
-    decorrelated pad encoder. The layer is rate-coded, supports ``groups=1`` and
-    zero padding, and implements only the scaled UnarySim ``FSUConv2duGEMM``
-    mode.
+    deterministic rate-``0.5`` stream. This is safe because conditional spike
+    generation samples the numeric weight through input-driven indices rather
+    than multiplying the pad bit by a free-running weight stream;
+    :class:`conv_mix` instead needs a decorrelated pad encoder. The layer is
+    rate-coded, supports ``groups=1`` and zero padding, and implements only the
+    scaled UnarySim ``FSUConv2duGEMM`` mode.
 
     This class holds the convolution geometry: it gathers the im2col patches and
     folds the result back to NCHW. The inner product over one patch is a
@@ -55,7 +57,7 @@ class conv_ugemm(napl_base):
     #: Encoding advances conditionally on data, so the RTL counterpart holds
     #: its own encoder for the weight, bias, and pad streams instead of sharing
     #: an external one.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(self, weight, bias=None, stride=1, padding=0, dilation=1,
@@ -67,7 +69,7 @@ class conv_ugemm(napl_base):
 
             **Parameters:**
 
-            - **weight** – Numeric convolution weight shaped ``(out_channels, in_channels, kernel_height, kernel_width)``.
+            - **weight** – Numeric convolution weight shaped ``(out_channels, in_channels, kernel_height, kernel_width)``, with ``out_channels`` of at least 1; other shapes raise ``AssertionError``.
             - **bias** – Optional numeric tensor shaped ``(out_channels,)``; the default is ``None``.
             - **stride** – Convolution stride; the default is ``1``.
             - **padding** – Symmetric zero padding; the default is ``0``.
@@ -97,6 +99,10 @@ class conv_ugemm(napl_base):
 
         if weight.dim() != 4:
             message = f'conv_ugemm weight must be 4D (out,in,kh,kw), got {tuple(weight.shape)}.'
+            logger.error(message)
+            raise AssertionError(message)
+        if weight.shape[0] < 1:
+            message = f'Invalid out_channels: <{weight.shape[0]}>; legal values: an integer of at least 1.'
             logger.error(message)
             raise AssertionError(message)
         #: Number of convolution output channels.

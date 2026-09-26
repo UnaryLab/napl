@@ -61,7 +61,7 @@ def _kernel_specific_checks():
                 rmse = torch.sqrt(err.pow(2).mean()).item()
                 assert inst.linear.timestep_cur == timestep
                 # The layer holds its own weight and bias encoders.
-                assert inst.linear.internal_encode is True
+                assert inst.linear.internal_encode == 'private'
                 print(f'[{device}] {polarity} bias={has_bias}: rmse={rmse:.5f} max_err={err.max().item():.5f}')
                 inst.reset()
 

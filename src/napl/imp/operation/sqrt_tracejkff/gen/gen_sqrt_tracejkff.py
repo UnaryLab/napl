@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _gen_common import encode_value, rep_values
 
 VEC = Path(__file__).resolve().parent.parent / "vec" / "sqrt_tracejkff.vec"
+PARAMS = VEC.parent / "sqrt_tracejkff_params.vh"
 # decorr.v reads its position ROM from vec/decorr_rom.hex relative to the vvp
 # cwd, which is this unit's directory, so the instantiated copy needs its own
 # ROM here alongside the vectors.
@@ -112,11 +113,12 @@ def main():
         # R requests the corresponding active-low RTL reset.
         clear_state(uni, bip)
         f.write("R\n")
-        rows += 1
         for v in tail_vals:
             for bit in encode_value(CODEC, v):
                 emit(f, uni, bip, bit)
                 rows += 1
+    # The R marker row is not a compared vector, so the count excludes it.
+    PARAMS.write_text(f"`define GEN_VECTORS {rows}\n")
     print(f"wrote {VEC} ({rows} vectors) and {ROM} ({rom_words} ROM words)")
 
 

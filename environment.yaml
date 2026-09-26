@@ -2,16 +2,17 @@ name: napl
 channels:
   - conda-forge
   - defaults
-  - nikeshbajaj
 dependencies:
   - python>=3.9
+  - pip
   - pyyaml
   - yamlordereddictloader
   - loguru
-  - numpy
-  - scipy
   - pyfiglet
-  - pip
-  - pytorch
-  - matplotlib
-  - pylfsr
+  - pip:
+    - torch>=2.14
+    - pylfsr
+    - pytest
+    - numpy
+    - scipy
+    - matplotlib

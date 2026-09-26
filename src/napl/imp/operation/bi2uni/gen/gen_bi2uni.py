@@ -55,9 +55,11 @@ def main():
     model = bi2uni({"width": BI2UNI["width"]})
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_WIDTH {BI2UNI['width']}\n")
 
     rows = 0
+    # Reset rows carry no expected output, so the testbench skips them; only the
+    # spike rows are compared vectors.
+    compared = 0
     with VEC.open("w") as f:
         for seg_idx, seg in enumerate(build_segments()):
             if seg_idx > 0:
@@ -69,6 +71,12 @@ def main():
                 o_out = int(model(i_input).item())
                 f.write(f"{bit} {o_out}\n")
                 rows += 1
+                compared += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {BI2UNI['width']}\n"
+        f"`define GEN_VECTORS {compared}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} (GEN_WIDTH={BI2UNI['width']})")
 
 

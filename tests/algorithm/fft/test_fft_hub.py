@@ -108,7 +108,7 @@ def test_fft_hub_streaming():
             assert operation.scales == [SCALE] * operation.stages
             assert operation.core.compensation == 2 * SCALE ** operation.stages
             # Every stage multiplier turns its constant twiddle into a stream itself.
-            assert operation.internal_encode is True
+            assert operation.internal_encode == 'private'
             # Codecs live only at the boundary, so the core and every stage in it
             # stay in the spike domain and own no encoder or decoder.
             assert isinstance(operation.core, fft)

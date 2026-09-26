@@ -52,9 +52,8 @@ def known_answer_case(polarity):
     return values, expected
 
 
-# gate 17 (identity-blind) does not apply: mux_select returns a single output the
-# suite reads, and swapping it for a wire changes that output, so a wrong decoded
-# value already catches it. No structural identity-wire check is needed.
+# Gate 17 does not apply: mux_select returns a single output, which the suite
+# reads, so there is no unread output to pin.
 CONFIG = {
     'polarities': ['unipolar', 'bipolar'],
     'make_operation': make_operation,

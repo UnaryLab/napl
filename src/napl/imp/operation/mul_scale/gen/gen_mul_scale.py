@@ -116,12 +116,7 @@ def main():
             f"mapping mul_scale_{polarity} resolves {binding.parameters}, not {expected}"
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(
-        f"`define GEN_SCALE {MUL_SCALE['scale']}\n"
-        f"`define GEN_WIDTH {MUL_SCALE['intwidth']}\n"
-        f"`define GEN_PP_DELAY {pp_delay_uni}\n"
-    )
-
+    vector_count = 0
     with VEC.open("w") as output:
         for segment_index, (segment_uni, segment_bi) in enumerate(
             zip(segments_uni, segments_bi)
@@ -134,8 +129,14 @@ def main():
                     f"{reset} {int(spikes_uni.item())} {out_uni[segment_index][cycle]} "
                     f"{int(spikes_bi.item())} {out_bi[segment_index][cycle]}\n"
                 )
+                vector_count += 1
 
-    vector_count = sum(len(segment) for segment in segments_uni)
+    PARAMS.write_text(
+        f"`define GEN_SCALE {MUL_SCALE['scale']}\n"
+        f"`define GEN_WIDTH {MUL_SCALE['intwidth']}\n"
+        f"`define GEN_PP_DELAY {pp_delay_uni}\n"
+        f"`define GEN_VECTORS {vector_count}\n"
+    )
     print(
         f"wrote {VEC} ({vector_count} vectors, {len(segments_uni)} reset segments) "
         f"and {PARAMS} (SCALE={MUL_SCALE['scale']} WIDTH={MUL_SCALE['intwidth']} "

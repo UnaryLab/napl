@@ -24,12 +24,26 @@ assert ADD_SCALE["fracwidth"] == 0, "rail assertions need the integer grid, frac
 # 2**(intwidth-1) - 1, so the recharge makes a corrupted clamp visible.
 RAIL_DRAIN = 80
 RAIL_CHARGE = 110
+# Narrow regime: entry at or below scale, where the RTL accumulator holds only
+# [0, scale-1] unipolar and [0, 2*scale-1] in bipolar half units. The first charge
+# cycle after the drain lands both polarities on that top value.
+ADD_SCALE_N = {"scale": 5, "intwidth": 8, "fracwidth": 0}
+ENTRY_N = 4
+assert ENTRY_N <= ADD_SCALE_N["scale"], "the narrow regime needs entry <= scale"
+# The narrow instances share GEN_WIDTH with the wide ones.
+assert ADD_SCALE_N["intwidth"] == ADD_SCALE["intwidth"], "one GEN_WIDTH serves both regimes"
+# Boundary: entry one above scale, the smallest entry the RTL sizes wide. Its rail
+# segment carries the unipolar accumulator above scale-1 and the bipolar one below
+# 0, so a narrow register at this entry loses both.
+ADD_SCALE_B = {"scale": 4, "intwidth": 8, "fracwidth": 0}
+ENTRY_B = ADD_SCALE_B["scale"] + 1
+assert ADD_SCALE_B["intwidth"] == ADD_SCALE["intwidth"], "one GEN_WIDTH serves every regime"
 
 
-def test_values(polarity):
+def test_values(polarity, entry):
     """Return the test rows in the requested, probability-equivalent polarity."""
-    known = torch.full((8, ENTRY), 0.25)
-    fidelity = torch.linspace(-0.75, 0.75, 512).reshape(64, ENTRY)
+    known = torch.full((8, entry), 0.25)
+    fidelity = torch.linspace(-0.75, 0.75, 64 * entry).reshape(64, entry)
     values = torch.cat((known, fidelity), dim=0)
     if polarity == "unipolar":
         values = (values + 1) / 2
@@ -51,7 +65,7 @@ def encode_segments(polarity, values):
     return segments
 
 
-def rail_segment(polarity):
+def rail_segment(polarity, entry):
     """Encode the saturation stimulus: the low rail, then the high rail.
 
     Both rails are constant values, so one encoder run gives a partial sum of 0
@@ -66,17 +80,17 @@ def rail_segment(polarity):
     })
     enc.reset()
     values = [low] * RAIL_DRAIN + [1.0] * RAIL_CHARGE
-    return [enc(torch.full((ENTRY,), value)).clone() for value in values]
+    return [enc(torch.full((entry,), value)).clone() for value in values]
 
 
-def run(polarity, segments):
+def run(polarity, segments, config):
     """Generate bit-exact Python outputs and reset before every independent row.
 
     The accumulator extremes of the last segment, the saturation one, are
     returned with the outputs so the caller can require it to have reached the
     clamps its width sets.
     """
-    model = add_scale({"polarity": polarity, **ADD_SCALE})
+    model = add_scale({"polarity": polarity, **config})
     outputs = []
     extremes = (0, 0)
     for segment in segments:
@@ -85,7 +99,7 @@ def run(polarity, segments):
         low = high = 0
         for spikes in segment:
             row.append(int(model(spikes, dim=-1).item()))
-            value = int(model.accumulator.item())
+            value = model.accumulator.item()
             low, high = min(low, value), max(high, value)
         outputs.append(row)
         extremes = (low, high)
@@ -98,14 +112,40 @@ def bus(spikes):
 
 
 def main():
-    segments_uni = encode_segments("unipolar", test_values("unipolar"))
-    segments_bi = encode_segments("bipolar", test_values("bipolar"))
-    segments_uni.append(rail_segment("unipolar"))
-    segments_bi.append(rail_segment("bipolar"))
-    assert len(segments_uni) == len(segments_bi)
-    out_uni, pp_delay_uni, rail_uni, model_uni = run("unipolar", segments_uni)
-    out_bi, pp_delay_bi, rail_bi, model_bi = run("bipolar", segments_bi)
-    assert pp_delay_uni == pp_delay_bi
+    segments_uni = encode_segments("unipolar", test_values("unipolar", ENTRY))
+    segments_bi = encode_segments("bipolar", test_values("bipolar", ENTRY))
+    segments_uni_n = encode_segments("unipolar", test_values("unipolar", ENTRY_N))
+    segments_bi_n = encode_segments("bipolar", test_values("bipolar", ENTRY_N))
+    segments_uni_b = encode_segments("unipolar", test_values("unipolar", ENTRY_B))
+    segments_bi_b = encode_segments("bipolar", test_values("bipolar", ENTRY_B))
+    segments_uni.append(rail_segment("unipolar", ENTRY))
+    segments_bi.append(rail_segment("bipolar", ENTRY))
+    segments_uni_n.append(rail_segment("unipolar", ENTRY_N))
+    segments_bi_n.append(rail_segment("bipolar", ENTRY_N))
+    segments_uni_b.append(rail_segment("unipolar", ENTRY_B))
+    segments_bi_b.append(rail_segment("bipolar", ENTRY_B))
+    assert len(segments_uni) == len(segments_bi) == len(segments_uni_n) == len(segments_bi_n) \
+        == len(segments_uni_b) == len(segments_bi_b)
+    out_uni, pp_delay_uni, rail_uni, model_uni = run("unipolar", segments_uni, ADD_SCALE)
+    out_bi, pp_delay_bi, rail_bi, model_bi = run("bipolar", segments_bi, ADD_SCALE)
+    out_uni_n, pp_delay_uni_n, rail_uni_n, _ = run("unipolar", segments_uni_n, ADD_SCALE_N)
+    out_bi_n, pp_delay_bi_n, rail_bi_n, _ = run("bipolar", segments_bi_n, ADD_SCALE_N)
+    out_uni_b, pp_delay_uni_b, rail_uni_b, _ = run("unipolar", segments_uni_b, ADD_SCALE_B)
+    out_bi_b, pp_delay_bi_b, rail_bi_b, _ = run("bipolar", segments_bi_b, ADD_SCALE_B)
+    assert pp_delay_uni == pp_delay_bi == pp_delay_uni_n == pp_delay_bi_n \
+        == pp_delay_uni_b == pp_delay_bi_b
+    scale_b = ADD_SCALE_B["scale"]
+    assert rail_uni_b[1] > scale_b - 1, \
+        f"the boundary unipolar rail segment peaked at {rail_uni_b[1]}, inside [0, {scale_b - 1}]"
+    assert rail_bi_b[0] < 0, \
+        f"the boundary bipolar rail segment bottomed at {rail_bi_b[0]}, not below 0"
+    # The narrow rail segment must reach the top of the narrow state range, so a
+    # narrow accumulator one bit short loses it; the bipolar top is a half unit.
+    scale_n = ADD_SCALE_N["scale"]
+    assert rail_uni_n == (0, scale_n - 1), \
+        f"the narrow unipolar rail segment spans {rail_uni_n}, not (0, {scale_n - 1})"
+    assert rail_bi_n == (0, scale_n - 0.5), \
+        f"the narrow bipolar rail segment spans {rail_bi_n}, not (0, {scale_n - 0.5})"
     # One carry is subtracted after the clamp, so a clamped accumulator reads back
     # at acc_max - scale; the negative clamp never fires, so it reads back exactly.
     assert rail_uni[1] == model_uni.acc_max - ADD_SCALE["scale"], \
@@ -121,31 +161,44 @@ def main():
     assert rail_uni[0] == 0, f"the unipolar accumulator went negative, to {rail_uni[0]}"
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
+
+    vector_count = 0
+    with VEC.open("w") as output:
+        for segment_index, segment in enumerate(
+            zip(segments_uni, segments_bi, segments_uni_n, segments_bi_n,
+                segments_uni_b, segments_bi_b)
+        ):
+            for cycle, (spikes_uni, spikes_bi, spikes_uni_n, spikes_bi_n,
+                        spikes_uni_b, spikes_bi_b) in enumerate(zip(*segment)):
+                reset = int(cycle == 0)
+                output.write(
+                    f"{reset} {bus(spikes_uni)} {out_uni[segment_index][cycle]} "
+                    f"{bus(spikes_bi)} {out_bi[segment_index][cycle]} "
+                    f"{bus(spikes_uni_n)} {out_uni_n[segment_index][cycle]} "
+                    f"{bus(spikes_bi_n)} {out_bi_n[segment_index][cycle]} "
+                    f"{bus(spikes_uni_b)} {out_uni_b[segment_index][cycle]} "
+                    f"{bus(spikes_bi_b)} {out_bi_b[segment_index][cycle]}\n"
+                )
+                vector_count += 1
+
     PARAMS.write_text(
         f"`define GEN_SCALE {ADD_SCALE['scale']}\n"
         f"`define GEN_WIDTH {ADD_SCALE['intwidth']}\n"
         f"`define GEN_ENTRY {ENTRY}\n"
+        f"`define GEN_SCALE_N {ADD_SCALE_N['scale']}\n"
+        f"`define GEN_ENTRY_N {ENTRY_N}\n"
+        f"`define GEN_SCALE_B {ADD_SCALE_B['scale']}\n"
+        f"`define GEN_ENTRY_B {ENTRY_B}\n"
         f"`define GEN_PP_DELAY {pp_delay_uni}\n"
+        f"`define GEN_VECTORS {vector_count}\n"
     )
 
-    with VEC.open("w") as output:
-        for segment_index, (segment_uni, segment_bi) in enumerate(
-            zip(segments_uni, segments_bi)
-        ):
-            for cycle, (spikes_uni, spikes_bi) in enumerate(
-                zip(segment_uni, segment_bi)
-            ):
-                reset = int(cycle == 0)
-                output.write(
-                    f"{reset} {bus(spikes_uni)} {out_uni[segment_index][cycle]} "
-                    f"{bus(spikes_bi)} {out_bi[segment_index][cycle]}\n"
-                )
-
-    vector_count = sum(len(segment) for segment in segments_uni)
     print(
         f"wrote {VEC} ({vector_count} vectors, {len(segments_uni)} reset segments) "
         f"and {PARAMS} (SCALE={ADD_SCALE['scale']} WIDTH={ADD_SCALE['intwidth']} "
-        f"ENTRY={ENTRY} PP_DELAY={pp_delay_uni})"
+        f"ENTRY={ENTRY}; narrow SCALE={ADD_SCALE_N['scale']} ENTRY={ENTRY_N}; "
+        f"boundary SCALE={ADD_SCALE_B['scale']} ENTRY={ENTRY_B}; "
+        f"PP_DELAY={pp_delay_uni})"
     )
 
 

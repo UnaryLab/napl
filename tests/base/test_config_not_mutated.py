@@ -59,6 +59,8 @@ ARGUMENT_SHAPES = [
 SPECIAL_CASES = {
     # avgpool2d_ugemm needs an accumulator width satisfying 2 ** (width - 1) - 1 >= 2 * kernel_area - 1.
     'avgpool2d_ugemm': ([2], {'polarity': 'bipolar', 'width': 12}),
+    'clamp_comp': ([], {'polarity': 'bipolar', 'lo': -0.5, 'hi': 0.5}),
+    'clamp_sat': ([], {'polarity': 'bipolar', 'lo': -0.5, 'hi': 0.5}),
     # conv_gaines needs a power-of-two adder entry, which this 2x2x2 kernel gives.
     'conv_gaines': ([torch.zeros(4, 2, 2, 2), None, 1, 0, 1],
                     {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'dim': 2,
@@ -68,10 +70,22 @@ SPECIAL_CASES = {
               'scale': None, 'width': 12}),
     'conv_ugemm': ([WEIGHT_4D, None, 1, 0, 1],
                    {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
+    'encode_regen': ([], {'polarity': 'unipolar', 'lfsr_width': 4, 'window': 8}),
+    'eq': ([], {'width': 3, 'tolerance': 1, 'polarity': 'unipolar'}),
+    'exp_m1_delay': ([], {'polarity': 'unipolar', 'order': 3, 'depth': 1}),
+    'exp_m1_regen': ([], {'polarity': 'unipolar', 'order': 3, 'lfsr_width': 3,
+                          'window': 4, 'depth': 1}),
     # mgu_hard_mix is bipolar only, holds its hidden value as a buffer, so it needs a tensor, and
     # its run must outlast the depth_ismul multiplier shift register.
     'mgu_hard_mix': ([WEIGHT_2D, VECTOR, WEIGHT_2D, VECTOR, torch.zeros(4, 4)],
             {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol', 'depth_ismul': 3}),
+    'pow_delay': ([], {'polarity': 'unipolar', 'n': 3, 'depth': 2}),
+    'pow_regen': ([], {'polarity': 'unipolar', 'n': 3, 'lfsr_width': 4,
+                       'window': 8, 'depth': 2}),
+    'svm_ugemm': ([torch.zeros(1, 4), torch.zeros(1)],
+                  {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
+    'svm_rbf_ugemm': ([torch.zeros(2, 4), torch.zeros(2), 0.0, 0.01],
+                      {'polarity': 'bipolar', 'timestep': 16, 'generator': 'sobol'}),
 }
 
 # Building blocks of the multi-configuration probes below.
@@ -150,6 +164,24 @@ def simulation_classes():
 # The key named by the rejection raised from check_config for an unaccepted key.
 UNKNOWN_KEY = re.compile(r'Unknown key <([^>]+)>')
 
+# A key no class declares, added to a SPECIAL_CASES configuration to check that
+# the class reads the mapping it is given.
+BOGUS_KEY = 'no_class_accepts_this_key'
+
+
+def _rejects_bogus_key(cls, arguments, config):
+    """Report whether ``cls`` rejects ``config`` carrying an unaccepted key.
+
+    A configuration of legal keys alone constructs whether or not the class ever
+    reads it, so only a rejection naming the added key proves the probe reached
+    the class's configuration check.
+    """
+    _, error = _probe(cls, arguments, dict(config, **{BOGUS_KEY: 0}))
+    if error is None:
+        return False
+    match = UNKNOWN_KEY.search(str(error))
+    return match is not None and match.group(1) == BOGUS_KEY
+
 
 def _probe(cls, arguments, config):
     """Construct ``cls`` and return ``(writes, error)``; ``writes`` is ``None`` on failure."""
@@ -162,17 +194,34 @@ def _probe(cls, arguments, config):
 
 
 def _probe_multi(cls, arguments, configs):
-    """Construct ``cls`` from several configuration mappings; ``None`` on failure.
+    """Construct ``cls`` from several mappings and return ``(writes, error)``.
 
     Each mapping is bound by the constructor parameter naming it, so a probe
-    cannot land on a parameter that is not a configuration.
+    cannot land on a parameter that is not a configuration. ``writes`` is
+    ``None`` on failure.
     """
     probes = {name: recording_dict(copy.deepcopy(config)) for name, config in configs.items()}
     try:
         cls(*arguments, **probes)
-    except Exception:
-        return None
-    return [write for probe in probes.values() for write in probe.writes]
+    except Exception as error:
+        return None, error
+    return [write for probe in probes.values() for write in probe.writes], None
+
+
+def _rejects_bogus_key_multi(cls, arguments, configs, target):
+    """Report whether ``cls`` rejects the unaccepted key planted in ``target`` alone.
+
+    The key goes into one named mapping per call, since a constructor that reads
+    one mapping and never reads another would satisfy a single probe carrying the
+    key in the mapping it does read.
+    """
+    planted = dict(configs)
+    planted[target] = dict(configs[target], **{BOGUS_KEY: 0})
+    _, error = _probe_multi(cls, arguments, planted)
+    if error is None:
+        return False
+    match = UNKNOWN_KEY.search(str(error))
+    return match is not None and match.group(1) == BOGUS_KEY
 
 
 def _probe_generic(cls):
@@ -209,14 +258,22 @@ def test_config_not_mutated():
     names = simulation_classes()
     mutated = []
     unreached = []
+    unvalidated = []
+    probed_mappings = 0
 
     for name in names:
         if name in MULTI_CONFIG_CASES:
             arguments, configs = MULTI_CONFIG_CASES[name]
-            writes = _probe_multi(_CLASSES[name], arguments, configs)
+            writes, _ = _probe_multi(_CLASSES[name], arguments, configs)
+            for mapping in configs:
+                probed_mappings += 1
+                if not _rejects_bogus_key_multi(_CLASSES[name], arguments, configs, mapping):
+                    unvalidated.append(f'{name}.{mapping}')
         elif name in SPECIAL_CASES:
             arguments, config = SPECIAL_CASES[name]
             writes, _ = _probe(_CLASSES[name], arguments, config)
+            if not _rejects_bogus_key(_CLASSES[name], arguments, config):
+                unvalidated.append(name)
         else:
             writes = _probe_generic(_CLASSES[name])
 
@@ -231,6 +288,15 @@ def test_config_not_mutated():
         f'{len(unreached)} of {len(names)} classes were not constructed, so the invariant is '
         f'unproven for them; add a probe to SPECIAL_CASES: {unreached}'
     )
+    # A probe that constructs without the class ever reading the mapping it was
+    # given proves nothing, so it fails here and needs a configuration taken from
+    # that class's own constructor. Multi-configuration entries are named
+    # <class>.<parameter>, one probe per mapping.
+    assert not unvalidated, (
+        f'{len(unvalidated)} of {len(SPECIAL_CASES) + probed_mappings} probes did not reach the '
+        'class configuration check, so the invariant is unproven for them; correct the probe '
+        f'from the class constructor: {unvalidated}'
+    )
     assert not mutated, (
         'constructors must treat the configuration mapping as read-only, but these wrote into '
         f'the caller dict: {mutated}'
@@ -238,6 +304,7 @@ def test_config_not_mutated():
 
     print(f'classes enumerated: {len(names)}')
     print(f'classes probed: {len(names) - len(unreached)}')
+    print(f'multi-configuration mappings probed: {probed_mappings}')
     print('no class mutated the caller configuration.')
     print('Test passed.')
 

@@ -3,7 +3,7 @@ import math
 
 from napl.sim.base import napl_base
 from .encode import encode
-from .dff import dff
+from .delay import delay
 from loguru import logger
 
 
@@ -29,6 +29,9 @@ class tanh_p1(napl_base):
     :math:`c_5 = 1/3`, each quantized to the coefficient-sequence period
     :math:`L = 2^{\lceil \log_2 timestep \rceil}`.
 
+    The first 8 outputs are 0 regardless of input, because ``in_d8``
+    is a zero-filled tap. This kernel always has an 8-step input tap.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -45,9 +48,12 @@ class tanh_p1(napl_base):
 
         *Computing Arithmetic Functions Using Stochastic Logic by Series Expansion*, IEEE Transactions on Emerging Topics in Computing, 2019.
     """
-    #: The coefficient streams are encoded from held coefficient codes, so the
-    #: RTL counterpart holds its own encoder instead of sharing an external one.
-    internal_encode = True
+    #: Encoder the hardware counterpart carries. The coefficient streams come
+    #: from held coefficient codes, replayed in RTL from a baked coefficient
+    #: ROM, so no external stream supplies them and the ROM cannot be shared.
+    internal_encode = 'private'
+    #: Dominant hardware mechanism of this class.
+    mechanism = 'delay'
 
 
     def __init__(
@@ -112,16 +118,16 @@ class tanh_p1(napl_base):
 
         # Input taps are at depths 4 and 8; n_1 taps are at depths 1, 2, and 3.
         #: First four-timestep delay segment for the input spike path.
-        self.input_dff_4 = dff({'depth': 4})
+        self.input_delay_4 = delay({'depth': 4})
         #: Second four-timestep delay segment, producing an eight-timestep input delay.
-        self.input_dff_8 = dff({'depth': 4})
+        self.input_delay_8 = delay({'depth': 4})
         #: One-timestep delay segment for the first polynomial intermediate.
-        self.n_1_dff_1 = dff({'depth': 1})
+        self.n_1_delay_1 = delay({'depth': 1})
         #: Second one-timestep delay segment for the first polynomial intermediate.
-        self.n_1_dff_2 = dff({'depth': 1})
+        self.n_1_delay_2 = delay({'depth': 1})
         #: Third one-timestep delay segment for the first polynomial intermediate.
-        self.n_1_dff_3 = dff({'depth': 1})
-        # DFF delay lines decorrelate the combinational path without adding output latency.
+        self.n_1_delay_3 = delay({'depth': 1})
+        # Delay lines decorrelate the combinational path without adding output latency.
         #: Hardware latency and timing metadata for the combinational output path.
         self.hw.pp_delay = 0
 
@@ -159,14 +165,14 @@ class tanh_p1(napl_base):
         in_i8 = input.type(torch.int8)
         c2, c3, c4, c5 = self.coef_bits[(self.timestep_cur - 1) % self.len]
 
-        in_d4 = self.input_dff_4(in_i8)
-        in_d8 = self.input_dff_8(in_d4)
+        in_d4 = self.input_delay_4(in_i8)
+        in_d8 = self.input_delay_8(in_d4)
 
         # Delay lines advance independently of the coefficient bits.
         n_1 = in_i8 & in_d4
-        n_1_d1 = self.n_1_dff_1(n_1)
-        n_1_d2 = self.n_1_dff_2(n_1_d1)
-        n_1_d3 = self.n_1_dff_3(n_1_d2)
+        n_1_d1 = self.n_1_delay_1(n_1)
+        n_1_d2 = self.n_1_delay_2(n_1_d1)
+        n_1_d3 = self.n_1_delay_3(n_1_d2)
 
         # A zero coefficient bit represents the corresponding NAND stage as constant 1 (None).
         n_2 = (1 - n_1) if c2 else None

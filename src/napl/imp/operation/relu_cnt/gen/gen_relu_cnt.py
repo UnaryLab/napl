@@ -50,7 +50,6 @@ def main():
     reset_after_value_idx = 1  # reset before encoding the 2nd representative value
 
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_WIDTH {RELU_CNT['width']}\n")
 
     rows = 0
     with VEC.open("w") as f:
@@ -65,6 +64,11 @@ def main():
                 out = int(model(x).item())
                 f.write(f"{bit} {out} {rst}\n")
                 rows += 1
+
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {RELU_CNT['width']}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors) and {PARAMS} (GEN_WIDTH={RELU_CNT['width']})")
 
 

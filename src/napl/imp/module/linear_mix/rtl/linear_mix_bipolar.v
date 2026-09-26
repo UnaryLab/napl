@@ -13,7 +13,8 @@
 // fixed-point probability codes, and one encode cell per weight tap and per bias
 // re-encodes them to a spike every timestep from the model's own number sequence.
 // The weight sequence and the bias sequence are distinct Sobol dimensions, so they
-// read separate ROMs whose paths a parent may override (W_ROM, B_ROM).
+// read separate direction-vector tables whose paths a parent may override
+// (W_DIRVEC, B_DIRVEC).
 // Output is combinational (pp_delay=0); each posedge advances one timestep.
 // Active-low reset clears every sequence index and accumulator to match reset().
 // WIDTH must satisfy 2**(WIDTH-1) > ENTRY (= IN_FEATURES + HAS_BIAS), so the
@@ -28,8 +29,8 @@ module linear_mix_bipolar #(
     parameter integer WIDTH       = 12,  // accumulator width;     tb overrides via `GEN_WIDTH
     parameter integer SCALE       = 17,  // output divisor;        tb overrides via `GEN_SCALE
     parameter integer HAS_BIAS    = 1,   // 1 encodes a bias addend, 0 drops it
-    parameter W_ROM = "vec/lm_wrom.hex", // weight number-sequence ROM, sim-cwd relative
-    parameter B_ROM = "vec/lm_brom.hex"  // bias number-sequence ROM, sim-cwd relative
+    parameter W_DIRVEC = "vec/lm_wdv.hex", // weight Sobol direction vectors, sim-cwd relative
+    parameter B_DIRVEC = "vec/lm_bdv.hex"  // bias Sobol direction vectors, sim-cwd relative
 ) (
     input  wire                                       i_clk,
     input  wire                                       i_rst_n,
@@ -77,7 +78,7 @@ module linear_mix_bipolar #(
                 encode #(
                     .WIDTH    (SEQ_WIDTH),
                     .FRAC     (SEQ_WIDTH),
-                    .ROM_FILE (W_ROM)
+                    .DIRVEC_FILE (W_DIRVEC)
                 ) u_w_enc (
                     .i_clk   (i_clk),
                     .i_rst_n (i_rst_n),
@@ -96,7 +97,7 @@ module linear_mix_bipolar #(
                 encode #(
                     .WIDTH    (SEQ_WIDTH),
                     .FRAC     (SEQ_WIDTH),
-                    .ROM_FILE (B_ROM)
+                    .DIRVEC_FILE (B_DIRVEC)
                 ) u_bias (
                     .i_clk   (i_clk),
                     .i_rst_n (i_rst_n),

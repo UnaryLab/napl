@@ -113,9 +113,23 @@ CONFIG = {
 def test_sqrt_gaines():
     """Verify sqrt_gaines for both polarities on the non-negative square-root domain."""
     # The kernel holds its own comparison-reference encoder.
-    assert make_operation('bipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('bipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
+
+
+def test_sqrt_gaines_rejects_invalid_width():
+    """Verify the width guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for polarity in ('unipolar', 'bipolar'):
+        for value in (0, -1, 0.5, True):
+            try:
+                sqrt_gaines(dict({'polarity': polarity, 'generator': 'sobol'}, width=value))
+            except AssertionError as error:
+                assert 'Invalid width' in str(error), str(error)
+            else:
+                raise AssertionError(f'sqrt_gaines accepted invalid width <{value}>')
+        assert sqrt_gaines(dict({'polarity': polarity, 'generator': 'sobol'}, width=1)).width == 1
 
 
 if __name__ == '__main__':
     test_sqrt_gaines()
+    test_sqrt_gaines_rejects_invalid_width()

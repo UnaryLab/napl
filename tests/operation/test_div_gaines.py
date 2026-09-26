@@ -159,9 +159,23 @@ CONFIG = {
 def test_div_gaines():
     """Verify div_gaines with quotient in its legal range and nonzero divisors."""
     # The kernel holds its own comparison-reference encoder.
-    assert make_operation('bipolar', 256, 'cpu').internal_encode is True
+    assert make_operation('bipolar', 256, 'cpu').internal_encode == 'private'
     streaming_suite(CONFIG)
+
+
+def test_div_gaines_rejects_invalid_width():
+    """Verify the width guard rejects zero, negative, fractional, and boolean values and builds at 1."""
+    for polarity in ('unipolar', 'bipolar'):
+        for value in (0, -1, 0.5, True):
+            try:
+                div_gaines(dict({'polarity': polarity, 'generator': 'sobol'}, width=value))
+            except AssertionError as error:
+                assert 'Invalid width' in str(error), str(error)
+            else:
+                raise AssertionError(f'div_gaines accepted invalid width <{value}>')
+        assert div_gaines(dict({'polarity': polarity, 'generator': 'sobol'}, width=1)).width == 1
 
 
 if __name__ == '__main__':
     test_div_gaines()
+    test_div_gaines_rejects_invalid_width()

@@ -7,8 +7,9 @@
 // and advances the index. Generated DEPTH/WIDTH mirror Python.
 // Active-low reset clears the buffer and index.
 // DEPTH must equal 2**WIDTH, so the WIDTH-bit index addresses every buffer row
-// and no row is skipped; that also rules out an empty buffer. The generate guard
-// below enforces it at elaboration and mapping.yaml carries the same restriction.
+// and no row is skipped, and DEPTH must be at least 2, so the index keeps at least
+// one bit. The generate guard below enforces both at elaboration and mapping.yaml
+// carries the same restriction.
 
 
 module div_cordiv #(
@@ -22,11 +23,13 @@ module div_cordiv #(
     output wire o_output    // quotient spike stream
 );
     // Elaboration-time guard: an unresolvable module reference makes iverilog
-    // fail the build when DEPTH is empty or is not the 2**WIDTH rows the index
-    // spans. DEPTH 0 is called out on its own because 2**WIDTH reads 0 for a
-    // negative WIDTH under integer arithmetic.
+    // fail the build when DEPTH is below 2 or is not the 2**WIDTH rows the index
+    // spans. DEPTH 1 with WIDTH 0 satisfies DEPTH == 2**WIDTH but leaves a
+    // zero-bit index, and DEPTH 0 matches 2**WIDTH for a negative WIDTH under
+    // integer arithmetic, so the lower bound is its own term. The guard also
+    // rejects DEPTH below 2; the module name records only the power-of-two term.
     generate
-        if (DEPTH < 1 || (2 ** WIDTH) != DEPTH) begin : g_bad_depth
+        if (DEPTH < 2 || (2 ** WIDTH) != DEPTH) begin : g_bad_depth
             ERROR_div_cordiv_DEPTH_must_equal_two_to_the_WIDTH u_bad ();
         end
     endgenerate

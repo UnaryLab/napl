@@ -76,7 +76,7 @@ class linear_ugemm_hub(napl_base):
               - **polarity**: Stream encoding, ``"unipolar"`` or ``"bipolar"``; the default is ``"bipolar"``.
               - **timestep**: Positive stream length; the default is ``256``.
               - **generator**: Number-sequence generator name; the default is ``"sobol"``.
-              - **dim**: Input-encoder number-sequence dimension, which must differ from the core's **dim** so the input stream decorrelates from the weight stream; the default is ``2``.
+              - **dim**: Input-encoder number-sequence dimension, which must differ from the core's **dim** so each encoder has its own dimension; the default is ``2``.
               - **seed**: Optional integer seed for the ``lfsr`` and ``sys`` generators.
               - **taps**: Optional LFSR feedback-tap list.
               - **name**: Optional instance label.
@@ -105,8 +105,7 @@ class linear_ugemm_hub(napl_base):
         core_dim = merged_core_config.get('dim', 1)
         if self.dim == core_dim:
             message = (f'Invalid dim: <{self.dim}>; legal values: any dimension other than the '
-                       f'core dim <{core_dim}>, so the input stream decorrelates from the '
-                       f'weight stream.')
+                       f'core dim <{core_dim}>, so each encoder has its own dimension.')
             logger.error(message)
             raise AssertionError(message)
 
@@ -125,8 +124,8 @@ class linear_ugemm_hub(napl_base):
         # Encoding, the core, and decoding are combinational within one timestep.
         #: Hardware latency and timing metadata for the wrapped layer.
         self.hw.pp_delay = self.core.hw.pp_delay
-        #: Whether the RTL counterpart must hold its own encoder, true when any part does.
-        self.internal_encode = any(part.internal_encode for part in self.children())
+        #: Encoder the hardware counterpart carries, private when any part carries one.
+        self.internal_encode = 'private' if any(part.internal_encode != 'none' for part in self.children()) else 'none'
 
         #: Empty, since the numeric ports carry no stream encoding.
         self.encoding_io = {}

@@ -1,7 +1,7 @@
 import torch
 
 from napl.sim.base import napl_base
-from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_dyn, add_scale
+from napl.sim.operation import sigmoid_hard, mul_ugemm, mul_ugemm_regen, add_scale
 from .linear_mix import linear_mix
 from napl.sim.module._shared import _mgu_run_outlasts_ismul
 from loguru import logger
@@ -35,6 +35,10 @@ class mgu_hard_mix(napl_base):
 
     within the stochastic-computing error of the streams.
 
+    The forget-gate and candidate streams are multiplied by
+    :class:`mul_ugemm_regen`, whose shift-register history decorrelates those
+    operands before sampling their product.
+
     .. rubric:: Example
 
     .. code-block:: python
@@ -56,7 +60,7 @@ class mgu_hard_mix(napl_base):
     """
     #: The gate multipliers encode their own operands, so the RTL counterpart
     #: holds encoders rather than sharing an external one.
-    internal_encode = True
+    internal_encode = 'private'
 
 
     def __init__(self, weight_f, bias_f, weight_n, bias_n, hx_value,
@@ -80,6 +84,11 @@ class mgu_hard_mix(napl_base):
               - **width**: Unary-adder accumulator width; the default is ``10``.
               - **depth_ismul**: Register-address width for the non-static forget and new multiplier; the default is ``6``.
               - **name**: Optional instance label.
+
+        The forget-gate weight and bias streams occupy Sobol dimensions ``3``
+        and ``4``; the candidate-gate weight and bias streams occupy ``5`` and
+        ``6``. Caller-owned input and hidden encoders must stay outside that
+        span.
         """
         super().__init__(config, ['polarity', 'timestep', 'generator'], optional_key_list=['width', 'depth_ismul'], polarity_required=True)
         if self.polarity != 'bipolar':
@@ -114,7 +123,7 @@ class mgu_hard_mix(napl_base):
         #: Conditional-spike multiplier for the forget gate and fixed hidden value.
         self.fg_hx_mul = mul_ugemm({'polarity': 'bipolar', 'timestep': ts, 'generator': gen})
         #: Shift-register multiplier for the forget-gate and candidate streams.
-        self.fg_ng_mul = mul_ugemm_dyn({
+        self.fg_ng_mul = mul_ugemm_regen({
             'polarity': 'bipolar',
             'width': self.depth_ismul,
             'generator': gen,

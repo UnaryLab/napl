@@ -12,30 +12,30 @@ module sqrt_emit_unipolar (
     input  wire i_input,     // input spike stream
     output wire o_output  // square-root spike stream
 );
-    // nsadd accumulator: signed, clamped to [-4, 3] (intwidth-3 add_scale).
-    reg signed [3:0] acc;
+    // nsadd accumulator: add_scale's clamp is [-4, 3], but reset is 0, the
+    // addend is nonnegative, and a fire stores acc_add - 1 >= 0, so acc is
+    // stored in [0, 2].
+    reg        [1:0] acc;
     // emit feedback bit (1-bit), depth-2 scrambler shift register.
     reg              emit_out;
     reg        [1:0] sr;      // sr[0] = oldest (read out), sr[1] = newest
 
     // --- nsadd combinational datapath ---------------------------------------
     wire [1:0]       in_sum  = {1'b0, i_input} + {1'b0, emit_out};   // 0,1,2
-    wire signed [4:0] acc_pre = $signed({acc[3], acc}) + $signed({3'b000, in_sum});
-    // clamp to [-4, 3]
-    wire signed [4:0] acc_add =
-        (acc_pre > 5'sd3)  ? 5'sd3  :
-        (acc_pre < -5'sd4) ? -5'sd4 : acc_pre;
-    assign o_output = (acc_add >= 5'sd1) ? 1'b1 : 1'b0;
-    // acc_add in [-4,3]; subtract o_output only where acc_add>=1, so acc_next in
-    // [-4,2] -> fits signed 4-bit with no truncation.
-    wire signed [3:0] acc_next = acc_add[3:0] - $signed({3'b000, o_output});
+    // No reachable state has acc = 2 with emit_out = 1, so acc_pre stays at or
+    // below add_scale's upper rail 3 and needs no clamp; the lower rail -4 is
+    // below acc_pre.
+    wire [2:0]       acc_pre = {1'b0, acc} + {1'b0, in_sum};         // 0..3
+    assign o_output = |acc_pre;
+    // subtract o_output only where acc_pre>=1, so acc_next in [0,2].
+    wire [1:0]       acc_next = acc_pre[1:0] - {1'b0, o_output};
 
-    // --- shiftreg / emit ----------------------------------------------------
+    // --- shift register / emit ----------------------------------------------------
     wire scrambled = sr[0];
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            acc      <= 4'sd0;
+            acc      <= 2'd0;
             emit_out <= 1'b0;
             sr       <= 2'b10;          // sr[0]=0, sr[1]=1  (reg[i]=i%2)
         end else begin

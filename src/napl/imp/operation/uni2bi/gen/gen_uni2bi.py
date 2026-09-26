@@ -56,7 +56,6 @@ def main():
 
     segments = build_segments()
     VEC.parent.mkdir(parents=True, exist_ok=True)
-    PARAMS.write_text(f"`define GEN_WIDTH {UNI2BI['width']}\n")
 
     rows = 0
     with VEC.open("w") as f:
@@ -78,6 +77,11 @@ def main():
                 o_out = int(model(i_input).item())
                 f.write(f"{bit} {o_out}\n")
                 rows += 1
+    # The R marker rows are not compared vectors, so the count excludes them.
+    PARAMS.write_text(
+        f"`define GEN_WIDTH {UNI2BI['width']}\n"
+        f"`define GEN_VECTORS {rows}\n"
+    )
     print(f"wrote {VEC} ({rows} vectors, {len(segments)} mid-stream resets) "
           f"and {PARAMS} (GEN_WIDTH={UNI2BI['width']})")
 
